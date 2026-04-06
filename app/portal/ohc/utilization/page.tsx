@@ -9,7 +9,6 @@ import {
   type RawAppointment,
   filterRows,
   aggregateUtilization,
-  aggregateVisitTrends,
   aggregateRepeatTrends,
   extractFilterOptions,
 } from "@/lib/aggregation/ohc-utilization";
@@ -343,7 +342,7 @@ export default function OHCUtilizationPage() {
 
   // ── Fetch raw appointment rows once per client ──
   const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[] }>(
+  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[]; stageTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
     rawUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
     { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: false }
@@ -372,14 +371,14 @@ export default function OHCUtilizationPage() {
     [filteredRows, allRows, appliedOHCFilters]
   );
 
-  // Stage trends from lightweight server-side aggregation (Completed + Cancelled + NoShow)
-  const stageTrendUrl = activeClientId ? `/api/ohc/stage-trends?clientId=${activeClientId}&trendView=${trendView}` : null;
-  const { data: stageTrendData } = useSWR<{ trends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
-    stageTrendUrl,
-    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
-  );
-  const visitTrends = stageTrendData?.trends || [];
+  // Stage trends from the same API response (no extra fetch)
+  const allStageTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] = rawData?.stageTrends || [];
+  // Filter by applied date range
+  const visitTrends = useMemo(() => {
+    const dateFrom = format(appliedDateRange.from, "yyyy-MM");
+    const dateTo = format(appliedDateRange.to, "yyyy-MM");
+    return allStageTrends.filter((t) => t.period >= dateFrom && t.period <= dateTo);
+  }, [allStageTrends, appliedDateRange]);
   const avgConsults = visitTrends.length > 0
     ? Math.round(visitTrends.reduce((s, v) => s + v.completed, 0) / visitTrends.length)
     : 0;

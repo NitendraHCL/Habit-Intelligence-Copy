@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, getSessionCugId } from "@/lib/auth/session";
+import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 
 export async function GET(request: NextRequest) {
@@ -9,8 +9,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
 
-    const cugId = await getSessionCugId(clientId ?? undefined);
-    if (!cugId) {
+    const cugCode = await getSessionCugCode(clientId ?? undefined);
+    if (!cugCode) {
       return NextResponse.json({
         genders: ["Male", "Female", "Others"],
         ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
@@ -19,28 +19,24 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Both queries use appointment_report — has facility_id, speciality_name, etc.
     const [locationRows, specialtyRows] = await Promise.all([
       dwQuery<{ facility_name: string }>(
         `SELECT DISTINCT a.facility_name
-         FROM fact_kx.appointment_report a
-         LEFT JOIN fact_kx.cug_facility_mapping c ON a.facility_id = c.mapped_facility_id
-         WHERE c.cug_id = $1
+         FROM aggregated_table.agg_appointment a
+         WHERE a.cug_code_reg = $1
            AND a.facility_name IS NOT NULL
            AND TRIM(a.facility_name) != ''
          ORDER BY a.facility_name`,
-        [cugId]
+        [cugCode]
       ),
 
-      // speciality_name is directly on appointment_report — no extra join
       dwQuery<{ speciality_name: string }>(
         `SELECT DISTINCT a.speciality_name
-         FROM fact_kx.appointment_report a
-         LEFT JOIN fact_kx.cug_facility_mapping c ON a.facility_id = c.mapped_facility_id
-         WHERE c.cug_id = $1
+         FROM aggregated_table.agg_appointment a
+         WHERE a.cug_code_reg = $1
            AND a.speciality_name IS NOT NULL
          ORDER BY a.speciality_name`,
-        [cugId]
+        [cugCode]
       ),
     ]);
 

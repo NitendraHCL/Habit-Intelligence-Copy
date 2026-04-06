@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, getSessionCugId } from "@/lib/auth/session";
+import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 
 export async function GET(request: NextRequest) {
@@ -16,29 +16,25 @@ export async function GET(request: NextRequest) {
     const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
     const view = searchParams.get("view") || "monthly";
 
-    const cugId = await getSessionCugId(clientId ?? undefined);
-    if (!cugId) {
+    const cugCode = await getSessionCugCode(clientId ?? undefined);
+    if (!cugCode) {
       return NextResponse.json({ error: "No client selected" }, { status: 400 });
     }
 
-    // ── Build query parts ──
-    const joins: string[] = [
-      "LEFT JOIN fact_kx.cug_facility_mapping c ON a.facility_id = c.mapped_facility_id",
-    ];
     const conditions: string[] = [
-      `c.cug_id = $1`,
-      `a.stage IN ('Completed', 'Prescription Sent', 'Re open')`,
+      `a.cug_code_reg = $1`,
+      `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
     ];
-    const params: unknown[] = [cugId];
+    const params: unknown[] = [cugCode];
     let idx = 2;
 
     if (dateFrom) {
-      conditions.push(`a.slotdate >= $${idx}::date`);
+      conditions.push(`a.slotstarttime >= $${idx}::date`);
       params.push(dateFrom);
       idx++;
     }
     if (dateTo) {
-      conditions.push(`a.slotdate <= $${idx}::date`);
+      conditions.push(`a.slotstarttime <= $${idx}::date`);
       params.push(dateTo);
       idx++;
     }
@@ -52,60 +48,46 @@ export async function GET(request: NextRequest) {
       params.push(specialties);
       idx++;
     }
-    if (genders?.length || ageGroups?.length) {
-      const regConds: string[] = [];
-      if (genders?.length) {
-        const gc = genders.map((g) => {
-          const l = g.toLowerCase();
-          if (l === "male") return "LOWER(TRIM(r.patient_gender)) IN ('male', 'm')";
-          if (l === "female") return "LOWER(TRIM(r.patient_gender)) IN ('female', 'f')";
-          return "(LOWER(TRIM(r.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR r.patient_gender IS NULL OR TRIM(r.patient_gender) = '')";
-        });
-        regConds.push(`(${gc.join(" OR ")})`);
-      }
-      if (ageGroups?.length) {
-        const ae = `CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER)`;
-        const ac = ageGroups.map((ag) => {
-          switch (ag) {
-            case "<20": return `${ae} < 20`;
-            case "20-35": return `${ae} BETWEEN 20 AND 35`;
-            case "36-40": return `${ae} BETWEEN 36 AND 40`;
-            case "41-60": return `${ae} BETWEEN 41 AND 60`;
-            case "61+": return `${ae} > 60`;
-            default: return "FALSE";
-          }
-        });
-        regConds.push(`(${ac.join(" OR ")})`);
-      }
-      conditions.push(`a.uhid IN (SELECT r.uhid FROM fact_kx.registration_fact r WHERE ${regConds.join(" AND ")})`);
+    if (genders?.length) {
+      const gc = genders.map((g) => {
+        const l = g.toLowerCase();
+        if (l === "male") return "LOWER(TRIM(a.patient_gender)) IN ('male', 'm')";
+        if (l === "female") return "LOWER(TRIM(a.patient_gender)) IN ('female', 'f')";
+        return "(LOWER(TRIM(a.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR a.patient_gender IS NULL OR TRIM(a.patient_gender) = '')";
+      });
+      conditions.push(`(${gc.join(" OR ")})`);
+    }
+    if (ageGroups?.length) {
+      const ac = ageGroups.map((ag) => {
+        switch (ag) {
+          case "<20": return `a.age_years < 20`;
+          case "20-35": return `a.age_years BETWEEN 20 AND 35`;
+          case "36-40": return `a.age_years BETWEEN 36 AND 40`;
+          case "41-60": return `a.age_years BETWEEN 41 AND 60`;
+          case "61+": return `a.age_years > 60`;
+          default: return "FALSE";
+        }
+      });
+      conditions.push(`(${ac.join(" OR ")})`);
     }
 
-    const joinClause = joins.join("\n    ");
     const whereClause = conditions.join(" AND ");
+    const whereClause2 = whereClause.replace(/\ba\./g, "a2.");
 
-    // Aliased versions for the repeat-uhid subquery
-    const joinClause2 = joinClause
-      .replace(/\ba\b/g, "a2").replace(/\bc\b/g, "c2")
-      .replace(/\bf\b/g, "f2").replace(/\bar\b/g, "ar2");
-    const whereClause2 = whereClause
-      .replace(/\ba\./g, "a2.").replace(/\bc\./g, "c2.")
-      .replace(/\bf\./g, "f2.").replace(/\bar\./g, "ar2.");
-
-    // ── Period expression ──
     let periodExpr: string;
     let periodFormat: string;
     switch (view) {
       case "weekly":
-        periodExpr = "DATE_TRUNC('week', a.slotdate)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('week', a.slotdate), 'YYYY-"W"IW')`;
+        periodExpr = "DATE_TRUNC('week', a.slotstarttime)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('week', a.slotstarttime), 'YYYY-"W"IW')`;
         break;
       case "yearly":
-        periodExpr = "DATE_TRUNC('year', a.slotdate)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('year', a.slotdate), 'YYYY')`;
+        periodExpr = "DATE_TRUNC('year', a.slotstarttime)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('year', a.slotstarttime), 'YYYY')`;
         break;
       default:
-        periodExpr = "DATE_TRUNC('month', a.slotdate)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('month', a.slotdate), 'YYYY-MM')`;
+        periodExpr = "DATE_TRUNC('month', a.slotstarttime)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('month', a.slotstarttime), 'YYYY-MM')`;
         break;
     }
 
@@ -118,16 +100,14 @@ export async function GET(request: NextRequest) {
         ${periodFormat} AS label,
         COUNT(*) AS repeat_visits,
         COUNT(DISTINCT a.uhid) AS repeat_patients
-      FROM fact_kx.appointment_report a
+      FROM aggregated_table.agg_appointment a
       INNER JOIN (
         SELECT a2.uhid
-        FROM fact_kx.appointment_report a2
-        ${joinClause2}
+        FROM aggregated_table.agg_appointment a2
         WHERE ${whereClause2}
         GROUP BY a2.uhid
         HAVING COUNT(*) > 1
       ) rpt ON a.uhid = rpt.uhid
-      ${joinClause}
       WHERE ${whereClause}
       GROUP BY ${periodExpr}
       ORDER BY ${periodExpr}`,

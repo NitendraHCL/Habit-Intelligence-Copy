@@ -5,7 +5,14 @@ import { T } from "@/lib/ui/theme";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import useSWR from "swr";
-import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import {
+  type RawAppointment,
+  filterRows,
+  aggregateUtilization,
+  aggregateVisitTrends,
+  aggregateRepeatTrends,
+  extractFilterOptions,
+} from "@/lib/aggregation/ohc-utilization";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -301,6 +308,7 @@ export default function OHCUtilizationPage() {
   }, []);
 
   // Page-level filters (including date range)
+  // "draft" state — what the user is selecting in the filter dropdowns
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
     to: new Date(2026, 2, 31),
@@ -313,95 +321,95 @@ export default function OHCUtilizationPage() {
     specialties: [] as string[],
     consultationTypes: [] as string[],
     locations: [] as string[],
+    relations: [] as string[],
   });
 
-  // Fetch real filter options from API
-  const [filterOptions, setFilterOptions] = useState({
-    locations: [] as string[],
-    genders: ["Male", "Female", "Others"],
-    ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
+  // "applied" state — what's actually sent to the API (only updates on Apply click)
+  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
+    from: new Date(2024, 0, 1),
+    to: new Date(2026, 2, 31),
+  });
+  const [appliedFilters, setAppliedFilters] = useState({
+    ageGroups: [] as string[],
+    genders: [] as string[],
     specialties: [] as string[],
+    consultationTypes: [] as string[],
+    locations: [] as string[],
+    relations: [] as string[],
   });
-  useEffect(() => {
-    const params = activeClientId && activeClientId !== "all" ? `?clientId=${activeClientId}` : "";
-    fetch(`/api/filters${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.locations || data.specialties || data.genders || data.ageGroups) {
-          setFilterOptions((prev) => ({
-            ...prev,
-            ...(data.locations && { locations: data.locations }),
-            ...(data.genders && { genders: data.genders }),
-            ...(data.ageGroups && { ageGroups: data.ageGroups }),
-            ...(data.specialties && { specialties: data.specialties }),
-          }));
-        }
-      })
-      .catch(() => {});
-  }, [activeClientId]);
 
-  const extraParams = useMemo(() => {
-    const p: Record<string, string> = {};
-    p.dateFrom = format(dateRange.from, "yyyy-MM-dd");
-    p.dateTo = format(dateRange.to, "yyyy-MM-dd");
-    if (pageFilters.ageGroups.length) p.ageGroups = pageFilters.ageGroups.join(",");
-    if (pageFilters.genders.length) p.genders = pageFilters.genders.join(",");
-    if (pageFilters.specialties.length) p.specialties = pageFilters.specialties.join(",");
-    if (pageFilters.consultationTypes.length) p.consultationTypes = pageFilters.consultationTypes.join(",");
-    if (pageFilters.locations.length) p.locations = pageFilters.locations.join(",");
-    return p;
-  }, [dateRange, pageFilters]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
 
-  const { data, isLoading, isValidating } = useDashboardData("ohc/utilization", extraParams);
-
-  // Separate SWR call for visit trends — only this refetches when trendView changes
-  const trendUrl = useMemo(() => {
-    if (!activeClientId) return null;
-    const p = new URLSearchParams(extraParams);
-    p.set("trendView", trendView);
-    if (!p.has("clientId")) p.set("clientId", activeClientId);
-    return `/api/ohc/utilization/trends?${p.toString()}`;
-  }, [extraParams, trendView, activeClientId]);
-
-  const { data: trendData } = useSWR<{ visitTrends: any[]; avgConsults: number }>(
-    trendUrl,
+  // ── Fetch raw appointment rows once per client ──
+  const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
+  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[] }>(
+    rawUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true }
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: false }
+  );
+  const allRows = rawData?.rows || [];
+  const isValidating = false; // no background revalidation needed
+
+  // ── Derive filter options from raw data (instant, no API call) ──
+  const filterOptions = useMemo(() => extractFilterOptions(allRows), [allRows]);
+
+  // ── Client-side aggregation using applied filters ──
+  const appliedOHCFilters = useMemo(() => ({
+    dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
+    dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
+    locations: appliedFilters.locations,
+    genders: appliedFilters.genders,
+    ageGroups: appliedFilters.ageGroups,
+    specialties: appliedFilters.specialties,
+    relations: appliedFilters.relations,
+  }), [appliedDateRange, appliedFilters]);
+
+  const filteredRows = useMemo(() => filterRows(allRows, appliedOHCFilters), [allRows, appliedOHCFilters]);
+
+  const aggregated = useMemo(
+    () => allRows.length ? aggregateUtilization(filteredRows, allRows, appliedOHCFilters) : null,
+    [filteredRows, allRows, appliedOHCFilters]
   );
 
-  const visitTrends = trendData?.visitTrends || [];
-  const avgConsults = trendData?.avgConsults || 0;
-
-  // Separate SWR call for repeat visit trends — refetches when repeatView changes
-  const repeatTrendUrl = useMemo(() => {
-    if (!activeClientId) return null;
-    const p = new URLSearchParams(extraParams);
-    p.set("view", repeatView);
-    if (!p.has("clientId")) p.set("clientId", activeClientId);
-    return `/api/ohc/utilization/repeat-trends?${p.toString()}`;
-  }, [extraParams, repeatView, activeClientId]);
-
-  const { data: repeatData } = useSWR<{ data: { label: string; repeatVisits: number; repeatPatients: number }[] }>(
-    repeatTrendUrl,
+  // Stage trends from lightweight server-side aggregation (Completed + Cancelled + NoShow)
+  const stageTrendUrl = activeClientId ? `/api/ohc/stage-trends?clientId=${activeClientId}&trendView=${trendView}` : null;
+  const { data: stageTrendData } = useSWR<{ trends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
+    stageTrendUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true }
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
   );
+  const visitTrends = stageTrendData?.trends || [];
+  const avgConsults = visitTrends.length > 0
+    ? Math.round(visitTrends.reduce((s, v) => s + v.completed, 0) / visitTrends.length)
+    : 0;
 
-  const repeatTrendData = repeatData?.data || [];
+  const repeatAgg = useMemo(
+    () => aggregateRepeatTrends(filteredRows, repeatView),
+    [filteredRows, repeatView]
+  );
+  const repeatTrendData = repeatAgg.data;
 
-  const d = data as any;
-  const kpis = d?.kpis;
-  const charts = d?.charts;
+  const kpis = aggregated?.kpis;
+  const charts = aggregated?.charts;
   const bubbleSpecs: string[] = charts?.bubbleSpecialties || [];
   const activeBubbleSpec = selectedBubbleSpec || bubbleSpecs[0] || "";
 
   const handleRemoveChip = (key: string, value: string) => {
+    setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
     setPageFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
   };
   const handleClearAll = () => {
-    setPageFilters({ ageGroups: [], genders: [], specialties: [], consultationTypes: [], locations: [] });
+    const empty = { ageGroups: [], genders: [], specialties: [], consultationTypes: [], locations: [], relations: [] };
+    setAppliedFilters(empty);
+    setPageFilters(empty);
   };
-  const hasActiveFilters = Object.values(pageFilters).some((v) => v.length > 0);
+  const hasActiveFilters = Object.values(appliedFilters).some((v) => v.length > 0);
+
+  const handleApply = () => {
+    setAppliedDateRange({ ...dateRange });
+    setAppliedFilters({ ...pageFilters });
+  };
 
   // ─── Sunburst alternating ring-sector fills ───
   // Declared before any early return to satisfy Rules of Hooks.
@@ -466,7 +474,7 @@ export default function OHCUtilizationPage() {
     });
   }, [sunburstChartSize, charts?.demographicSunburst]);
 
-  if (!data && isLoading) {
+  if (!aggregated && isLoading) {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="space-y-2"><div className="h-8 w-48 bg-gray-200 rounded animate-pulse" /><div className="h-4 w-96 bg-gray-100 rounded animate-pulse" /></div>
@@ -656,6 +664,7 @@ export default function OHCUtilizationPage() {
     }));
 
   return (
+    <>
     <div className="animate-stagger space-y-6 relative">
       {isValidating && !isLoading && (
         <div className="absolute inset-0 z-50 flex items-start justify-center pt-40 bg-white/40 backdrop-blur-[1px] rounded-2xl">
@@ -696,9 +705,49 @@ export default function OHCUtilizationPage() {
         <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Specialty" options={filterOptions.specialties} selected={pageFilters.specialties} onChange={(v) => setPageFilters((p) => ({ ...p, specialties: v }))} />
+        <FilterMultiSelect label="Relationship" options={filterOptions.relations} selected={pageFilters.relations} onChange={(v) => setPageFilters((p) => ({ ...p, relations: v }))} />
 
 
         <div className="flex-1" />
+        <div className="relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={async () => {
+                  setIsRefreshing(true);
+                  try {
+                    const freshUrl = rawUrl ? rawUrl + (rawUrl.includes("?") ? "&" : "?") + "nocache=1" : null;
+                    if (freshUrl) {
+                      const res = await fetch(freshUrl);
+                      if (res.ok) {
+                        const data = await res.json();
+                        refreshData(data, { revalidate: false });
+                        setShowRefreshToast(true);
+                        setTimeout(() => setShowRefreshToast(false), 3000);
+                      }
+                    }
+                  } finally {
+                    setIsRefreshing(false);
+                  }
+                }}
+                disabled={isRefreshing}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors"
+                style={{ borderColor: T.border, color: T.textMuted }}
+              >
+                <RotateCcw size={15} className={isRefreshing ? "animate-spin" : ""} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Refresh data</TooltipContent>
+          </Tooltip>
+          {showRefreshToast && (
+            <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <span className="text-[12px] font-medium">Data refreshed</span>
+              </div>
+            </div>
+          )}
+        </div>
         <button className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors" style={{ borderColor: T.border, color: T.textMuted }}>
           <Download size={15} />
         </button>
@@ -706,13 +755,25 @@ export default function OHCUtilizationPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
-        <Button className="h-9 px-5 rounded-lg text-[13px] font-bold" style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)", color: "#fff", boxShadow: "0 2px 8px rgba(79,70,229,0.25)" }}>
-          Apply
+        <Button
+          onClick={handleApply}
+          disabled={isLoading}
+          className="h-9 px-5 rounded-lg text-[13px] font-bold min-w-[90px]"
+          style={{ background: isLoading ? "#9CA3AF" : "linear-gradient(135deg, #4f46e5, #6366f1)", color: "#fff", boxShadow: isLoading ? "none" : "0 2px 8px rgba(79,70,229,0.25)" }}
+        >
+          {isLoading ? (
+            <span className="flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+              Loading...
+            </span>
+          ) : (
+            "Apply"
+          )}
         </Button>
       </div>
 
       {hasActiveFilters && (
-        <ActiveFilterChips filters={pageFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
+        <ActiveFilterChips filters={appliedFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
       )}
 
       {/* ── Page Header + AI Summary (Blue Box) ── */}
@@ -906,28 +967,33 @@ export default function OHCUtilizationPage() {
                 <RechartsTooltip content={({ active, payload, label }: any) => {
                   if (!active || !payload?.length) return null;
                   const dd = payload[0]?.payload;
+                  const total = (dd?.completed || 0) + (dd?.cancelled || 0) + (dd?.noShow || 0);
                   return (
                     <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
                       <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                      <p>Total Consults: <strong>{formatNum(dd?.totalConsults)}</strong></p>
-                      <p>Unique Patients: <strong>{formatNum(dd?.uniquePatients)}</strong></p>
+                      <p>Total Appointments: <strong>{formatNum(total)}</strong></p>
                       <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
-                        <p style={{ color: T.teal }}>Completed: {formatNum(dd?.completed)}</p>
-                        <p style={{ color: T.coral }}>No-show: {formatNum(dd?.noShow)}</p>
-                        <p style={{ color: T.amber }}>Cancelled: {formatNum(dd?.cancelled)}</p>
+                        <p style={{ color: "#4f46e5" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>
+                        <p style={{ color: "#f59e0b" }}>Cancelled: <strong>{formatNum(dd?.cancelled)}</strong></p>
+                        <p style={{ color: "#ef4444" }}>No-Show: <strong>{formatNum(dd?.noShow)}</strong></p>
+                      </div>
+                      <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
+                        <p style={{ color: "#0d9488" }}>Unique Patients: <strong>{formatNum(dd?.uniquePatients)}</strong></p>
                       </div>
                     </div>
                   );
                 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
                 <ReferenceLine y={avgConsults} stroke={T.border} strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="totalConsults" name="Total Consults" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
+                <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
+                <Line type="monotone" dataKey="cancelled" name="Cancelled" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#f59e0b" }} />
+                <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />
                 <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
           <InsightBox text={visitTrends.length > 0
-            ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.totalConsults > b.totalConsults ? a : b); return `Average ${trendView} consults: ${formatNum(avgConsults)}. Peak period: ${peak.period} with ${formatNum(peak.totalConsults)} consults and ${formatNum(peak.uniquePatients)} unique patients.`; })()
+            ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); return `Average ${trendView} completed consults: ${formatNum(avgConsults)}. Peak period: ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, ${formatNum(peak.noShow)} no-shows.`; })()
             : "No trend data available for the selected period."} />
         </CVCard>
 
@@ -1237,5 +1303,7 @@ export default function OHCUtilizationPage() {
         <InsightBox text="Repeat Visits = total consultations by employees who visited OHC more than once. Repeat Patients = unique employees who visited more than once. If repeat visits rise while repeat patients stay flat, the same employees are returning more often — check if follow-ups are driving this. If both rise together, more employees are becoming repeat users — a positive engagement signal." />
       </CVCard>
     </div>
+
+    </>
   );
 }

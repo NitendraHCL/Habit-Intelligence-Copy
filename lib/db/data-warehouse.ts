@@ -9,9 +9,10 @@ const globalForPool = globalThis as unknown as {
 function createPool() {
   return new Pool({
     connectionString: process.env.DATA_WAREHOUSE_URL,
-    max: 25,
+    max: 50,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 30000,
+    connectionTimeoutMillis: 60000,
+    statement_timeout: 120000,
     ssl: { rejectUnauthorized: false },
   });
 }

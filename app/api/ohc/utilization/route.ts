@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, getSessionCugId } from "@/lib/auth/session";
+import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
@@ -8,10 +8,9 @@ function yoyChange(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-// All queries use appointment_report (has all appointment fields + speciality_name)
-const BASE_TABLE = "fact_kx.appointment_report";
+const BASE_TABLE = "aggregated_table.agg_appointment";
 
-function buildQueryParts(searchParams: URLSearchParams, cugId: string) {
+function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
   const locations = searchParams.get("locations")?.split(",").filter(Boolean);
@@ -19,32 +18,28 @@ function buildQueryParts(searchParams: URLSearchParams, cugId: string) {
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
 
-  const joins: string[] = [
-    "LEFT JOIN fact_kx.cug_facility_mapping c ON a.facility_id = c.mapped_facility_id",
-  ];
   const conditions: string[] = [
-    `c.cug_id = $1`,
-    `a.stage IN ('Completed', 'Prescription Sent', 'Re open')`,
+    `a.cug_code_reg = $1`,
+    `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
   ];
   const prevConditions: string[] = [...conditions];
-  const params: unknown[] = [cugId];
+  const params: unknown[] = [cugCode];
   let idx = 2;
   const hasDateRange = !!(dateFrom && dateTo);
 
   if (dateFrom) {
-    conditions.push(`a.slotdate >= $${idx}::date`);
-    prevConditions.push(`a.slotdate >= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.slotstarttime >= $${idx}::date`);
+    prevConditions.push(`a.slotstarttime >= ($${idx}::date - interval '1 year')`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`a.slotdate <= $${idx}::date`);
-    prevConditions.push(`a.slotdate <= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.slotstarttime <= $${idx}::date`);
+    prevConditions.push(`a.slotstarttime <= ($${idx}::date - interval '1 year')`);
     params.push(dateTo);
     idx++;
   }
   if (locations?.length) {
-    // facility_name is directly on appointment_report — no extra join
     const cond = `a.facility_name = ANY($${idx})`;
     conditions.push(cond);
     prevConditions.push(cond);
@@ -52,47 +47,42 @@ function buildQueryParts(searchParams: URLSearchParams, cugId: string) {
     idx++;
   }
   if (specialties?.length) {
-    // speciality_name is directly on appointment_report — no extra join
     const cond = `a.speciality_name = ANY($${idx})`;
     conditions.push(cond);
     prevConditions.push(cond);
     params.push(specialties);
     idx++;
   }
-  if (genders?.length || ageGroups?.length) {
-    const regConds: string[] = [];
-    if (genders?.length) {
-      const gc = genders.map((g) => {
-        const l = g.toLowerCase();
-        if (l === "male") return "LOWER(TRIM(r.patient_gender)) IN ('male', 'm')";
-        if (l === "female") return "LOWER(TRIM(r.patient_gender)) IN ('female', 'f')";
-        return "(LOWER(TRIM(r.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR r.patient_gender IS NULL OR TRIM(r.patient_gender) = '')";
-      });
-      regConds.push(`(${gc.join(" OR ")})`);
-    }
-    if (ageGroups?.length) {
-      const ae = `CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER)`;
-      const ac = ageGroups.map((ag) => {
-        switch (ag) {
-          case "<20": return `${ae} < 20`;
-          case "20-35": return `${ae} BETWEEN 20 AND 35`;
-          case "36-40": return `${ae} BETWEEN 36 AND 40`;
-          case "41-60": return `${ae} BETWEEN 41 AND 60`;
-          case "61+": return `${ae} > 60`;
-          default: return "FALSE";
-        }
-      });
-      regConds.push(`(${ac.join(" OR ")})`);
-    }
-    const subq = `a.uhid IN (SELECT r.uhid FROM fact_kx.registration_fact r WHERE ${regConds.join(" AND ")})`;
-    conditions.push(subq);
-    prevConditions.push(subq);
+  if (genders?.length) {
+    const gc = genders.map((g) => {
+      const l = g.toLowerCase();
+      if (l === "male") return "LOWER(TRIM(a.patient_gender)) IN ('male', 'm')";
+      if (l === "female") return "LOWER(TRIM(a.patient_gender)) IN ('female', 'f')";
+      return "(LOWER(TRIM(a.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR a.patient_gender IS NULL OR TRIM(a.patient_gender) = '')";
+    });
+    const cond = `(${gc.join(" OR ")})`;
+    conditions.push(cond);
+    prevConditions.push(cond);
+  }
+  if (ageGroups?.length) {
+    const ac = ageGroups.map((ag) => {
+      switch (ag) {
+        case "<20": return `a.age_years < 20`;
+        case "20-35": return `a.age_years BETWEEN 20 AND 35`;
+        case "36-40": return `a.age_years BETWEEN 36 AND 40`;
+        case "41-60": return `a.age_years BETWEEN 41 AND 60`;
+        case "61+": return `a.age_years > 60`;
+        default: return "FALSE";
+      }
+    });
+    const cond = `(${ac.join(" OR ")})`;
+    conditions.push(cond);
+    prevConditions.push(cond);
   }
 
   return {
     params,
     hasDateRange,
-    joinClause: joins.join("\n    "),
     currentWhere: conditions.join(" AND "),
     prevWhere: prevConditions.join(" AND "),
   };
@@ -105,23 +95,20 @@ async function handler(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
 
-    const cugId = await getSessionCugId(clientId ?? undefined);
-    if (!cugId) {
+    const cugCode = await getSessionCugCode(clientId ?? undefined);
+    if (!cugCode) {
       return NextResponse.json({ error: "No client selected" }, { status: 400 });
     }
 
-    const q = buildQueryParts(searchParams, cugId);
+    const q = buildQueryParts(searchParams, cugCode);
 
     async function safeQuery<T>(fn: () => Promise<T[]>): Promise<T[]> {
       try { return await fn(); } catch (e) { console.error("Query failed:", e); return []; }
     }
 
     // Aliased versions for repeat-patients subquery
-    const joinClause2 = q.joinClause.replace(/\ba\b/g, "a2").replace(/\bc\b/g, "c2").replace(/\bf\b/g, "f2");
-    const currentWhere2 = q.currentWhere.replace(/\ba\./g, "a2.").replace(/\bc\./g, "c2.").replace(/\bf\./g, "f2.");
-    const prevWhere2 = q.prevWhere.replace(/\ba\./g, "a2.").replace(/\bc\./g, "c2.").replace(/\bf\./g, "f2.");
-
-    // facility_name is directly on appointment_report — no facility_master join needed
+    const currentWhere2 = q.currentWhere.replace(/\ba\./g, "a2.");
+    const prevWhere2 = q.prevWhere.replace(/\ba\./g, "a2.");
 
     // ── BATCH 1: KPIs ──
     const kpiRows = await safeQuery(() => dwQuery<{
@@ -132,13 +119,11 @@ async function handler(request: NextRequest) {
         COUNT(DISTINCT a.uhid) AS unique_patients,
         (SELECT COUNT(*) FROM (
           SELECT a2.uhid FROM ${BASE_TABLE} a2
-          ${joinClause2}
           WHERE ${currentWhere2}
           GROUP BY a2.uhid HAVING COUNT(*) >= 2
         ) rp) AS repeat_patients,
-        COUNT(DISTINCT a.facility_id) AS location_count
+        COUNT(DISTINCT a.facility_name) AS location_count
       FROM ${BASE_TABLE} a
-      ${q.joinClause}
       WHERE ${q.currentWhere}`,
       q.params
     ));
@@ -154,14 +139,14 @@ async function handler(request: NextRequest) {
     const [specRows, locSpecRows] = await Promise.all([
       safeQuery(() => dwQuery<{ name: string; value: string }>(
         `SELECT a.speciality_name AS name, COUNT(*) AS value
-        FROM ${BASE_TABLE} a ${q.joinClause}
+        FROM ${BASE_TABLE} a
         WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL
         GROUP BY a.speciality_name ORDER BY value DESC`,
         q.params
       )),
       safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
         `SELECT a.facility_name AS location, a.speciality_name AS specialty, COUNT(*) AS total_consults
-        FROM ${BASE_TABLE} a ${q.joinClause}
+        FROM ${BASE_TABLE} a
         WHERE ${q.currentWhere} AND a.facility_name IS NOT NULL AND a.speciality_name IS NOT NULL
         GROUP BY a.facility_name, a.speciality_name ORDER BY total_consults DESC`,
         q.params
@@ -173,29 +158,28 @@ async function handler(request: NextRequest) {
       safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_patients: string }>(
         `SELECT
           CASE
-            WHEN CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER) < 20 THEN '<20'
-            WHEN CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER) BETWEEN 20 AND 35 THEN '20-35'
-            WHEN CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER) BETWEEN 36 AND 40 THEN '36-40'
-            WHEN CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER) BETWEEN 41 AND 60 THEN '41-60'
-            WHEN CAST(NULLIF(REGEXP_REPLACE(r.patient_age, '[^0-9].*', '', 'g'), '') AS INTEGER) > 60 THEN '61+'
+            WHEN a.age_years < 20 THEN '<20'
+            WHEN a.age_years BETWEEN 20 AND 35 THEN '20-35'
+            WHEN a.age_years BETWEEN 36 AND 40 THEN '36-40'
+            WHEN a.age_years BETWEEN 41 AND 60 THEN '41-60'
+            WHEN a.age_years > 60 THEN '61+'
             ELSE NULL
           END AS age_group,
           CASE
-            WHEN LOWER(TRIM(r.patient_gender)) IN ('male', 'm') THEN 'M'
-            WHEN LOWER(TRIM(r.patient_gender)) IN ('female', 'f') THEN 'F'
+            WHEN LOWER(TRIM(a.patient_gender)) IN ('male', 'm') THEN 'M'
+            WHEN LOWER(TRIM(a.patient_gender)) IN ('female', 'f') THEN 'F'
             ELSE 'O'
           END AS gender,
           COUNT(*) AS total_consults,
           COUNT(DISTINCT a.uhid) AS unique_patients
-        FROM ${BASE_TABLE} a ${q.joinClause}
-        JOIN fact_kx.registration_fact r ON a.uhid = r.uhid
-        WHERE ${q.currentWhere} AND r.patient_age IS NOT NULL AND TRIM(r.patient_age) != ''
+        FROM ${BASE_TABLE} a
+        WHERE ${q.currentWhere} AND a.age_years IS NOT NULL
         GROUP BY age_group, gender ORDER BY age_group, gender`,
         q.params
       )),
       safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
-        `SELECT EXTRACT(DOW FROM a.slotdate) AS day_of_week, EXTRACT(HOUR FROM a.slotstarttime) AS hour_of_day, COUNT(*) AS total_consults
-        FROM ${BASE_TABLE} a ${q.joinClause}
+        `SELECT EXTRACT(DOW FROM a.slotstarttime) AS day_of_week, EXTRACT(HOUR FROM a.slotstarttime) AS hour_of_day, COUNT(*) AS total_consults
+        FROM ${BASE_TABLE} a
         WHERE ${q.currentWhere} AND a.slotstarttime IS NOT NULL
         GROUP BY day_of_week, hour_of_day ORDER BY day_of_week, hour_of_day`,
         q.params
@@ -211,11 +195,10 @@ async function handler(request: NextRequest) {
         `SELECT COUNT(*) AS total_consults, COUNT(DISTINCT a.uhid) AS unique_patients,
           (SELECT COUNT(*) FROM (
             SELECT a2.uhid FROM ${BASE_TABLE} a2
-            ${joinClause2}
             WHERE ${prevWhere2}
             GROUP BY a2.uhid HAVING COUNT(*) >= 2
           ) rp) AS repeat_patients
-        FROM ${BASE_TABLE} a ${q.joinClause} WHERE ${q.prevWhere}`,
+        FROM ${BASE_TABLE} a WHERE ${q.prevWhere}`,
         q.params
       ));
       if (prevRows[0]) {

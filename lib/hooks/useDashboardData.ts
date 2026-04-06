@@ -56,7 +56,7 @@ export function useDashboardData<T = Record<string, unknown>>(
   const { data, error, isLoading, isValidating } = useSWR<T>(url, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 300000, // 5 min — cache serves responses in <5ms so re-fetch is wasteful
+    dedupingInterval: 60000, // 1 min
     keepPreviousData: true,
   });
 

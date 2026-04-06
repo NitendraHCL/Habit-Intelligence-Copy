@@ -344,6 +344,17 @@ export function Sidebar() {
         minWidth: effectiveCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH,
       }}
     >
+      {/* Centered edge toggle button */}
+      <button
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        className="absolute top-1/2 -translate-y-1/2 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-[#E5E7EB] bg-white shadow-sm hover:bg-[#F5F6FA] hover:shadow transition-all duration-150"
+      >
+        {effectiveCollapsed ? (
+          <ChevronRight className="size-3.5 text-[#6B7280]" />
+        ) : (
+          <ChevronDown className="size-3.5 text-[#6B7280] -rotate-90" />
+        )}
+      </button>
       {/* Logo / Brand area */}
       <div
         className={cn(

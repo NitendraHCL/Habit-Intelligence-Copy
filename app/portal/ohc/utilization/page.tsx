@@ -342,7 +342,7 @@ export default function OHCUtilizationPage() {
 
   // ── Fetch raw appointment rows once per client ──
   const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[]; stageTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
+  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[] }>(
     rawUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
     { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: false }
@@ -371,9 +371,14 @@ export default function OHCUtilizationPage() {
     [filteredRows, allRows, appliedOHCFilters]
   );
 
-  // Stage trends from the same API response (no extra fetch)
-  const allStageTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] = rawData?.stageTrends || [];
-  // Filter by applied date range
+  // Stage trends from separate lightweight API (renders instantly, doesn't wait for 719K rows)
+  const stageTrendUrl = activeClientId ? `/api/ohc/stage-trends?clientId=${activeClientId}&trendView=${trendView}` : null;
+  const { data: stageTrendData } = useSWR<{ trends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
+    stageTrendUrl,
+    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+  );
+  const allStageTrends = stageTrendData?.trends || [];
   const visitTrends = useMemo(() => {
     const dateFrom = format(appliedDateRange.from, "yyyy-MM");
     const dateTo = format(appliedDateRange.to, "yyyy-MM");

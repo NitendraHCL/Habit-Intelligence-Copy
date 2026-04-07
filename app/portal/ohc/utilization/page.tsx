@@ -61,6 +61,7 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  Cell,
 } from "recharts";
 import { format } from "date-fns";
 import { ResetFilter } from "@/components/ui/reset-filter";
@@ -539,43 +540,57 @@ export default function OHCUtilizationPage() {
       borderColor: T.border,
       borderWidth: 1,
       padding: [14, 18],
-      textStyle: { fontSize: 12, fontFamily: "var(--font-inter), system-ui, sans-serif", color: T.textPrimary },
-      extraCssText: "border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,0.10);",
+      textStyle: { fontSize: 12, fontFamily: "Inter, system-ui, sans-serif", color: T.textPrimary },
+      extraCssText: "border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.12);",
       formatter: (p: any) => {
-        const pct = treemapTotal > 0 ? ((p.value / treemapTotal) * 100).toFixed(0) : "0";
-        const uniqueEst = Math.round(p.value * 0.65);
-        return `<div style="min-width:180px"><div style="font-size:14px;font-weight:700;margin-bottom:8px">${p.name}</div><div style="font-size:13px;color:${T.textSecondary}">Consults: <strong style="color:${T.textPrimary}">${formatNum(p.value)}</strong></div><div style="font-size:13px;color:${T.textSecondary}">Unique Patients: <strong style="color:${T.textPrimary}">${formatNum(uniqueEst)}</strong></div><div style="font-size:13px;color:${T.textSecondary}">Share: <strong style="color:${T.textPrimary}">${pct}% of category</strong></div></div>`;
+        const pct = treemapTotal > 0 ? ((p.value / treemapTotal) * 100).toFixed(1) : "0";
+        return `<div style="min-width:160px"><div style="font-size:14px;font-weight:700;margin-bottom:6px;color:#111827">${p.name}</div><div style="font-size:22px;font-weight:800;color:#111827;margin-bottom:4px">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280">${pct}% of total consultations</div></div>`;
       },
     },
     series: [{
       type: "treemap",
-      data: (charts?.specialtyTreemap || []).map((dd: any, i: number) => ({ ...dd, itemStyle: { color: TREEMAP_COLORS[i % TREEMAP_COLORS.length], borderColor: "#fff", borderWidth: 1 } })),
+      data: (charts?.specialtyTreemap || []).map((dd: any, i: number) => ({
+        ...dd,
+        itemStyle: {
+          color: TREEMAP_COLORS[i % TREEMAP_COLORS.length],
+          borderColor: "#fff",
+          borderWidth: 3,
+          borderRadius: 8,
+        },
+      })),
       roam: false, nodeClick: false, breadcrumb: { show: false },
-      width: "100%", height: "100%",
+      width: "96%", height: "94%",
+      left: "2%", top: "3%",
       label: {
-        show: true, fontSize: 13, fontWeight: 600, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#fff",
-        position: "insideTopLeft", padding: [6, 8],
+        show: true,
+        fontFamily: "Inter, system-ui, sans-serif",
+        color: "#fff",
+        position: "insideTopLeft",
+        padding: [10, 12],
         overflow: "truncate",
         ellipsis: "",
         formatter: (p: any) => {
           const pct = treemapTotal > 0 ? ((p.value / treemapTotal) * 100).toFixed(0) : "0";
           const share = treemapTotal > 0 ? p.value / treemapTotal : 0;
-          if (share < 0.04) return "";
-          if (share < 0.08) return `{nameS|${p.name}}\n{valS|${formatNum(p.value)}  ${pct}%}`;
-          return `{name|${p.name}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
+          if (share < 0.03) return "";
+          if (share < 0.07) return `{nameS|${p.name}}`;
+          return `{name|${p.name}}\n{val|${formatNum(p.value)}  ·  ${pct}%}`;
         },
         rich: {
-          name: { fontSize: 13, fontWeight: 700, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#fff", lineHeight: 20 },
-          val: { fontSize: 12, fontWeight: 500, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "rgba(255,255,255,0.85)", lineHeight: 18 },
-          pct: { fontSize: 11, fontWeight: 400, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "rgba(255,255,255,0.65)", lineHeight: 16 },
-          nameS: { fontSize: 11, fontWeight: 700, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#fff", lineHeight: 16 },
-          valS: { fontSize: 10, fontWeight: 500, fontFamily: "var(--font-inter), system-ui, sans-serif", color: "rgba(255,255,255,0.8)", lineHeight: 14 },
+          name: { fontSize: 14, fontWeight: 700, fontFamily: "Inter, system-ui, sans-serif", color: "#fff", lineHeight: 22, textShadowColor: "rgba(0,0,0,0.2)", textShadowBlur: 2 },
+          val: { fontSize: 12, fontWeight: 500, fontFamily: "Inter, system-ui, sans-serif", color: "rgba(255,255,255,0.9)", lineHeight: 20 },
+          nameS: { fontSize: 11, fontWeight: 700, fontFamily: "Inter, system-ui, sans-serif", color: "#fff", lineHeight: 16, textShadowColor: "rgba(0,0,0,0.2)", textShadowBlur: 2 },
         },
       },
       upperLabel: { show: false },
-      itemStyle: { borderColor: "#fff", borderWidth: 1, gapWidth: 0, borderRadius: 4 },
-      emphasis: { itemStyle: { shadowBlur: 0 }, label: { fontSize: 14 } },
-      levels: [{ itemStyle: { borderColor: "#fff", borderWidth: 1, gapWidth: 0, borderRadius: 4 } }],
+      itemStyle: { borderColor: "#fff", borderWidth: 3, gapWidth: 2, borderRadius: 8 },
+      emphasis: {
+        itemStyle: { shadowBlur: 12, shadowColor: "rgba(0,0,0,0.15)", borderColor: "#fff", borderWidth: 4 },
+        label: { fontSize: 15, fontWeight: 800 },
+      },
+      levels: [{ itemStyle: { borderColor: "#fff", borderWidth: 3, gapWidth: 2, borderRadius: 8 } }],
+      animationDuration: 600,
+      animationEasing: "cubicOut",
     }],
   };
 
@@ -1001,12 +1016,115 @@ export default function OHCUtilizationPage() {
             : "No trend data available for the selected period."} />
         </CVCard>
 
-        <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Proportional distribution of consultations" tooltipText="Treemap where each tile represents a medical specialty. Tile size is proportional to consultation volume — larger tiles mean more visits. Hover to see exact count and percentage share. Quickly identifies which specialties dominate clinic utilization." chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Treemap showing proportional distribution of consultations by specialty">
-          <div style={{ overflowX: "auto", overflowY: "auto" }}>
-            <div style={{ height: 340, minWidth: 600 }}>
-              <ReactECharts option={treemapOption} style={{ height: "100%", width: "100%" }} />
-            </div>
-          </div>
+        <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Proportional distribution of consultations" tooltipText="Donut chart showing consultation share per specialty. Center shows total consults. Hover for exact count and percentage." chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
+          {(() => {
+            const raw = charts?.specialtyTreemap || [];
+            const top6 = raw.slice(0, 6);
+            const othersItems = raw.slice(6);
+            const othersTotal = othersItems.reduce((s: number, d: any) => s + d.value, 0);
+            const donutData = [...top6, ...(othersTotal > 0 ? [{ name: "Others", value: othersTotal }] : [])];
+            const total = donutData.reduce((s: number, d: any) => s + d.value, 0);
+            return (
+              <div style={{ height: 340 }}>
+                <ReactECharts
+                  style={{ height: "100%", width: "100%" }}
+                  option={{
+                    tooltip: {
+                      backgroundColor: "#fff",
+                      borderColor: T.border,
+                      borderWidth: 1,
+                      padding: [12, 16],
+                      appendToBody: true,
+                      extraCssText: "border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:9999;max-height:400px;overflow-y:auto;",
+                      textStyle: { fontSize: 12, fontFamily: "Inter, system-ui, sans-serif", color: T.textPrimary },
+                      formatter: (p: any) => {
+                        const pct = total > 0 ? ((p.value / total) * 100).toFixed(1) : "0";
+                        if (p.name === "Others" && othersItems.length > 0) {
+                          const breakup = othersItems
+                            .map((d: any) => {
+                              const iPct = total > 0 ? ((d.value / total) * 100).toFixed(1) : "0";
+                              return `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0"><span>${d.name}</span><span style="font-weight:600">${formatNum(d.value)} <span style="color:#9CA3AF;font-weight:400">(${iPct}%)</span></span></div>`;
+                            })
+                            .join("");
+                          return `<div style="min-width:220px;max-width:320px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">Others</div><div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:6px">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-bottom:8px">${pct}% of total</div><div style="border-top:1px solid #E5E7EB;padding-top:8px;font-size:12px;color:#374151;max-height:250px;overflow-y:auto">${breakup}</div></div>`;
+                        }
+                        return `<div style="min-width:140px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${p.name}</div><div style="font-size:20px;font-weight:800;color:#111827">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-top:2px">${pct}% of total</div></div>`;
+                      },
+                    },
+                    legend: {
+                      orient: "vertical",
+                      right: 12,
+                      top: "middle",
+                      icon: "none",
+                      itemGap: 6,
+                      formatter: (name: string) => {
+                        const item = donutData.find((d: any) => d.name === name);
+                        const pct = item && total > 0 ? Math.round((item.value / total) * 100) : 0;
+                        const count = item ? formatNum(item.value) : "0";
+                        const idx = donutData.findIndex((d: any) => d.name === name);
+                        const color = name === "Others" ? "#d1d5db" : TREEMAP_COLORS[idx % TREEMAP_COLORS.length];
+                        const barWidth = Math.max(4, pct);
+                        return `{dot|●}  {name|${name}}\n{bar${idx}|${"█".repeat(1)}}  {val|${count}}  {pct|${pct}%}`;
+                      },
+                      textStyle: {
+                        fontSize: 12,
+                        fontFamily: "Inter, system-ui, sans-serif",
+                        color: T.textPrimary,
+                        rich: {
+                          dot: { fontSize: 10, padding: [0, 4, 0, 0] },
+                          name: { fontSize: 12, fontWeight: 600, color: "#111827", lineHeight: 20 },
+                          val: { fontSize: 11, fontWeight: 500, color: "#374151", padding: [0, 2, 0, 0] },
+                          pct: { fontSize: 11, fontWeight: 400, color: "#9CA3AF" },
+                          ...Object.fromEntries(donutData.map((d: any, i: number) => [
+                            `bar${i}`,
+                            {
+                              fontSize: 6,
+                              color: d.name === "Others" ? "#d1d5db" : TREEMAP_COLORS[i % TREEMAP_COLORS.length],
+                              lineHeight: 14,
+                              width: Math.max(8, Math.round((d.value / total) * 120)),
+                              backgroundColor: d.name === "Others" ? "#d1d5db" : TREEMAP_COLORS[i % TREEMAP_COLORS.length],
+                              height: 4,
+                              borderRadius: 2,
+                            },
+                          ])),
+                        },
+                      },
+                    },
+                    series: [{
+                      type: "pie",
+                      radius: ["50%", "80%"],
+                      center: ["32%", "50%"],
+                      avoidLabelOverlap: true,
+                      itemStyle: { borderColor: "#fff", borderWidth: 3, borderRadius: 8 },
+                      label: { show: false },
+                      emphasis: {
+                        scale: true,
+                        scaleSize: 8,
+                        itemStyle: { shadowBlur: 16, shadowColor: "rgba(0,0,0,0.15)", borderWidth: 2, borderColor: "#fff" },
+                        label: { show: false },
+                      },
+                      data: donutData.map((d: any, i: number) => ({
+                        name: d.name,
+                        value: d.value,
+                        itemStyle: { color: d.name === "Others" ? "#d1d5db" : TREEMAP_COLORS[i % TREEMAP_COLORS.length] },
+                      })),
+                    }],
+                    graphic: [{
+                      type: "group",
+                      left: "35%",
+                      top: "middle",
+                      children: [
+                        { type: "text", style: { text: formatNum(total), x: 0, y: -10, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: "Inter, system-ui, sans-serif", fill: "#111827" } },
+                        { type: "text", style: { text: "Total", x: 0, y: 16, textAlign: "center", fontSize: 12, fontWeight: 500, fontFamily: "Inter, system-ui, sans-serif", fill: "#9CA3AF" } },
+                      ],
+                    }],
+                    animationDuration: 600,
+                    animationEasing: "cubicOut",
+                  }}
+                />
+              </div>
+            );
+          })()}
           <InsightBox text={charts?.specialtyTreemap?.length > 0 && kpis?.totalConsults
             ? `${charts.specialtyTreemap[0].name} accounts for ${Math.round((charts.specialtyTreemap[0].value / kpis.totalConsults) * 100)}% of all consultations (${formatNum(charts.specialtyTreemap[0].value)} of ${formatNum(kpis.totalConsults)}).`
             : "Specialty breakdown will appear once data is loaded."} />

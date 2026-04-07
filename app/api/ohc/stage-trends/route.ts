@@ -15,58 +15,59 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No client selected" }, { status: 400 });
     }
 
-    let periodExpr: string;
-    let periodFormat: string;
-    switch (trendView) {
-      case "weekly":
-        periodExpr = "DATE_TRUNC('week', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('week', a.slotstarttime), 'YYYY-"W"IW')`;
-        break;
-      case "yearly":
-        periodExpr = "DATE_TRUNC('year', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('year', a.slotstarttime), 'YYYY')`;
-        break;
-      default:
-        periodExpr = "DATE_TRUNC('month', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('month', a.slotstarttime), 'YYYY-MM')`;
-        break;
-    }
-
+    // Fetch daily pre-aggregated data from stage_master
     const rows = await dwQuery<{
-      period: string;
+      date: string;
       stage_group: string;
       count: string;
       unique_patients: string;
     }>(
       `SELECT
-        ${periodFormat} AS period,
+        TO_CHAR(slotstarttime, 'YYYY-MM-DD') AS date,
         CASE
-          WHEN a.stage IN ('Completed', 'Prescription Sent', 'Re Open') THEN 'Completed'
-          WHEN a.stage = 'Cancelled' THEN 'Cancelled'
-          WHEN a.stage = 'NoShow' THEN 'NoShow'
+          WHEN stage IN ('Completed', 'Prescription Sent', 'Re Open') THEN 'Completed'
+          WHEN stage = 'Cancelled' THEN 'Cancelled'
+          WHEN stage = 'NoShow' THEN 'NoShow'
           ELSE 'Other'
         END AS stage_group,
         COUNT(*) AS count,
-        COUNT(DISTINCT a.uhid) AS unique_patients
-      FROM aggregated_table.agg_appointment a
-      WHERE a.cug_code_reg = $1
-      GROUP BY ${periodExpr}, stage_group
-      ORDER BY ${periodExpr}, stage_group`,
+        COUNT(DISTINCT uhid) AS unique_patients
+      FROM aggregated_table.stage_master
+      WHERE cug_code_reg = $1
+      GROUP BY cug_code_reg, TO_CHAR(slotstarttime, 'YYYY-MM-DD'), stage_group
+      ORDER BY date, stage_group`,
       [cugCode]
     );
 
-    // Pivot into { period, completed, cancelled, noShow, uniquePatients }
+    // Group daily rows into the requested period (weekly/monthly/yearly)
     const periodMap = new Map<string, { completed: number; cancelled: number; noShow: number; uniquePatients: number }>();
+
     for (const r of rows) {
-      if (!periodMap.has(r.period)) periodMap.set(r.period, { completed: 0, cancelled: 0, noShow: 0, uniquePatients: 0 });
-      const entry = periodMap.get(r.period)!;
+      const d = r.date; // "YYYY-MM-DD"
+      let period: string;
+      if (trendView === "weekly") {
+        const dt = new Date(d);
+        const jan1 = new Date(dt.getFullYear(), 0, 1);
+        const days = Math.floor((dt.getTime() - jan1.getTime()) / 86400000);
+        const week = Math.ceil((days + jan1.getDay() + 1) / 7);
+        period = `${dt.getFullYear()}-W${String(week).padStart(2, "0")}`;
+      } else if (trendView === "yearly") {
+        period = d.slice(0, 4);
+      } else {
+        period = d.slice(0, 7);
+      }
+
+      if (!periodMap.has(period)) periodMap.set(period, { completed: 0, cancelled: 0, noShow: 0, uniquePatients: 0 });
+      const entry = periodMap.get(period)!;
+      const count = Number(r.count);
+      const patients = Number(r.unique_patients);
       if (r.stage_group === "Completed") {
-        entry.completed = Number(r.count);
-        entry.uniquePatients = Number(r.unique_patients);
+        entry.completed += count;
+        entry.uniquePatients += patients;
       } else if (r.stage_group === "Cancelled") {
-        entry.cancelled = Number(r.count);
+        entry.cancelled += count;
       } else if (r.stage_group === "NoShow") {
-        entry.noShow = Number(r.count);
+        entry.noShow += count;
       }
     }
 

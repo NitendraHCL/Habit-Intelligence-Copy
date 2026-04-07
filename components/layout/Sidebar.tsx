@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { navigation, type NavItem } from "@/lib/config/navigation";
 import { useWalkthrough } from "@/components/walkthrough/WalkthroughProvider";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -318,6 +319,7 @@ export function Sidebar() {
   const [flyout, setFlyout] = useState<{ item: NavItem; top: number } | null>(null);
   const { shouldExpandSidebar } = useWalkthrough();
   const { user, assignedClients, activeClientId, setActiveClientId } = useAuth();
+  const { isPageVisible } = useConfig();
   const activeClient = assignedClients.find((c) => c.id === activeClientId);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
 
@@ -439,7 +441,17 @@ export function Sidebar() {
       {/* Navigation with section labels */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <nav className={cn("flex flex-col", effectiveCollapsed ? "px-2 py-3" : "")}>
-          {navigation.map((item, index) => {
+          {navigation.filter((item) => {
+            // Filter parent page visibility
+            if (!isPageVisible(item.href)) return false;
+            return true;
+          }).map((item, index) => {
+            // Filter children visibility
+            const filteredItem = item.children
+              ? { ...item, children: item.children.filter((child) => isPageVisible(child.href)) }
+              : item;
+            // Hide parent if all children are hidden
+            if (filteredItem.children && filteredItem.children.length === 0) return null;
             const sectionLabel = !effectiveCollapsed
               ? getSectionLabel(item, index)
               : null;
@@ -453,7 +465,7 @@ export function Sidebar() {
                   </div>
                 )}
                 <div className={cn(!effectiveCollapsed && "px-4")}>
-                  <NavItemLink item={item} isCollapsed={effectiveCollapsed} onFlyout={handleFlyout} />
+                  <NavItemLink item={filteredItem} isCollapsed={effectiveCollapsed} onFlyout={handleFlyout} />
                 </div>
               </div>
             );

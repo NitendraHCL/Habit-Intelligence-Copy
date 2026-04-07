@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "@/lib/contexts/auth-context";
+import { ConfigProvider } from "@/lib/contexts/config-context";
 import { FilterProvider } from "@/lib/filter-context";
 import { AIPanelProvider } from "@/lib/ai-panel-context";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -16,6 +17,7 @@ export default function PortalLayout({
 }) {
   return (
     <AuthProvider>
+      <ConfigProvider>
       <FilterProvider>
         <AIPanelProvider>
           <WalkthroughProvider>
@@ -29,6 +31,7 @@ export default function PortalLayout({
           </WalkthroughProvider>
         </AIPanelProvider>
       </FilterProvider>
+      </ConfigProvider>
     </AuthProvider>
   );
 }

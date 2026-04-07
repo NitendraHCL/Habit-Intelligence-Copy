@@ -67,9 +67,12 @@ model Client {
   hasHabitApp     Boolean  @default(false) @map("has_habit_app")
   aiProvider      String?  @map("ai_provider")
   aiContextNotes  String?  @map("ai_context_notes")
-  metricOverrides Json?    @map("metric_overrides")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  metricOverrides   Json?    @map("metric_overrides")
+  draftConfig       Json?    @map("draft_config")
+  publishedConfig   Json?    @map("published_config")
+  configPublishedAt DateTime? @map("config_published_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   users               User[]
   userAssignments      UserClientAssignment[]

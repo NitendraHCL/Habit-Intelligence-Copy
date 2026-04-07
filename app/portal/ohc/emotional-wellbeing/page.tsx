@@ -280,7 +280,7 @@ export default function EmotionalWellbeingPage() {
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[],
   });
 
-  const [demoTab, setDemoTab] = useState<"age" | "gender" | "location" | "shift">("age");
+  const [demoTab, setDemoTab] = useState<"age" | "gender">("age");
   const [trendView, setTrendView] = useState<"year" | "month">("month");
   const [activeImpression, setActiveImpression] = useState<string>("");
   const [selectedVisitBucket, setSelectedVisitBucket] = useState<string>("");
@@ -489,7 +489,7 @@ export default function EmotionalWellbeingPage() {
         {/* Patient Demographics */}
         <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Demographic distribution of patients" tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
-            {(["age", "gender", "location", "shift"] as const).map((tab) => (
+            {(["age", "gender"] as const).map((tab) => (
               <button key={tab} onClick={() => setDemoTab(tab)}
                 className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-all ${demoTab === tab ? "border-current" : "border-transparent"}`}
                 style={{ color: demoTab === tab ? T.teal : T.textMuted }}>

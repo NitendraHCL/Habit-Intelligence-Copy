@@ -7,7 +7,7 @@ export interface RawAppointment {
   speciality_name: string;
   patient_gender: string;
   age_years: number | null;
-  relation: string | null;
+  relationship: string | null;
 }
 
 /** slotdate now arrives as "YYYY-MM-DD" from the API (TO_CHAR in SQL) — use as-is */
@@ -75,7 +75,7 @@ export function filterRows(rows: RawAppointment[], filters: OHCFilters): RawAppo
     if (filters.dateTo && d > filters.dateTo) return false;
     if (filters.locations.length && !filters.locations.includes(r.facility_name)) return false;
     if (filters.specialties.length && !filters.specialties.includes(r.speciality_name)) return false;
-    if (filters.relations.length && (!r.relation || !filters.relations.includes(r.relation))) return false;
+    if (filters.relations.length && (!r.relationship || !filters.relations.includes(r.relationship))) return false;
     if (!matchesGenderFilter(r.patient_gender, filters.genders)) return false;
     if (!matchesAgeFilter(r.age_years, filters.ageGroups)) return false;
     return true;
@@ -406,7 +406,7 @@ export function extractFilterOptions(rows: RawAppointment[]) {
   for (const r of rows) {
     if (r.facility_name?.trim()) locations.add(r.facility_name);
     if (r.speciality_name) specialties.add(r.speciality_name);
-    if (r.relation?.trim()) relations.add(r.relation);
+    if (r.relationship?.trim()) relations.add(r.relationship);
   }
   return {
     genders: ["Male", "Female", "Others"],

@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       dwQuery<{ facility_name: string }>(
         `SELECT DISTINCT a.facility_name
          FROM aggregated_table.agg_appointment a
-         WHERE a.cug_code_reg = $1
+         WHERE a.cug_code_mapped = $1
            AND a.facility_name IS NOT NULL
            AND TRIM(a.facility_name) != ''
          ORDER BY a.facility_name`,
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       dwQuery<{ speciality_name: string }>(
         `SELECT DISTINCT a.speciality_name
          FROM aggregated_table.agg_appointment a
-         WHERE a.cug_code_reg = $1
+         WHERE a.cug_code_mapped = $1
            AND a.speciality_name IS NOT NULL
          ORDER BY a.speciality_name`,
         [cugCode]

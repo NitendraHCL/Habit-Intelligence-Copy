@@ -19,7 +19,7 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
 
   const conditions: string[] = [
-    `a.cug_code_reg = $1`,
+    `a.cug_code_mapped = $1`,
     `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
   ];
   const prevConditions: string[] = [...conditions];

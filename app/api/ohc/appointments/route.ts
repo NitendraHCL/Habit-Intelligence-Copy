@@ -24,7 +24,7 @@ async function handler(request: NextRequest) {
       speciality_name: string;
       patient_gender: string;
       age_years: number;
-      relation: string | null;
+      relationship: string | null;
     }>(
       `SELECT
         TO_CHAR(a.slotstarttime, 'YYYY-MM-DD') AS slotdate,
@@ -35,9 +35,9 @@ async function handler(request: NextRequest) {
         a.speciality_name,
         a.patient_gender,
         a.age_years,
-        a.relation
+        a.relationship
       FROM aggregated_table.agg_appointment a
-      WHERE a.cug_code_reg = $1
+      WHERE a.cug_code_mapped = $1
         AND a.stage IN ('Completed', 'Prescription Sent', 'Re Open')
       ORDER BY a.slotstarttime`,
       [cugCode]

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     const conditions: string[] = [
-      `a.cug_code_reg = $1`,
+      `a.cug_code_mapped = $1`,
       `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
     ];
     const params: unknown[] = [cugCode];

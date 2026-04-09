@@ -499,3 +499,114 @@ export function aggregateEmotionalWellbeing(allRows: RawAppointment[], filters: 
     },
   };
 }
+
+/** Aggregate repeat visits data from appointment rows */
+export function aggregateRepeatVisits(allRows: RawAppointment[], filters: OHCFilters, minVisits: number = 2) {
+  const filtered = filterRows(allRows, filters);
+
+  // Count visits per uhid
+  const uhidCounts = new Map<string, number>();
+  for (const r of filtered) uhidCounts.set(r.uhid, (uhidCounts.get(r.uhid) || 0) + 1);
+
+  // Repeat patients = uhid with minVisits+ visits
+  const repeatUhids = new Map<string, number>();
+  uhidCounts.forEach((count, uhid) => { if (count >= minVisits) repeatUhids.set(uhid, count); });
+
+  const totalRepeatPatients = repeatUhids.size;
+  const totalConsultsByRepeat = Array.from(repeatUhids.values()).reduce((s, c) => s + c, 0);
+  const avgVisitFrequency = totalRepeatPatients > 0
+    ? Math.round((totalConsultsByRepeat / totalRepeatPatients) * 10) / 10
+    : 0;
+
+  // Repeat rows only
+  const repeatRows = filtered.filter((r) => repeatUhids.has(r.uhid));
+
+  // Demographics: age groups
+  const ageMap = new Map<string, number>();
+  const seenAgeUhids = new Map<string, Set<string>>();
+  for (const r of repeatRows) {
+    const ag = getAgeGroup(r.age_years);
+    if (!ag) continue;
+    if (!seenAgeUhids.has(ag)) seenAgeUhids.set(ag, new Set());
+    seenAgeUhids.get(ag)!.add(r.uhid);
+  }
+  seenAgeUhids.forEach((uhids, ag) => ageMap.set(ag, uhids.size));
+  const ageGroups = ["<20", "20-35", "36-40", "41-60", "61+"]
+    .filter((ag) => ageMap.has(ag))
+    .map((ag) => ({ label: ag, value: ageMap.get(ag) || 0 }));
+
+  // Demographics: gender
+  const genderUhids = new Map<string, Set<string>>();
+  for (const r of repeatRows) {
+    const g = normalizeGender(r.patient_gender);
+    const label = g === "M" ? "Male" : g === "F" ? "Female" : "Others";
+    if (!genderUhids.has(label)) genderUhids.set(label, new Set());
+    genderUhids.get(label)!.add(r.uhid);
+  }
+  const genderSplit = Array.from(genderUhids.entries())
+    .map(([label, uhids]) => ({ name: label, value: uhids.size }))
+    .sort((a, b) => b.value - a.value);
+
+  // Demographics: location
+  const locUhids = new Map<string, Set<string>>();
+  for (const r of repeatRows) {
+    if (!r.facility_name?.trim()) continue;
+    if (!locUhids.has(r.facility_name)) locUhids.set(r.facility_name, new Set());
+    locUhids.get(r.facility_name)!.add(r.uhid);
+  }
+  const locationDistribution = Array.from(locUhids.entries())
+    .map(([name, uhids]) => ({ name, value: uhids.size }))
+    .sort((a, b) => b.value - a.value);
+
+  // Visit frequency distribution (2 visits, 3 visits, 4 visits, 5+ visits)
+  const freqBuckets: Record<string, number> = {};
+  repeatUhids.forEach((count) => {
+    const bucket = count >= 5 ? "5+" : String(count);
+    freqBuckets[bucket] = (freqBuckets[bucket] || 0) + 1;
+  });
+  const repeatVisitFrequency = ["2", "3", "4", "5+"]
+    .filter((b) => freqBuckets[b])
+    .map((bucket) => ({ visits: bucket, patients: freqBuckets[bucket] || 0 }));
+
+  // Specialty treemap — repeat patients per specialty
+  const specUhids = new Map<string, Set<string>>();
+  for (const r of repeatRows) {
+    if (!r.speciality_name) continue;
+    if (!specUhids.has(r.speciality_name)) specUhids.set(r.speciality_name, new Set());
+    specUhids.get(r.speciality_name)!.add(r.uhid);
+  }
+  const specialtyTreemap: Record<string, { name: string; value: number }[]> = {
+    all: Array.from(specUhids.entries())
+      .map(([name, uhids]) => ({ name, value: uhids.size }))
+      .sort((a, b) => b.value - a.value),
+  };
+
+  return {
+    kpis: {
+      totalRepeatPatients,
+      avgVisitFrequency,
+      totalConsultsByRepeat,
+      avgNps: 0, // needs NPS data
+    },
+    charts: {
+      chronicVsAcute: { chronic: 0, acute: 0 }, // needs diagnosis data
+      demographics: {
+        ageGroups,
+        genderSplit,
+        locationDistribution,
+      },
+      repeatVisitFrequency,
+      specialtyTreemap,
+      treemapYears: ["all"],
+      conditionTransitions: [],
+      visitFrequencyNps: [],
+      recurringConditions: { chronic: [], acute: [] },
+      repeatUserSegments: [],
+      sankeyFlow: { nodes: [], links: [] },
+      vitalTotals: { v1: {}, v2: {}, v3: {} },
+      cohortVisitFrequency: {},
+      cohortYears: [],
+    },
+    lastUpdated: new Date().toISOString(),
+  };
+}

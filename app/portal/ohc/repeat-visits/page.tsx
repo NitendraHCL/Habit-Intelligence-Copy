@@ -3,7 +3,12 @@
 import { T, CHART_PALETTE } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import useSWR from "swr";
+import {
+  type RawAppointment,
+  type OHCFilters,
+  aggregateRepeatVisits,
+} from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -295,21 +300,32 @@ export default function RepeatVisitsPage() {
     return cc.visible;
   };
 
-  const extraParams = useMemo(() => {
-    const p: Record<string, string> = {};
-    if (dateRange.from) p.dateFrom = dateRange.from.toISOString();
-    if (dateRange.to) p.dateTo = dateRange.to.toISOString();
-    if (appliedLocations.length) p.locations = appliedLocations.join(",");
-    if (appliedGenders.length) p.genders = appliedGenders.join(",");
-    if (appliedAgeGroups.length) p.ageGroups = appliedAgeGroups.join(",");
-    p.minVisits = String(minVisits);
-    p.conditionFilter = conditionFilter;
-    return p;
-  }, [dateRange, appliedLocations, appliedGenders, appliedAgeGroups, minVisits, conditionFilter]);
+  // Fetch raw appointment data (shared with utilization page via SWR cache)
+  const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
+  const { data: rawData, isLoading } = useSWR<{ rows: RawAppointment[] }>(
+    rawUrl,
+    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+  );
+  const allRows = rawData?.rows || [];
+  const isValidating = false;
 
-  const { data, isLoading, isValidating } = useDashboardData("ohc/repeat-visits", extraParams);
-  const kpis = (data as any)?.kpis;
-  const charts = (data as any)?.charts;
+  const appliedOHCFilters = useMemo((): OHCFilters => ({
+    dateFrom: dateRange.from ? dateRange.from.toISOString().slice(0, 10) : "",
+    dateTo: dateRange.to ? dateRange.to.toISOString().slice(0, 10) : "",
+    locations: appliedLocations,
+    genders: appliedGenders,
+    ageGroups: appliedAgeGroups,
+    specialties: [],
+    relations: [],
+  }), [dateRange, appliedLocations, appliedGenders, appliedAgeGroups]);
+
+  const aggregated = useMemo(
+    () => allRows.length ? aggregateRepeatVisits(allRows, appliedOHCFilters, minVisits) : null,
+    [allRows, appliedOHCFilters, minVisits]
+  );
+  const kpis = aggregated?.kpis;
+  const charts = aggregated?.charts;
 
   // Set default treemap year when data loads
   useEffect(() => {

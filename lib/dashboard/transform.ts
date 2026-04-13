@@ -5,6 +5,7 @@
 import type { ChartDefinition } from "./types";
 import type { RendererType } from "./types";
 import { getPreset } from "@/lib/config/chart-presets";
+import { CHART_PALETTE } from "@/lib/design-tokens";
 
 type Row = Record<string, unknown>;
 
@@ -97,14 +98,13 @@ function transformBar(chart: ChartDefinition, data: Row[]): TransformedData {
   const metricKeys = getMetricKeys(chart);
   const labels = getMetricLabels(chart);
   const viz = chart.visualization ?? {};
+  const colors = Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE;
 
   const bars = metricKeys.map((key, i) => ({
     key,
     name: labels[key] ?? key,
     ...(viz.stacked ? { stackId: "stack" } : {}),
-    ...(Array.isArray(viz.colors) && viz.colors[i]
-      ? { color: viz.colors[i] }
-      : {}),
+    color: colors[i % colors.length],
   }));
 
   return {
@@ -127,13 +127,12 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
   const metricKeys = getMetricKeys(chart);
   const labels = getMetricLabels(chart);
   const viz = chart.visualization ?? {};
+  const colors = Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE;
 
   const lines = metricKeys.map((key, i) => ({
     key,
     name: labels[key] ?? key,
-    ...(Array.isArray(viz.colors) && viz.colors[i]
-      ? { color: viz.colors[i] }
-      : {}),
+    color: colors[i % colors.length],
     ...(viz.stepped ? { type: "step" as const } : {}),
   }));
 
@@ -157,14 +156,13 @@ function transformArea(chart: ChartDefinition, data: Row[]): TransformedData {
   const metricKeys = getMetricKeys(chart);
   const labels = getMetricLabels(chart);
   const viz = chart.visualization ?? {};
+  const colors = Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE;
 
   const areas = metricKeys.map((key, i) => ({
     key,
     name: labels[key] ?? key,
     ...(viz.stacked ? { stackId: "stack" } : {}),
-    ...(Array.isArray(viz.colors) && viz.colors[i]
-      ? { color: viz.colors[i] }
-      : {}),
+    color: colors[i % colors.length],
   }));
 
   return {
@@ -198,7 +196,7 @@ function transformPie(chart: ChartDefinition, data: Row[]): TransformedData {
       innerRadius: viz.innerRadius ? parseInt(String(viz.innerRadius)) : 0,
       showLegend: viz.showLegend ?? true,
       showLabel: viz.showLabels ?? true,
-      ...(Array.isArray(viz.colors) ? { colors: viz.colors } : {}),
+      colors: Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE,
     },
   };
 }

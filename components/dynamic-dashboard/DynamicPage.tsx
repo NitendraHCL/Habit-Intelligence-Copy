@@ -122,31 +122,40 @@ function DynamicPageInner({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">{config.title}</h1>
+      {/* Premium Page Header */}
+      <div
+        className="rounded-2xl px-7 py-5 text-white"
+        style={{
+          background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)",
+          boxShadow: "0 4px 24px rgba(79, 70, 229, 0.25)",
+        }}
+      >
+        <h1 className="text-[22px] font-extrabold">{config.title}</h1>
         {config.subtitle && (
-          <p className="text-sm text-gray-500 mt-1">{config.subtitle}</p>
+          <p className="text-[13px] opacity-70 mt-1">{config.subtitle}</p>
         )}
       </div>
 
       {/* Filter bar */}
       {config.filters?.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-xl border border-gray-200">
+        <div
+          className="flex flex-wrap items-center gap-3 px-5 py-3 bg-white rounded-2xl border"
+          style={{ borderColor: "#E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
+        >
           {config.filters.includes("dateRange") && (
             <div className="flex items-center gap-2 text-sm">
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                className="h-9 px-3 border border-gray-200 rounded-lg text-[13px]"
               />
-              <span className="text-gray-400">to</span>
+              <span className="text-gray-400 text-[13px]">to</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                className="h-9 px-3 border border-gray-200 rounded-lg text-[13px]"
               />
             </div>
           )}
@@ -255,15 +264,15 @@ function FilterDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-colors ${
-          selected.length > 0
-            ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-            : "border-gray-200 text-gray-600 hover:bg-gray-50"
-        }`}
+        className="h-9 px-3 flex items-center gap-1.5 rounded-lg text-[13px] font-medium border border-gray-200 hover:bg-gray-50 transition-colors"
+        style={{ color: selected.length > 0 ? "#4f46e5" : "#4B5563" }}
       >
         {label}
         {selected.length > 0 && (
-          <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-medium">
+          <span
+            className="h-[18px] min-w-[18px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold text-white"
+            style={{ backgroundColor: "#4f46e5" }}
+          >
             {selected.length}
           </span>
         )}
@@ -274,25 +283,45 @@ function FilterDropdown({
             className="fixed inset-0 z-30"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute top-full left-0 mt-1 z-40 w-56 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg p-2">
-            {options.length === 0 ? (
-              <p className="text-xs text-gray-400 px-2 py-1">No options</p>
-            ) : (
-              options.map((opt) => (
-                <label
-                  key={opt}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-gray-50 cursor-pointer"
+          <div
+            className="absolute top-full left-0 mt-1 z-40 w-60 bg-white border rounded-2xl shadow-lg overflow-hidden"
+            style={{ borderColor: "#E5E7EB", boxShadow: "0 4px 24px rgba(0,0,0,0.12)" }}
+          >
+            {/* Header with clear */}
+            {selected.length > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                <span className="text-[11px] text-gray-400">{selected.length} selected</span>
+                <button
+                  onClick={() => onChange([])}
+                  className="text-[11px] font-medium"
+                  style={{ color: "#F06050" }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(opt)}
-                    onChange={() => toggle(opt)}
-                    className="rounded border-gray-300 text-indigo-600"
-                  />
-                  {opt}
-                </label>
-              ))
+                  Clear
+                </button>
+              </div>
             )}
+            <div className="max-h-52 overflow-y-auto p-2">
+              {options.length === 0 ? (
+                <p className="text-[12px] text-gray-400 px-2 py-3 text-center">
+                  Loading...
+                </p>
+              ) : (
+                options.map((opt) => (
+                  <label
+                    key={opt}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12px] hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(opt)}
+                      onChange={() => toggle(opt)}
+                      className="rounded border-gray-300 text-indigo-600 h-3.5 w-3.5"
+                    />
+                    <span className="text-gray-700">{opt}</span>
+                  </label>
+                ))
+              )}
+            </div>
           </div>
         </>
       )}

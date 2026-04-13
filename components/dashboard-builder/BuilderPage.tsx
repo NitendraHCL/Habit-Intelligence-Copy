@@ -438,11 +438,21 @@ export default function BuilderPage({
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <GripVertical size={14} className="text-gray-400" />
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  {section.type.replace("_", " ")}
-                </span>
-                <span className="text-xs text-gray-400">
-                  ({section.charts.length} charts)
+                <input
+                  type="text"
+                  value={section.title ?? ""}
+                  onChange={(e) => {
+                    setConfig((prev) => {
+                      const sections = [...prev.sections];
+                      sections[sIdx] = { ...sections[sIdx], title: e.target.value || undefined };
+                      return { ...prev, sections };
+                    });
+                  }}
+                  className="text-xs font-medium text-gray-700 bg-transparent border-none outline-none placeholder:text-gray-400 placeholder:uppercase placeholder:tracking-wide w-32"
+                  placeholder={section.type.replace("_", " ")}
+                />
+                <span className="text-[10px] text-gray-400 uppercase tracking-wide">
+                  {section.type.replace("_", " ")} &middot; {section.charts.length}
                 </span>
               </div>
               <div className="flex items-center gap-1">

@@ -29,22 +29,36 @@ export default function DashboardSection({
 
   if (visibleCharts.length === 0) return null;
 
+  const sectionHeader = (section.title || section.subtitle) ? (
+    <div className="mb-4">
+      {section.title && (
+        <h2 className="text-[15px] font-bold text-gray-900">{section.title}</h2>
+      )}
+      {section.subtitle && (
+        <p className="text-[12px] text-gray-500 mt-0.5">{section.subtitle}</p>
+      )}
+    </div>
+  ) : null;
+
   if (section.type === "kpi_row") {
     return (
-      <div
-        className="grid gap-4"
-        style={{
-          gridTemplateColumns: `repeat(${visibleCharts.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {visibleCharts.map((chart) => (
-          <DynamicChart
-            key={chart.id}
-            chart={chart}
-            clientId={clientId}
-            filters={filters}
-          />
-        ))}
+      <div>
+        {sectionHeader}
+        <div
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns: `repeat(${visibleCharts.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {visibleCharts.map((chart) => (
+            <DynamicChart
+              key={chart.id}
+              chart={chart}
+              clientId={clientId}
+              filters={filters}
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -52,38 +66,44 @@ export default function DashboardSection({
   if (section.type === "chart_grid") {
     const cols = section.columns ?? 2;
     return (
-      <div
-        className="grid gap-6"
-        style={{
-          gridTemplateColumns:
-            visibleCharts.length === 1
-              ? "1fr"
-              : `repeat(${Math.min(cols, visibleCharts.length)}, minmax(0, 1fr))`,
-        }}
-      >
-        {visibleCharts.map((chart) => (
-          <DynamicChart
-            key={chart.id}
-            chart={chart}
-            clientId={clientId}
-            filters={filters}
-          />
-        ))}
+      <div>
+        {sectionHeader}
+        <div
+          className="grid gap-6"
+          style={{
+            gridTemplateColumns:
+              visibleCharts.length === 1
+                ? "1fr"
+                : `repeat(${Math.min(cols, visibleCharts.length)}, minmax(0, 1fr))`,
+          }}
+        >
+          {visibleCharts.map((chart) => (
+            <DynamicChart
+              key={chart.id}
+              chart={chart}
+              clientId={clientId}
+              filters={filters}
+            />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (section.type === "full_width") {
     return (
-      <div className="space-y-6">
-        {visibleCharts.map((chart) => (
-          <DynamicChart
-            key={chart.id}
-            chart={chart}
-            clientId={clientId}
-            filters={filters}
-          />
-        ))}
+      <div>
+        {sectionHeader}
+        <div className="space-y-6">
+          {visibleCharts.map((chart) => (
+            <DynamicChart
+              key={chart.id}
+              chart={chart}
+              clientId={clientId}
+              filters={filters}
+            />
+          ))}
+        </div>
       </div>
     );
   }

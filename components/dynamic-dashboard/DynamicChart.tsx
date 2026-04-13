@@ -88,6 +88,18 @@ export default function DynamicChart({
     }
   };
 
+  // KPI cards get a dedicated premium layout
+  if (chart.type === "kpi" || chart.type === "stat_card") {
+    return (
+      <KPICardPremium
+        chart={chart}
+        data={response?.data}
+        isLoading={isLoading && !error}
+        error={!!error}
+      />
+    );
+  }
+
   return (
     <ChartCard
       title={chart.title}
@@ -170,7 +182,7 @@ function ChartRenderer({
     case "table":
       return <TableRenderer {...(props as any)} />;
     case "kpi":
-      return <KPIRenderer {...(props as any)} />;
+      return null; // KPIs handled by KPICardPremium before ChartRenderer
     case "html":
       return <HTMLRenderer {...(props as any)} />;
     default:
@@ -178,40 +190,125 @@ function ChartRenderer({
   }
 }
 
-// ── Inline KPI renderer ──
+// ── Premium KPI Card (matches hardcoded dashboard style) ──
 
-function KPIRenderer({
-  value,
-  format,
-  thresholdColor,
-  thresholdLabel,
+function formatNum(n: number): string {
+  if (!n && n !== 0) return "0";
+  if (n >= 10000000) return `${(n / 10000000).toFixed(2)}Cr`;
+  if (n >= 100000) return `${(n / 100000).toFixed(2)}L`;
+  if (n >= 1000) return n.toLocaleString("en-IN");
+  return String(Math.round(n * 100) / 100);
+}
+
+function formatKPIValue(value: number, format?: string): string {
+  switch (format) {
+    case "percentage":
+      return `${value.toFixed(1)}%`;
+    case "compact":
+      return formatNum(value);
+    case "currency":
+      return `₹${formatNum(value)}`;
+    case "decimal":
+      return value.toFixed(2);
+    default:
+      return formatNum(value);
+  }
+}
+
+function KPICardPremium({
+  chart,
+  data,
+  isLoading,
+  error,
 }: {
-  value: number;
-  format?: string;
-  thresholdColor?: string;
-  thresholdLabel?: string;
+  chart: ChartDefinition;
+  data?: Record<string, unknown>[];
+  isLoading: boolean;
+  error: boolean;
 }) {
-  const formatted =
-    format === "percentage"
-      ? `${value.toFixed(1)}%`
-      : value.toLocaleString("en-IN");
+  const metricKey = chart.transform.metrics?.length
+    ? chart.transform.metrics[0].key
+    : "value";
+  const value = data?.length ? Number(data[0][metricKey] ?? 0) : 0;
+  const formatted = formatKPIValue(value, chart.visualization?.format as string);
+
+  // Threshold evaluation
+  let accentColor = "#4f46e5";
+  let thresholdLabel = "";
+  if (chart.thresholds?.length) {
+    for (const t of chart.thresholds) {
+      if (t.above !== undefined && value > t.above) {
+        accentColor = t.color;
+        thresholdLabel = t.label;
+      } else if (t.max !== undefined && t.min !== undefined && value >= t.min && value <= t.max) {
+        accentColor = t.color;
+        thresholdLabel = t.label;
+      } else if (t.max !== undefined && t.min === undefined && value <= t.max) {
+        accentColor = t.color;
+        thresholdLabel = t.label;
+      }
+    }
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-1">
-      <span className="text-3xl font-bold" style={{ color: thresholdColor }}>
-        {formatted}
-      </span>
-      {thresholdLabel && (
-        <span
-          className="text-xs px-2 py-0.5 rounded-full"
-          style={{
-            backgroundColor: thresholdColor ? `${thresholdColor}20` : undefined,
-            color: thresholdColor,
-          }}
-        >
-          {thresholdLabel}
-        </span>
-      )}
+    <div
+      className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px"
+      style={{
+        border: "1px solid #E5E7EB",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div className="p-6">
+        {/* Label */}
+        <div className="flex items-center gap-1.5">
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.08em]"
+            style={{ color: "#9CA3AF" }}
+          >
+            {chart.title}
+          </p>
+        </div>
+
+        {/* Value */}
+        {isLoading ? (
+          <div className="h-11 w-28 bg-gray-100 rounded animate-pulse mt-2.5" />
+        ) : error ? (
+          <p className="text-sm text-red-400 mt-2.5">Error</p>
+        ) : (
+          <p
+            className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em]"
+            style={{ color: accentColor }}
+          >
+            {formatted}
+          </p>
+        )}
+
+        {/* Threshold badge */}
+        {thresholdLabel && !isLoading && (
+          <div className="flex items-center gap-1 mt-1.5">
+            <span
+              className="text-xs font-semibold"
+              style={{ color: accentColor }}
+            >
+              {thresholdLabel}
+            </span>
+          </div>
+        )}
+
+        {/* Description in blue info box */}
+        {chart.subtitle && (
+          <p
+            className="text-xs mt-3.5 leading-relaxed rounded-xl px-3 py-2"
+            style={{
+              backgroundColor: "#eef2ff",
+              color: "#4B5563",
+              border: "1px solid #c7d2fe",
+            }}
+          >
+            {chart.subtitle}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -230,10 +327,7 @@ function HTMLRenderer({
   title?: string;
   format?: string;
 }) {
-  const formatted =
-    format === "percentage"
-      ? `${value.toFixed(1)}%`
-      : value.toLocaleString("en-IN");
+  const formatted = formatKPIValue(value, format);
 
   if (chartType === "progress_bar") {
     const pct = Math.min(100, Math.max(0, value));
@@ -262,7 +356,6 @@ function HTMLRenderer({
     );
   }
 
-  // comparison_card or fallback
   return (
     <div className="flex items-center justify-center h-full">
       <span className="text-2xl font-bold">{formatted}</span>

@@ -282,6 +282,8 @@ export interface SectionDefinition {
   columns?: number;
   charts: string[];
   label?: string;
+  title?: string;
+  subtitle?: string;
 }
 
 // ---------------------------------------------------------------------------

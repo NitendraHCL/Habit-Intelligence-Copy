@@ -4,7 +4,10 @@ import { useState, useMemo, useCallback } from "react";
 import useSWR from "swr";
 import DashboardSection from "./DashboardSection";
 import { CrossFilterProvider, useCrossFilter } from "./CrossFilterManager";
+import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import { useConfig } from "@/lib/contexts/config-context";
 import type { PageDefinition, QueryRequest } from "@/lib/dashboard/types";
+import type { PageConfig } from "@/lib/types/dashboard-config";
 import { useAuth } from "@/lib/contexts/auth-context";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -56,6 +59,28 @@ function DynamicPageInner({
   clientId: string;
 }) {
   const { clearAll } = useCrossFilter();
+  const { isChartVisible } = useConfig();
+  const { user } = useAuth();
+  const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
+  const isPreview = previewConfig !== null;
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+
+  // Build chart list for ConfigurePanel
+  const chartDefs = useMemo(() => {
+    return Object.values(config.charts).map((c) => ({
+      id: c.id,
+      label: c.title || c.id,
+    }));
+  }, [config.charts]);
+
+  // Filter visibility — check config or preview
+  const isVisible = useCallback((chartId: string) => {
+    if (isPreview && previewConfig?.charts) {
+      const chartConf = previewConfig.charts[chartId];
+      return chartConf ? chartConf.visible !== false : true;
+    }
+    return isChartVisible(config.slug, chartId);
+  }, [isPreview, previewConfig, isChartVisible, config.slug]);
 
   // Scan charts for unique data source tables
   const chartTables = useMemo(() => {
@@ -136,8 +161,8 @@ function DynamicPageInner({
         )}
       </div>
 
-      {/* Filter bar */}
-      {config.filters?.length > 0 && (
+      {/* Filter bar + Configure */}
+      {(config.filters?.length > 0 || isSuperAdmin) && (
         <div
           className="flex flex-wrap items-center gap-3 px-5 py-3 bg-white rounded-2xl border"
           style={{ borderColor: "#E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
@@ -220,6 +245,28 @@ function DynamicPageInner({
               Reset Filters
             </button>
           )}
+
+          {/* Spacer + Configure */}
+          {isSuperAdmin && (
+            <>
+              <div className="flex-1" />
+              <ConfigurePanel
+                pageSlug={config.slug}
+                pageTitle={config.title}
+                charts={chartDefs}
+                filters={config.filters?.filter((f) => f !== "dateRange") ?? []}
+                onPreview={setPreviewConfig}
+                isPreview={isPreview}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Preview banner */}
+      {isPreview && (
+        <div className="px-4 py-2 rounded-xl text-sm font-medium text-center" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+          Preview Mode — changes not saved yet
         </div>
       )}
 
@@ -231,6 +278,7 @@ function DynamicPageInner({
           charts={config.charts}
           clientId={clientId}
           filters={filters}
+          isChartVisible={isVisible}
         />
       ))}
     </div>

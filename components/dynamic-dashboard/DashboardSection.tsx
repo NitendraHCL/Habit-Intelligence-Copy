@@ -13,6 +13,7 @@ interface DashboardSectionProps {
   charts: Record<string, ChartDefinition>;
   clientId: string;
   filters?: QueryRequest["filters"];
+  isChartVisible?: (chartId: string) => boolean;
 }
 
 export default function DashboardSection({
@@ -20,12 +21,14 @@ export default function DashboardSection({
   charts,
   clientId,
   filters,
+  isChartVisible,
 }: DashboardSectionProps) {
   const [activeTab, setActiveTab] = useState(0);
 
   const visibleCharts = section.charts
     .map((id) => charts[id])
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((chart) => isChartVisible ? isChartVisible(chart.id) : true);
 
   if (visibleCharts.length === 0) return null;
 

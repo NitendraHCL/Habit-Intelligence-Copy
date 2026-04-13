@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const [locationRows, specialtyRows] = await Promise.all([
+    const [locationRows, specialtyRows, relationshipRows] = await Promise.all([
       dwQuery<{ facility_name: string }>(
         `SELECT DISTINCT a.facility_name
          FROM aggregated_table.agg_appointment a
@@ -38,6 +38,16 @@ export async function GET(request: NextRequest) {
          ORDER BY a.speciality_name`,
         [cugCode]
       ),
+
+      dwQuery<{ relationship: string }>(
+        `SELECT DISTINCT a.relationship
+         FROM aggregated_table.agg_appointment a
+         WHERE a.cug_code_mapped = $1
+           AND a.relationship IS NOT NULL
+           AND TRIM(a.relationship) != ''
+         ORDER BY a.relationship`,
+        [cugCode]
+      ),
     ]);
 
     return NextResponse.json({
@@ -45,6 +55,7 @@ export async function GET(request: NextRequest) {
       ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
       locations: locationRows.map((r) => r.facility_name),
       specialties: specialtyRows.map((r) => r.speciality_name),
+      relationships: relationshipRows.map((r) => r.relationship),
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

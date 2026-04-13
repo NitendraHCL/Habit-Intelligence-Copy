@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import useSWR from "swr";
 import DashboardSection from "./DashboardSection";
 import { CrossFilterProvider, useCrossFilter } from "./CrossFilterManager";
@@ -57,6 +57,38 @@ function DynamicPageInner({
 }) {
   const { clearAll } = useCrossFilter();
 
+  // Scan charts for unique data source tables
+  const chartTables = useMemo(() => {
+    const tables = new Set<string>();
+    for (const chart of Object.values(config.charts)) {
+      if (chart.dataSource?.table) tables.add(chart.dataSource.table);
+      if (chart.dataSource?.joins) {
+        for (const join of chart.dataSource.joins) tables.add(join.table);
+      }
+    }
+    return Array.from(tables);
+  }, [config.charts]);
+
+  // Fetch filter options from the actual tables the dashboard uses
+  const filterFetcher = useCallback(async () => {
+    if (chartTables.length === 0) return {};
+    const res = await fetch(`/api/data/filter-options?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tables: chartTables }),
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data.options ?? {};
+  }, [clientId, chartTables]);
+
+  // options is a flat map: { facility_name: [...], stage: [...], speciality_name: [...], ... }
+  const { data: filterOptions } = useSWR(
+    clientId && chartTables.length > 0 ? `filter-opts-${clientId}-${chartTables.join(",")}` : null,
+    filterFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 120000 }
+  );
+
   // Filter state
   const [dateFrom, setDateFrom] = useState("2024-01-01");
   const [dateTo, setDateTo] = useState(
@@ -66,6 +98,7 @@ function DynamicPageInner({
   const [genders, setGenders] = useState<string[]>([]);
   const [ageGroups, setAgeGroups] = useState<string[]>([]);
   const [specialties, setSpecialties] = useState<string[]>([]);
+  const [relationships, setRelationships] = useState<string[]>([]);
 
   const filters = useMemo<QueryRequest["filters"]>(
     () => ({
@@ -75,15 +108,17 @@ function DynamicPageInner({
       ...(genders.length ? { genders } : {}),
       ...(ageGroups.length ? { ageGroups } : {}),
       ...(specialties.length ? { specialties } : {}),
+      ...(relationships.length ? { relationships } : {}),
     }),
-    [dateFrom, dateTo, locations, genders, ageGroups, specialties]
+    [dateFrom, dateTo, locations, genders, ageGroups, specialties, relationships]
   );
 
   const hasActiveFilters =
     locations.length > 0 ||
     genders.length > 0 ||
     ageGroups.length > 0 ||
-    specialties.length > 0;
+    specialties.length > 0 ||
+    relationships.length > 0;
 
   return (
     <div className="space-y-6">
@@ -116,6 +151,51 @@ function DynamicPageInner({
             </div>
           )}
 
+          {config.filters.includes("location") && (
+            <FilterDropdown
+              label="Location"
+              options={filterOptions?.facility_name ?? []}
+              selected={locations}
+              onChange={setLocations}
+            />
+          )}
+
+          {config.filters.includes("gender") && (
+            <FilterDropdown
+              label="Gender"
+              options={filterOptions?.patient_gender ?? ["Male", "Female", "Others"]}
+              selected={genders}
+              onChange={setGenders}
+            />
+          )}
+
+          {config.filters.includes("ageGroup") && (
+            <FilterDropdown
+              label="Age Group"
+              options={["<20", "20-35", "36-40", "41-60", "61+"]}
+              selected={ageGroups}
+              onChange={setAgeGroups}
+            />
+          )}
+
+          {config.filters.includes("specialty") && (
+            <FilterDropdown
+              label="Specialty"
+              options={filterOptions?.speciality_name ?? []}
+              selected={specialties}
+              onChange={setSpecialties}
+            />
+          )}
+
+          {config.filters.includes("relationship") && (
+            <FilterDropdown
+              label="Relationship"
+              options={filterOptions?.relationship ?? []}
+              selected={relationships}
+              onChange={setRelationships}
+            />
+          )}
+
           {hasActiveFilters && (
             <button
               onClick={() => {
@@ -123,6 +203,7 @@ function DynamicPageInner({
                 setGenders([]);
                 setAgeGroups([]);
                 setSpecialties([]);
+                setRelationships([]);
                 clearAll();
               }}
               className="px-3 py-1.5 text-xs text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
@@ -143,6 +224,78 @@ function DynamicPageInner({
           filters={filters}
         />
       ))}
+    </div>
+  );
+}
+
+// ── Filter Dropdown ──
+
+function FilterDropdown({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  function toggle(value: string) {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value]
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+          selected.length > 0
+            ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+        }`}
+      >
+        {label}
+        {selected.length > 0 && (
+          <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-medium">
+            {selected.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute top-full left-0 mt-1 z-40 w-56 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg p-2">
+            {options.length === 0 ? (
+              <p className="text-xs text-gray-400 px-2 py-1">No options</p>
+            ) : (
+              options.map((opt) => (
+                <label
+                  key={opt}
+                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(opt)}
+                    onChange={() => toggle(opt)}
+                    className="rounded border-gray-300 text-indigo-600"
+                  />
+                  {opt}
+                </label>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

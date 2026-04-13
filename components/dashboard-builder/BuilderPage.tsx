@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ChartPalette from "./ChartPalette";
 import ChartConfigurator from "./ChartConfigurator";
@@ -51,9 +51,17 @@ export default function BuilderPage({
   const { activeClientId } = useAuth();
   const clientId = activeClientId ?? "";
 
-  const [config, setConfig] = useState<PageDefinition>(
+  const [config, _setConfig] = useState<PageDefinition>(
     initialConfig ?? defaultConfig
   );
+  const configRef = useRef(config);
+  const setConfig = useCallback((updater: PageDefinition | ((prev: PageDefinition) => PageDefinition)) => {
+    _setConfig((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      configRef.current = next;
+      return next;
+    });
+  }, []);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [editingChart, setEditingChart] = useState<Partial<ChartDefinition> | null>(null);
   const [showPageSettings, setShowPageSettings] = useState(!dashboardId);
@@ -179,13 +187,14 @@ export default function BuilderPage({
   // ── Save / Publish ──
 
   async function handleSave() {
-    // Auto-generate title and slug if missing
-    const title = config.title || "Untitled Dashboard";
+    // Always read latest config from ref to avoid stale closures
+    const latest = configRef.current;
+    const title = latest.title || "Untitled Dashboard";
     const slug =
-      config.slug ||
+      latest.slug ||
       `/portal/custom/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`;
 
-    const saveConfig = { ...config, title, slug };
+    const saveConfig = { ...latest, title, slug };
     setConfig(saveConfig);
 
     setSaving(true);

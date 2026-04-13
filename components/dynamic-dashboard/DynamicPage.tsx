@@ -9,6 +9,8 @@ import { useConfig } from "@/lib/contexts/config-context";
 import type { PageDefinition, QueryRequest } from "@/lib/dashboard/types";
 import type { PageConfig } from "@/lib/types/dashboard-config";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { RotateCcw } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -115,6 +117,9 @@ function DynamicPageInner({
   );
 
   // Filter state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [dateFrom, setDateFrom] = useState("2024-01-01");
   const [dateTo, setDateTo] = useState(
     new Date().toISOString().slice(0, 10)
@@ -247,18 +252,51 @@ function DynamicPageInner({
           )}
 
           {/* Spacer + Configure */}
+          <div className="flex-1" />
+
+          {/* Refresh button */}
+          <div className="relative">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={async () => {
+                    setIsRefreshing(true);
+                    setRefreshKey((k) => k + 1);
+                    setTimeout(() => {
+                      setIsRefreshing(false);
+                      setShowRefreshToast(true);
+                      setTimeout(() => setShowRefreshToast(false), 3000);
+                    }, 500);
+                  }}
+                  disabled={isRefreshing}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-gray-50 transition-colors"
+                  style={{ borderColor: "#E5E7EB", color: "#9CA3AF" }}
+                >
+                  <RotateCcw size={15} className={isRefreshing ? "animate-spin" : ""} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Refresh data</TooltipContent>
+            </Tooltip>
+            {showRefreshToast && (
+              <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                  <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <span className="text-[12px] font-medium">Data refreshed</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Configure panel */}
           {isSuperAdmin && (
-            <>
-              <div className="flex-1" />
-              <ConfigurePanel
-                pageSlug={config.slug}
-                pageTitle={config.title}
-                charts={chartDefs}
-                filters={config.filters?.filter((f) => f !== "dateRange") ?? []}
-                onPreview={setPreviewConfig}
-                isPreview={isPreview}
-              />
-            </>
+            <ConfigurePanel
+              pageSlug={config.slug}
+              pageTitle={config.title}
+              charts={chartDefs}
+              filters={config.filters?.filter((f) => f !== "dateRange") ?? []}
+              onPreview={setPreviewConfig}
+              isPreview={isPreview}
+            />
           )}
         </div>
       )}
@@ -273,7 +311,7 @@ function DynamicPageInner({
       {/* Sections */}
       {config.sections.map((section) => (
         <DashboardSection
-          key={section.id}
+          key={`${section.id}-${refreshKey}`}
           section={section}
           charts={config.charts}
           clientId={clientId}

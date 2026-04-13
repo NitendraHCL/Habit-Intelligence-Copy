@@ -2,6 +2,24 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  closestCenter,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import ChartPalette from "./ChartPalette";
 import ChartConfigurator from "./ChartConfigurator";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -281,6 +299,85 @@ export default function BuilderPage({
     }));
   }
 
+  // ── Drag and Drop ──
+  const [activeChartId, setActiveChartId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function findSectionForChart(chartId: string): number {
+    return config.sections.findIndex((s) => s.charts.includes(chartId));
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveChartId(event.active.id as string);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    const activeSectionIdx = findSectionForChart(activeId);
+    // Over could be a chart or a section drop zone (section-{id})
+    let overSectionIdx = findSectionForChart(overId);
+    if (overSectionIdx === -1) {
+      // Check if dropping on a section container
+      const sectionMatch = config.sections.findIndex((s) => s.id === overId);
+      if (sectionMatch !== -1) overSectionIdx = sectionMatch;
+    }
+
+    if (activeSectionIdx === -1 || overSectionIdx === -1) return;
+    if (activeSectionIdx === overSectionIdx) return;
+
+    // Move chart from one section to another
+    setConfig((prev) => {
+      const sections = prev.sections.map((s) => ({ ...s, charts: [...s.charts] }));
+      sections[activeSectionIdx].charts = sections[activeSectionIdx].charts.filter(
+        (id) => id !== activeId
+      );
+      const overChartIdx = sections[overSectionIdx].charts.indexOf(overId);
+      if (overChartIdx !== -1) {
+        sections[overSectionIdx].charts.splice(overChartIdx, 0, activeId);
+      } else {
+        sections[overSectionIdx].charts.push(activeId);
+      }
+      return { ...prev, sections };
+    });
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveChartId(null);
+    if (!over || active.id === over.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    const sectionIdx = findSectionForChart(activeId);
+    if (sectionIdx === -1) return;
+
+    const section = config.sections[sectionIdx];
+    const oldIndex = section.charts.indexOf(activeId);
+    const newIndex = section.charts.indexOf(overId);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+    if (oldIndex === newIndex) return;
+
+    // Reorder within same section
+    setConfig((prev) => {
+      const sections = prev.sections.map((s) => ({ ...s, charts: [...s.charts] }));
+      const arr = sections[sectionIdx].charts;
+      arr.splice(oldIndex, 1);
+      arr.splice(newIndex, 0, activeId);
+      return { ...prev, sections };
+    });
+  }
+
+  const activeChart = activeChartId ? config.charts[activeChartId] : null;
+
   return (
     <div className="flex h-[calc(100vh-64px)]">
       {/* Left Panel — Chart Palette */}
@@ -438,7 +535,14 @@ export default function BuilderPage({
           </div>
         )}
 
-        {/* Sections */}
+        {/* Sections with Drag & Drop */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
         {config.sections.map((section, sIdx) => (
           <div
             key={section.id}
@@ -488,69 +592,40 @@ export default function BuilderPage({
               </div>
             </div>
 
-            {/* Chart cards in this section */}
-            <div
-              className="grid gap-3"
-              style={{
-                gridTemplateColumns:
-                  section.type === "full_width"
-                    ? "1fr"
-                    : section.type === "kpi_row"
-                      ? `repeat(${Math.max(section.charts.length, 1)}, 1fr)`
-                      : `repeat(${section.columns ?? 2}, 1fr)`,
-              }}
+            {/* Chart cards — sortable within section, draggable across sections */}
+            <SortableContext
+              items={section.charts}
+              strategy={section.type === "full_width" ? verticalListSortingStrategy : rectSortingStrategy}
+              id={section.id}
             >
-              {section.charts.map((chartId) => {
-                const chart = config.charts[chartId];
-                if (!chart) return null;
-                return (
-                  <div
-                    key={chartId}
-                    onClick={() => setSelectedChartId(chartId)}
-                    className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                      selectedChartId === chartId
-                        ? "border-indigo-300 bg-indigo-50/50"
-                        : "border-gray-200 hover:border-gray-300 bg-gray-50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {chart.title || "Untitled"}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {chart.type} &middot;{" "}
-                          {chart.transform.metric ?? "count"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditChart(chartId);
-                          }}
-                          className="p-1 rounded hover:bg-white"
-                        >
-                          <Eye size={12} className="text-gray-400" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteChart(chartId);
-                          }}
-                          className="p-1 rounded hover:bg-red-50"
-                        >
-                          <Trash2
-                            size={12}
-                            className="text-gray-400 hover:text-red-500"
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              <div
+                className="grid gap-3 min-h-[48px]"
+                style={{
+                  gridTemplateColumns:
+                    section.type === "full_width"
+                      ? "1fr"
+                      : section.type === "kpi_row"
+                        ? `repeat(${Math.max(section.charts.length, 1)}, 1fr)`
+                        : `repeat(${section.columns ?? 2}, 1fr)`,
+                }}
+              >
+                {section.charts.map((chartId) => {
+                  const chart = config.charts[chartId];
+                  if (!chart) return null;
+                  return (
+                    <SortableChartCard
+                      key={chartId}
+                      chartId={chartId}
+                      chart={chart}
+                      isSelected={selectedChartId === chartId}
+                      onSelect={() => setSelectedChartId(chartId)}
+                      onEdit={() => handleEditChart(chartId)}
+                      onDelete={() => handleDeleteChart(chartId)}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
 
             {section.charts.length === 0 && (
               <div className="py-8 text-center text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
@@ -559,6 +634,21 @@ export default function BuilderPage({
             )}
           </div>
         ))}
+
+          {/* Drag overlay */}
+          <DragOverlay>
+            {activeChart && (
+              <div className="p-3 rounded-lg border-2 border-indigo-400 bg-indigo-50 shadow-lg opacity-90">
+                <div className="text-sm font-medium text-gray-900">
+                  {activeChart.title || "Untitled"}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {activeChart.type} &middot; {activeChart.transform.metric ?? "count"}
+                </div>
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
 
         {/* Add section buttons */}
         <div className="flex items-center gap-2">
@@ -608,6 +698,86 @@ export default function BuilderPage({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Sortable Chart Card ──
+
+function SortableChartCard({
+  chartId,
+  chart,
+  isSelected,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  chartId: string;
+  chart: ChartDefinition;
+  isSelected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: chartId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+        isSelected
+          ? "border-indigo-300 bg-indigo-50/50"
+          : "border-gray-200 hover:border-gray-300 bg-gray-50"
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 touch-none"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={12} className="text-gray-400" />
+          </button>
+          <div>
+            <div className="text-sm font-medium text-gray-900">
+              {chart.title || "Untitled"}
+            </div>
+            <div className="text-xs text-gray-500">
+              {chart.type} &middot; {chart.transform.metric ?? "count"}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="p-1 rounded hover:bg-white"
+          >
+            <Eye size={12} className="text-gray-400" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1 rounded hover:bg-red-50"
+          >
+            <Trash2 size={12} className="text-gray-400 hover:text-red-500" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

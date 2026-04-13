@@ -9,6 +9,7 @@ import { useConfig } from "@/lib/contexts/config-context";
 import type { PageDefinition, QueryRequest } from "@/lib/dashboard/types";
 import type { PageConfig } from "@/lib/types/dashboard-config";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { RotateCcw } from "lucide-react";
 
@@ -152,19 +153,17 @@ function DynamicPageInner({
 
   return (
     <div className="space-y-6">
-      {/* Premium Page Header */}
-      <div
-        className="rounded-2xl px-7 py-5 text-white"
-        style={{
-          background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)",
-          boxShadow: "0 4px 24px rgba(79, 70, 229, 0.25)",
-        }}
-      >
-        <h1 className="text-[22px] font-extrabold">{config.title}</h1>
-        {config.subtitle && (
-          <p className="text-[13px] opacity-70 mt-1">{config.subtitle}</p>
-        )}
-      </div>
+      {/* Page Glance Header with AI Summary */}
+      <PageGlanceBox
+        pageTitle={config.title}
+        pageSubtitle={config.subtitle}
+        kpis={{}}
+        fallbackSummary={config.subtitle || `Dashboard showing ${Object.keys(config.charts).length} charts across ${config.sections.length} sections.`}
+        fallbackChips={Object.values(config.charts)
+          .filter((c) => c.type === "kpi" || c.type === "stat_card")
+          .slice(0, 4)
+          .map((c) => ({ label: c.title, value: "..." }))}
+      />
 
       {/* Filter bar + Configure */}
       {(config.filters?.length > 0 || isSuperAdmin) && (

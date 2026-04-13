@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import useSWR from "swr";
 import dynamic from "next/dynamic";
-import ChartCard from "@/components/charts/ChartCard";
+import CVCardDynamic from "./CVCardDynamic";
 import { transformForChart } from "@/lib/dashboard/transform";
 import { useCrossFilter } from "./CrossFilterManager";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Info } from "lucide-react";
+import { Info, TrendingUp, TrendingDown } from "lucide-react";
+import { CHART_PALETTE } from "@/lib/design-tokens";
 import type { ChartDefinition, QueryRequest } from "@/lib/dashboard/types";
 
 // Lazy-load renderers
@@ -90,6 +91,21 @@ export default function DynamicChart({
     }
   };
 
+  // Generate auto-insight from data
+  const autoInsight = useMemo(() => {
+    if (!response?.data?.length || isLoading) return null;
+    return generateInsight(chart, response.data);
+  }, [chart, response?.data, isLoading]);
+
+  // Auto-generate interaction hint subtitle
+  const interactionHint = useMemo(() => {
+    if (chart.subtitle) return chart.subtitle;
+    return getInteractionHint(chart.type);
+  }, [chart.subtitle, chart.type]);
+
+  // Accent color based on chart type
+  const accentColor = (chart.visualization?.colors as string[])?.[0] ?? CHART_PALETTE[0];
+
   // KPI cards get a dedicated premium layout
   if (chart.type === "kpi" || chart.type === "stat_card") {
     return (
@@ -98,40 +114,48 @@ export default function DynamicChart({
         data={response?.data}
         isLoading={isLoading && !error}
         error={!!error}
+        clientId={clientId}
+        filters={filters}
       />
     );
   }
 
   return (
-    <ChartCard
+    <CVCardDynamic
       title={chart.title}
-      description={chart.subtitle}
+      subtitle={interactionHint}
       tooltipText={chart.tooltipText}
-      height={chart.visualization?.height ?? 350}
+      accentColor={accentColor}
+      accentColorEnd={CHART_PALETTE[1]}
       chartData={response?.data}
+      chartTitle={chart.title}
+      chartDescription={interactionHint}
+      insightText={autoInsight ?? undefined}
     >
       {isLoading && !error && (
-        <div className="flex items-center justify-center h-full">
+        <div className="flex items-center justify-center" style={{ height: chart.visualization?.height ?? 350 }}>
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
         </div>
       )}
       {error && (
-        <div className="flex items-center justify-center h-full text-sm text-red-400">
+        <div className="flex items-center justify-center text-sm text-red-400" style={{ height: chart.visualization?.height ?? 350 }}>
           Query failed — check chart configuration
         </div>
       )}
       {!isLoading && !error && transformed && (
-        <ChartRenderer
-          transformed={transformed}
-          onChartClick={chart.emitFilter ? handleClick : undefined}
-        />
+        <div style={{ height: chart.visualization?.height ?? 350 }}>
+          <ChartRenderer
+            transformed={transformed}
+            onChartClick={chart.emitFilter ? handleClick : undefined}
+          />
+        </div>
       )}
       {!isLoading && !error && !transformed && (
-        <div className="flex items-center justify-center h-full text-sm text-gray-400">
+        <div className="flex items-center justify-center text-sm text-gray-400" style={{ height: chart.visualization?.height ?? 350 }}>
           No data available
         </div>
       )}
-    </ChartCard>
+    </CVCardDynamic>
   );
 }
 
@@ -195,6 +219,12 @@ function ChartRenderer({
 
 // ── Premium KPI Card (matches hardcoded dashboard style) ──
 
+function shiftYear(dateStr: string, years: number): string {
+  const d = new Date(dateStr);
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
+
 function formatNum(n: number): string {
   if (!n && n !== 0) return "0";
   if (n >= 10000000) return `${(n / 10000000).toFixed(2)}Cr`;
@@ -218,22 +248,114 @@ function formatKPIValue(value: number, format?: string): string {
   }
 }
 
+// ── Auto-generate interaction hints ──
+
+function getInteractionHint(chartType: string): string | undefined {
+  const hints: Record<string, string> = {
+    bar: "Hover a bar to see the exact count. Click to filter other charts.",
+    line: "Hover a point to see the value. Trends show changes over time.",
+    area: "Hover to see values. The filled area shows volume over time.",
+    pie: "Hover a slice to see count and percentage.",
+    donut: "Hover a slice to see count and percentage. Center shows total.",
+    treemap: "Hover a rectangle to see count. Larger area = higher value.",
+    sunburst: "Hover an arc to see breakdown. Click to drill down into a segment.",
+    heatmap: "Darker cells indicate higher values. Hover for exact count.",
+    radar: "Each axis represents a metric. Compare shapes across categories.",
+    scatter: "Each dot represents a data point. Hover to see details.",
+    bubble: "Bubble size represents the third dimension. Hover for details.",
+    funnel: "Stages flow top to bottom. Width shows the drop-off at each stage.",
+  };
+  return hints[chartType];
+}
+
+// ── Auto-generate insight text from data ──
+
+function generateInsight(
+  chart: ChartDefinition,
+  data: Record<string, unknown>[]
+): string | null {
+  if (data.length === 0) return null;
+
+  const groupBy = chart.transform.groupBy;
+  if (!groupBy) return null;
+  const groupKey = typeof groupBy === "string"
+    ? (groupBy.match(/^\w+\(/) ? "period" : groupBy)
+    : (groupBy[0]?.match(/^\w+\(/) ? "period" : groupBy[0]);
+
+  const metricKey = chart.transform.metrics?.length
+    ? chart.transform.metrics[0].key
+    : "value";
+
+  // Find top and bottom entries
+  const sorted = [...data].sort(
+    (a, b) => Number(b[metricKey] ?? 0) - Number(a[metricKey] ?? 0)
+  );
+
+  const top = sorted[0];
+  const bottom = sorted[sorted.length - 1];
+  if (!top || !bottom) return null;
+
+  const topLabel = String(top[groupKey] ?? "");
+  const topValue = formatNum(Number(top[metricKey] ?? 0));
+  const bottomLabel = String(bottom[groupKey] ?? "");
+  const bottomValue = formatNum(Number(bottom[metricKey] ?? 0));
+  const total = data.reduce((s, r) => s + Number(r[metricKey] ?? 0), 0);
+  const topPct = total > 0 ? Math.round((Number(top[metricKey] ?? 0) / total) * 100) : 0;
+
+  if (data.length === 1) {
+    return `${topLabel} shows ${topValue} for ${chart.title.toLowerCase()}.`;
+  }
+
+  return `${topLabel} leads with ${topValue} (${topPct}% of total). ${bottomLabel} is lowest at ${bottomValue}. ${data.length} categories shown.`;
+}
+
+// ── KPI Card with YoY ──
+
 function KPICardPremium({
   chart,
   data,
   isLoading,
   error,
+  clientId,
+  filters,
 }: {
   chart: ChartDefinition;
   data?: Record<string, unknown>[];
   isLoading: boolean;
   error: boolean;
+  clientId: string;
+  filters?: QueryRequest["filters"];
 }) {
   const metricKey = chart.transform.metrics?.length
     ? chart.transform.metrics[0].key
     : "value";
   const value = data?.length ? Number(data[0][metricKey] ?? 0) : 0;
   const formatted = formatKPIValue(value, chart.visualization?.format as string);
+
+  // YoY: fetch prior year data
+  const [yoy, setYoy] = useState<number | null>(null);
+  useEffect(() => {
+    if (!filters?.dateFrom || !filters?.dateTo || !clientId) return;
+    const priorFrom = shiftYear(filters.dateFrom, -1);
+    const priorTo = shiftYear(filters.dateTo, -1);
+
+    fetch(`/api/data/query?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataSource: chart.dataSource,
+        transform: chart.transform,
+        filters: { ...filters, dateFrom: priorFrom, dateTo: priorTo },
+      }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (!d?.data?.length) return;
+        const prev = Number(d.data[0][metricKey] ?? 0);
+        if (prev > 0) setYoy(Math.round(((value - prev) / prev) * 100));
+      })
+      .catch(() => {});
+  }, [filters?.dateFrom, filters?.dateTo, value]);
 
   // Threshold evaluation
   let accentColor = "#4f46e5";
@@ -296,14 +418,19 @@ function KPICardPremium({
           </p>
         )}
 
-        {/* Threshold badge */}
-        {thresholdLabel && !isLoading && (
+        {/* YoY comparison */}
+        {yoy !== null && !isLoading && (
           <div className="flex items-center gap-1 mt-1.5">
+            {yoy >= 0 ? (
+              <TrendingUp size={12} style={{ color: "#059669" }} />
+            ) : (
+              <TrendingDown size={12} style={{ color: "#e11d48" }} />
+            )}
             <span
               className="text-xs font-semibold"
-              style={{ color: accentColor }}
+              style={{ color: yoy >= 0 ? "#059669" : "#e11d48" }}
             >
-              {thresholdLabel}
+              {yoy >= 0 ? "+" : ""}{yoy}% vs Last Year
             </span>
           </div>
         )}

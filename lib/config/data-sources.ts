@@ -60,6 +60,20 @@ export const dataSources: Record<string, DataSourceEntry> = {
         filterable: true,
       },
     },
+    joins: {
+      "aggregated_table.agg_referral": {
+        foreignTable: "aggregated_table.agg_referral",
+        localColumn: "uhid",
+        foreignColumn: "uhid",
+        type: "left",
+      },
+      "aggregated_table.stage_master": {
+        foreignTable: "aggregated_table.stage_master",
+        localColumn: "uhid",
+        foreignColumn: "uhid",
+        type: "left",
+      },
+    },
   },
 
   "aggregated_table.stage_master": {
@@ -90,6 +104,14 @@ export const dataSources: Record<string, DataSourceEntry> = {
         type: "text",
         groupable: true,
         filterable: true,
+      },
+    },
+    joins: {
+      "aggregated_table.agg_appointment": {
+        foreignTable: "aggregated_table.agg_appointment",
+        localColumn: "uhid",
+        foreignColumn: "uhid",
+        type: "left",
       },
     },
   },
@@ -149,6 +171,14 @@ export const dataSources: Record<string, DataSourceEntry> = {
         filterable: true,
       },
     },
+    joins: {
+      "aggregated_table.agg_appointment": {
+        foreignTable: "aggregated_table.agg_appointment",
+        localColumn: "uhid",
+        foreignColumn: "uhid",
+        type: "left",
+      },
+    },
   },
 };
 
@@ -189,6 +219,38 @@ export function getFilterableColumns(table: string) {
   return Object.entries(ds.columns)
     .filter(([, col]) => col.filterable)
     .map(([key, col]) => ({ key, ...col }));
+}
+
+export function getJoinableTablesFor(table: string) {
+  const ds = dataSources[table];
+  if (!ds?.joins) return [];
+  return Object.entries(ds.joins).map(([foreignTable, rel]) => ({
+    table: foreignTable,
+    label: dataSources[foreignTable]?.label ?? foreignTable,
+    localColumn: rel.localColumn,
+    foreignColumn: rel.foreignColumn,
+    type: rel.type,
+  }));
+}
+
+export function getColumnsForJoinedTable(table: string) {
+  const ds = dataSources[table];
+  if (!ds) return [];
+  const shortName = table.split(".").pop() ?? table;
+  return Object.entries(ds.columns)
+    .map(([key, col]) => ({
+      ...col,
+      key: `${shortName}.${key}`,
+      rawKey: key,
+      table,
+      label: `${ds.label} > ${col.label}`,
+    }));
+}
+
+export function getMergedColumns(primaryTable: string, joinedTables: string[]) {
+  const primaryCols = getColumnsForJoinedTable(primaryTable);
+  const joinedCols = joinedTables.flatMap((t) => getColumnsForJoinedTable(t));
+  return [...primaryCols, ...joinedCols];
 }
 
 export function getAllDataSourceOptions() {

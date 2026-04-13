@@ -59,6 +59,14 @@ export default function BuilderPage({
   const [showPageSettings, setShowPageSettings] = useState(!dashboardId);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   // ── Chart CRUD ──
 
@@ -210,6 +218,11 @@ export default function BuilderPage({
       if (!dashboardId && data.dashboard?.id) {
         router.replace(`/portal/builder/${data.dashboard.id}`);
       }
+      showToast("Draft saved successfully");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Save failed", "error");
     } finally {
       setSaving(false);
     }
@@ -228,6 +241,12 @@ export default function BuilderPage({
         { method: "POST" }
       );
       if (!res.ok) throw new Error("Publish failed");
+      const data = await res.json();
+      showToast(`Published as v${data.version} successfully`);
+      setPublished(true);
+      setTimeout(() => setPublished(false), 2000);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Publish failed", "error");
     } finally {
       setPublishing(false);
     }
@@ -307,7 +326,7 @@ export default function BuilderPage({
               className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-white disabled:opacity-50"
             >
               <Save size={14} />
-              {saving ? "Saving..." : "Save Draft"}
+              {saving ? "Saving..." : saved ? "\u2713 Saved" : "Save Draft"}
             </button>
             <button
               onClick={handlePublish}
@@ -315,7 +334,7 @@ export default function BuilderPage({
               className="flex items-center gap-1.5 px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
               <Send size={14} />
-              {publishing ? "Publishing..." : "Publish"}
+              {publishing ? "Publishing..." : published ? "\u2713 Published" : "Publish"}
             </button>
           </div>
         </div>
@@ -359,15 +378,18 @@ export default function BuilderPage({
                 <label className="text-xs font-medium text-gray-600">
                   Nav Group
                 </label>
-                <input
-                  type="text"
+                <select
                   value={config.navGroup}
                   onChange={(e) =>
                     setConfig((p) => ({ ...p, navGroup: e.target.value }))
                   }
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                  placeholder="OHC, AHC, Custom..."
-                />
+                >
+                  <option value="OHC">OHC</option>
+                  <option value="AHC">AHC</option>
+                  <option value="Employee Experience">Employee Experience</option>
+                  <option value="Custom Dashboards">Custom Dashboards</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-600">
@@ -551,6 +573,22 @@ export default function BuilderPage({
           </button>
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${
+              toast.type === "success"
+                ? "bg-green-600 text-white"
+                : "bg-red-600 text-white"
+            }`}
+          >
+            <span>{toast.type === "success" ? "\u2713" : "\u2717"}</span>
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -236,7 +236,7 @@ function transformScatter(
   return {
     renderer,
     props: {
-      data: [{ name: chart.title, data }],
+      datasets: [{ name: chart.title, data }],
       xKey: metricKeys[0] ?? "x",
       yKey: metricKeys[1] ?? "y",
       ...(renderer === "bubble" ? { zKey: metricKeys[2] ?? "z" } : {}),

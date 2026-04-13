@@ -333,23 +333,39 @@ export function Sidebar() {
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
 
-  // Merge published dashboards into navigation under "Custom Dashboards"
+  // Merge published dashboards into matching nav groups
   const dynamicNavigation = useMemo(() => {
-    const publishedDashboards = (customDashData?.dashboards ?? [])
-      .filter((d: Record<string, unknown>) => !d.isDraft)
-      .map((d: Record<string, unknown>) => ({
-        label: d.title as string,
-        href: d.slug as string,
+    const published = (customDashData?.dashboards ?? [])
+      .filter((d: Record<string, unknown>) => !d.isDraft);
+
+    // Group dashboards by navGroup label (case-insensitive match)
+    const byGroup = new Map<string, { label: string; href: string; icon: typeof BarChart3 }[]>();
+    for (const d of published) {
+      const group = ((d as Record<string, unknown>).navGroup as string ?? "Custom").toLowerCase();
+      if (!byGroup.has(group)) byGroup.set(group, []);
+      byGroup.get(group)!.push({
+        label: (d as Record<string, unknown>).title as string,
+        href: (d as Record<string, unknown>).slug as string,
         icon: BarChart3,
-      }));
+      });
+    }
 
     return navigation.map((item) => {
-      if (item.href === "/portal/custom" && item.children) {
-        return {
-          ...item,
-          children: [...publishedDashboards, ...item.children],
-        };
+      if (!item.children) return item;
+
+      // Match by nav label (e.g., "OHC", "AHC", "Custom Dashboards")
+      const matchKey = item.label.toLowerCase();
+      const matched = byGroup.get(matchKey);
+      if (matched?.length) {
+        return { ...item, children: [...item.children, ...matched] };
       }
+
+      // Also match "Custom Dashboards" parent for navGroup="Custom"
+      if (item.href === "/portal/custom") {
+        const customDashes = byGroup.get("custom") ?? [];
+        return { ...item, children: [...customDashes, ...item.children] };
+      }
+
       return item;
     });
   }, [customDashData]);

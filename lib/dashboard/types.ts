@@ -138,10 +138,23 @@ export interface ColumnDefinition {
   filterable?: boolean;
 }
 
+export interface JoinRelationship {
+  /** The foreign table to join */
+  foreignTable: string;
+  /** Column on this table */
+  localColumn: string;
+  /** Column on the foreign table */
+  foreignColumn: string;
+  /** Join type */
+  type: "inner" | "left";
+}
+
 export interface DataSourceEntry {
   label: string;
   columns: Record<string, ColumnDefinition>;
   cugColumn: string;
+  /** Defined join relationships to other tables */
+  joins?: Record<string, JoinRelationship>;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,9 +178,17 @@ export type WhereCondition =
 // Data source config (per chart)
 // ---------------------------------------------------------------------------
 
+export interface JoinConfig {
+  table: string;
+  on: { primary: string; foreign: string };
+  type?: "inner" | "left";
+}
+
 export interface DataSourceConfig {
   table: string;
   where?: Record<string, WhereCondition>;
+  /** Optional joins to other tables */
+  joins?: JoinConfig[];
 }
 
 // ---------------------------------------------------------------------------

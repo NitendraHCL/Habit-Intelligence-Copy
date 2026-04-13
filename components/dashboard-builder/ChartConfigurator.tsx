@@ -7,6 +7,8 @@ import {
   getAggregatableColumns,
   getFilterableColumns,
   getDataSource,
+  getJoinableTablesFor,
+  getMergedColumns,
 } from "@/lib/config/data-sources";
 import type { ChartDefinition, ChartTypeId, WhereCondition } from "@/lib/dashboard/types";
 import { getPreset } from "@/lib/config/chart-presets";
@@ -63,8 +65,64 @@ export default function ChartConfigurator({
       }
     }
 
+    // Chart-type-to-data-shape validation
+    const chartType = chart.type;
+    const gb = chart.transform?.groupBy;
+    const hasGroupBy = gb ? (Array.isArray(gb) ? gb.length > 0 : !!gb) : false;
+    const metricCount = chart.transform?.metrics?.length ?? (metric ? 1 : 0);
+
+    if (chartType) {
+      // Scatter/Bubble need at least 2 numeric metrics, no groupBy
+      if (["scatter", "bubble"].includes(chartType)) {
+        if (metricCount < 2) {
+          errors.push(`${chartType === "bubble" ? "Bubble" : "Scatter"} chart needs at least 2 metrics (x and y axis) — use the multi-metric config or pick a different chart type`);
+        }
+        if (chartType === "bubble" && metricCount < 3) {
+          errors.push("Bubble chart needs 3 metrics (x, y, and bubble size)");
+        }
+      }
+
+      // Heatmap needs 2 groupBy dimensions
+      if (chartType === "heatmap") {
+        const gbArray = Array.isArray(gb) ? gb : gb ? [gb] : [];
+        if (gbArray.length < 2) {
+          errors.push("Heatmap needs 2 Group By dimensions (e.g., day of week + hour)");
+        }
+      }
+
+      // Sankey needs 2 groupBy columns (source + target)
+      if (chartType === "sankey") {
+        const gbArray = Array.isArray(gb) ? gb : gb ? [gb] : [];
+        if (gbArray.length < 2) {
+          errors.push("Sankey diagram needs 2 Group By columns (source and target)");
+        }
+      }
+
+      // Radar needs multiple metrics
+      if (chartType === "radar" && metricCount < 2) {
+        errors.push("Radar chart needs multiple metrics to compare — add at least 2");
+      }
+
+      // Charts that require groupBy
+      const needsGroupBy: ChartTypeId[] = [
+        "bar", "stacked_bar", "grouped_bar", "horizontal_bar", "stacked_bar_100",
+        "line", "step_line", "area", "stacked_area", "stacked_area_100",
+        "pie", "donut", "half_donut", "nightingale", "funnel", "treemap", "sunburst",
+        "heatmap", "histogram", "radar", "sankey", "word_cloud",
+        "data_table", "metric_table",
+      ];
+      if (needsGroupBy.includes(chartType) && !hasGroupBy) {
+        errors.push("This chart type requires a Group By column");
+      }
+
+      // Composed needs multiple metrics
+      if (chartType === "composed" && metricCount < 2) {
+        errors.push("Composed chart needs at least 2 metrics (one for bars, one for line)");
+      }
+    }
+
     return errors;
-  }, [chart.title, table, chart.transform?.metric]);
+  }, [chart.title, table, chart.transform?.metric, chart.type, chart.transform?.groupBy, chart.transform?.metrics]);
 
   // ── Warnings ──
   const warnings = useMemo(() => {
@@ -79,8 +137,30 @@ export default function ChartConfigurator({
       }
     }
 
+    // Suggest better chart types based on data shape
+    const chartType = chart.type;
+    const metric = chart.transform?.metric ?? "count";
+    const hasGroupBy = gb ? (Array.isArray(gb) ? gb.length > 0 : !!gb) : false;
+
+    if (chartType && hasGroupBy) {
+      // Single metric + groupBy → suggest bar/pie/donut instead of scatter/bubble
+      if (["scatter", "bubble"].includes(chartType) && !chart.transform?.metrics?.length) {
+        warns.push("With a single metric and Group By, consider using a Bar, Pie, or Donut chart instead");
+      }
+
+      // Time-based groupBy with pie/donut → suggest line/area
+      if (groupByValue.match(/^(month|week|day|year|quarter)\(/) && ["pie", "donut", "half_donut"].includes(chartType)) {
+        warns.push("Time-based grouping works better with Line or Area charts — Pie/Donut is best for categorical data");
+      }
+
+      // Too many categories for pie/donut
+      if (["pie", "donut", "half_donut", "nightingale"].includes(chartType) && !chart.transform?.limit) {
+        warns.push("Pie/Donut charts look best with a limit (e.g., top 8) — without one, too many slices make it unreadable");
+      }
+    }
+
     return warns;
-  }, [chart.transform?.groupBy]);
+  }, [chart.transform?.groupBy, chart.type, chart.transform?.metric, chart.transform?.metrics, chart.transform?.limit]);
 
   // ── Test Query ──
   const runTestQuery = useCallback(async () => {
@@ -251,17 +331,41 @@ function DataTab({
   aggregatableCols: { key: string; label: string; type: string }[];
 }) {
   const table = chart.dataSource?.table ?? "";
+  const joinedTables = (chart.dataSource?.joins ?? []).map((j) => j.table);
   const allGroupable = table ? getGroupableColumns(table) : [];
+
+  // Merged columns from joined tables for metrics
+  const joinedMetricCols = joinedTables.flatMap((jt) => {
+    const cols = getMergedColumns(jt, []);
+    return cols.map((c) => ({ ...c, fromJoin: true }));
+  });
+
   const metricOptions = [
     { value: "count", label: "Count" },
-    // count_distinct works on any column
+    // count_distinct works on any column — primary table
     ...allGroupable.map((col) => ({
       value: `count_distinct:${col.key}`,
       label: `Unique ${col.label}`,
     })),
-    // sum/avg/min/max only for number columns
+    // count_distinct — joined tables
+    ...joinedMetricCols
+      .filter((c) => c.groupable)
+      .map((col) => ({
+        value: `count_distinct:${col.key}`,
+        label: `Unique ${col.label}`,
+      })),
+    // sum/avg/min/max only for number columns — primary table
     ...aggregatableCols
       .filter((col) => col.type === "number")
+      .flatMap((col) => [
+        { value: `sum:${col.key}`, label: `Sum of ${col.label}` },
+        { value: `avg:${col.key}`, label: `Average ${col.label}` },
+        { value: `min:${col.key}`, label: `Min ${col.label}` },
+        { value: `max:${col.key}`, label: `Max ${col.label}` },
+      ]),
+    // sum/avg/min/max — joined table number columns
+    ...joinedMetricCols
+      .filter((c) => c.type === "number" && c.aggregatable)
       .flatMap((col) => [
         { value: `sum:${col.key}`, label: `Sum of ${col.label}` },
         { value: `avg:${col.key}`, label: `Average ${col.label}` },
@@ -326,6 +430,8 @@ function DataTab({
         </select>
       </Field>
 
+      <JoinBuilder chart={chart} onChange={onChange} />
+
       <Field label="Group By">
         <select
           value={getGroupByValue(chart)}
@@ -339,6 +445,7 @@ function DataTab({
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
         >
           <option value="">None</option>
+          {/* Primary table columns */}
           {groupableCols
             .filter((c) => c.type !== "timestamp")
             .map((col) => (
@@ -359,6 +466,33 @@ function DataTab({
                   </option>
                 ))
             )}
+          {/* Joined table columns */}
+          {(chart.dataSource?.joins ?? []).map((join) => {
+            const joinedCols = getMergedColumns(join.table, []).filter((c) => c.groupable && c.type !== "timestamp");
+            const joinedTimestamps = getMergedColumns(join.table, []).filter((c) => c.groupable && c.type === "timestamp");
+            const joinDs = getDataSource(join.table);
+            return (
+              <optgroup key={join.table} label={joinDs?.label ?? join.table}>
+                {joinedCols.map((col) => (
+                  <option key={col.key} value={col.key}>
+                    {col.label}
+                  </option>
+                ))}
+                {joinedTimestamps.flatMap((col) =>
+                  timeFunctions
+                    .filter((tf) => tf.value)
+                    .map((tf) => (
+                      <option
+                        key={`${tf.value}(${col.key})`}
+                        value={`${tf.value}(${col.key})`}
+                      >
+                        {col.label} ({tf.label})
+                      </option>
+                    ))
+                )}
+              </optgroup>
+            );
+          })}
         </select>
       </Field>
 
@@ -380,6 +514,13 @@ function DataTab({
           ))}
         </select>
       </Field>
+
+      {/* Multi-metric builder for charts that need 2+ metrics */}
+      <MultiMetricBuilder
+        chart={chart}
+        onChange={onChange}
+        metricOptions={metricOptions}
+      />
 
       <Field label="Sort">
         <select
@@ -441,6 +582,215 @@ function DataTab({
 
       <WhereBuilder chart={chart} onChange={onChange} groupableCols={groupableCols} />
     </>
+  );
+}
+
+// ── Join Builder ──
+
+function JoinBuilder({
+  chart,
+  onChange,
+}: {
+  chart: Partial<ChartDefinition>;
+  onChange: (c: Partial<ChartDefinition>) => void;
+}) {
+  const table = chart.dataSource?.table ?? "";
+  if (!table) return null;
+
+  const joinable = getJoinableTablesFor(table);
+  if (joinable.length === 0) return null;
+
+  const activeJoins = chart.dataSource?.joins ?? [];
+
+  function addJoin(joinInfo: typeof joinable[0]) {
+    const newJoin = {
+      table: joinInfo.table,
+      on: { primary: joinInfo.localColumn, foreign: joinInfo.foreignColumn },
+      type: joinInfo.type as "inner" | "left",
+    };
+    onChange({
+      ...chart,
+      dataSource: {
+        ...chart.dataSource,
+        table,
+        joins: [...activeJoins, newJoin],
+      },
+    });
+  }
+
+  function removeJoin(index: number) {
+    onChange({
+      ...chart,
+      dataSource: {
+        ...chart.dataSource,
+        table,
+        joins: activeJoins.filter((_, i) => i !== index),
+      },
+    });
+  }
+
+  const availableJoins = joinable.filter(
+    (j) => !activeJoins.some((aj) => aj.table === j.table)
+  );
+
+  return (
+    <Field label="Join Data Sources">
+      <p className="text-[10px] text-gray-400 mb-2">
+        Add tables to combine data across sources. Columns from joined tables appear in Group By and Metric dropdowns.
+      </p>
+      <div className="space-y-2">
+        {activeJoins.map((join, i) => {
+          const joinDs = getDataSource(join.table);
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-between p-2 bg-indigo-50 border border-indigo-200 rounded-lg"
+            >
+              <div className="text-xs">
+                <span className="font-medium text-indigo-700">
+                  {joinDs?.label ?? join.table}
+                </span>
+                <span className="text-indigo-400 ml-1">
+                  on {join.on.primary} = {join.on.foreign}
+                </span>
+              </div>
+              <button
+                onClick={() => removeJoin(i)}
+                className="text-indigo-400 hover:text-red-500 text-xs"
+              >
+                &times;
+              </button>
+            </div>
+          );
+        })}
+        {availableJoins.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const selected = availableJoins.find((j) => j.table === e.target.value);
+              if (selected) addJoin(selected);
+            }}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500"
+          >
+            <option value="">+ Add data source...</option>
+            {availableJoins.map((j) => (
+              <option key={j.table} value={j.table}>
+                {j.label} (join on {j.localColumn})
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+// ── Multi-Metric Builder ──
+
+const MULTI_METRIC_TYPES: ChartTypeId[] = [
+  "scatter", "bubble", "radar", "composed",
+  "stacked_bar", "grouped_bar", "stacked_bar_100",
+  "stacked_area", "stacked_area_100",
+  "line", "area", "metric_table", "comparison_card",
+];
+
+function MultiMetricBuilder({
+  chart,
+  onChange,
+  metricOptions,
+}: {
+  chart: Partial<ChartDefinition>;
+  onChange: (c: Partial<ChartDefinition>) => void;
+  metricOptions: { value: string; label: string }[];
+}) {
+  const chartType = chart.type;
+  if (!chartType || !MULTI_METRIC_TYPES.includes(chartType)) return null;
+
+  const metrics = chart.transform?.metrics ?? [];
+
+  function addMetric() {
+    const newMetric = {
+      key: `metric_${metrics.length + 1}`,
+      metric: "count",
+      label: `Metric ${metrics.length + 1}`,
+    };
+    onChange({
+      ...chart,
+      transform: {
+        ...chart.transform,
+        metrics: [...metrics, newMetric],
+      },
+    });
+  }
+
+  function updateMetric(index: number, updates: Partial<typeof metrics[0]>) {
+    const next = [...metrics];
+    next[index] = { ...next[index], ...updates };
+    onChange({
+      ...chart,
+      transform: { ...chart.transform, metrics: next },
+    });
+  }
+
+  function removeMetric(index: number) {
+    onChange({
+      ...chart,
+      transform: {
+        ...chart.transform,
+        metrics: metrics.filter((_, i) => i !== index),
+      },
+    });
+  }
+
+  const minMetrics = chartType === "bubble" ? 3 : chartType === "scatter" ? 2 : 2;
+
+  return (
+    <Field label={`Additional Metrics (${chartType} needs ${minMetrics}+)`}>
+      <p className="text-[10px] text-gray-400 mb-2">
+        The primary metric above is always included. Add more series here.
+      </p>
+      <div className="space-y-2">
+        {metrics.map((m, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={m.label}
+              onChange={(e) => updateMetric(i, { label: e.target.value })}
+              className="w-24 px-2 py-1.5 border border-gray-200 rounded text-xs"
+              placeholder="Label"
+            />
+            <select
+              value={m.metric}
+              onChange={(e) =>
+                updateMetric(i, {
+                  metric: e.target.value,
+                  key: e.target.value.replace(/[^a-zA-Z0-9]/g, "_"),
+                })
+              }
+              className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs"
+            >
+              {metricOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => removeMetric(i)}
+              className="text-red-400 hover:text-red-600 text-xs"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={addMetric}
+          className="text-xs text-indigo-600 hover:text-indigo-800"
+        >
+          + Add metric
+        </button>
+      </div>
+    </Field>
   );
 }
 

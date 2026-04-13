@@ -41,6 +41,40 @@ function validateColumn(table: string, column: string) {
   }
 }
 
+// Table alias map: primary = "a", joined tables get "j1", "j2", etc.
+type AliasMap = Map<string, string>;
+
+/**
+ * Resolve a column reference that may be table-qualified.
+ * "facility_name" → resolves on primary table → "a.facility_name"
+ * "agg_referral.from_specialty" → resolves on joined table → "j1.from_specialty"
+ */
+function resolveColumn(
+  primaryTable: string,
+  column: string,
+  aliases: AliasMap
+): { sqlCol: string; table: string; rawCol: string } {
+  // Table-qualified: "short_table_name.column"
+  const dotIdx = column.indexOf(".");
+  if (dotIdx !== -1) {
+    const tableShort = column.slice(0, dotIdx);
+    const rawCol = column.slice(dotIdx + 1);
+    // Find the full table name matching the short name
+    for (const [fullTable, alias] of aliases) {
+      const short = fullTable.split(".").pop() ?? fullTable;
+      if (short === tableShort) {
+        validateColumn(fullTable, rawCol);
+        return { sqlCol: `${alias}.${rawCol}`, table: fullTable, rawCol };
+      }
+    }
+    throw new QueryValidationError(`Table "${tableShort}" is not in the query`);
+  }
+
+  // Unqualified: resolve on primary table
+  validateColumn(primaryTable, column);
+  return { sqlCol: `a.${column}`, table: primaryTable, rawCol: column };
+}
+
 // ---------------------------------------------------------------------------
 // Time function parser
 // Converts "month(slotstarttime)" → SQL expression + alias
@@ -88,26 +122,41 @@ interface ParsedGroupBy {
 
 function parseGroupByExpr(
   table: string,
-  expr: string
+  expr: string,
+  aliases?: AliasMap
 ): ParsedGroupBy {
-  const fnMatch = expr.match(/^(\w+)\((\w+)\)$/);
+  // Time function: month(col) or month(table.col)
+  const fnMatch = expr.match(/^(\w+)\((.+)\)$/);
   if (fnMatch) {
-    const [, fnName, colName] = fnMatch;
+    const [, fnName, colRef] = fnMatch;
     const fn = TIME_FUNCTIONS[fnName];
     if (!fn) {
       throw new QueryValidationError(
         `Unknown time function "${fnName}". Supported: ${Object.keys(TIME_FUNCTIONS).join(", ")}`
       );
     }
-    validateColumn(table, colName);
+    if (aliases) {
+      const resolved = resolveColumn(table, colRef, aliases);
+      return {
+        sqlExpr: fn.sql(resolved.sqlCol),
+        alias: fn.alias(resolved.rawCol),
+        rawColumn: resolved.rawCol,
+      };
+    }
+    validateColumn(table, colRef);
     return {
-      sqlExpr: fn.sql(`a.${colName}`),
-      alias: fn.alias(colName),
-      rawColumn: colName,
+      sqlExpr: fn.sql(`a.${colRef}`),
+      alias: fn.alias(colRef),
+      rawColumn: colRef,
     };
   }
 
-  // Plain column reference
+  // Plain column reference (possibly table-qualified)
+  if (aliases) {
+    const resolved = resolveColumn(table, expr, aliases);
+    // Use rawCol as alias to keep result keys clean
+    return { sqlExpr: resolved.sqlCol, alias: resolved.rawCol, rawColumn: resolved.rawCol };
+  }
   validateColumn(table, expr);
   return { sqlExpr: `a.${expr}`, alias: expr, rawColumn: expr };
 }
@@ -125,7 +174,8 @@ interface ParsedMetric {
 function parseMetric(
   table: string,
   metric: string,
-  aliasOverride?: string
+  aliasOverride?: string,
+  aliases?: AliasMap
 ): ParsedMetric {
   const alias = aliasOverride ?? "value";
 
@@ -140,20 +190,28 @@ function parseMetric(
     );
   }
 
-  const [fn, col] = parts;
-  validateColumn(table, col);
+  const [fn, colRef] = parts;
+
+  let sqlCol: string;
+  if (aliases) {
+    const resolved = resolveColumn(table, colRef, aliases);
+    sqlCol = resolved.sqlCol;
+  } else {
+    validateColumn(table, colRef);
+    sqlCol = `a.${colRef}`;
+  }
 
   switch (fn) {
     case "count_distinct":
-      return { sqlExpr: `COUNT(DISTINCT a.${col})`, alias };
+      return { sqlExpr: `COUNT(DISTINCT ${sqlCol})`, alias };
     case "sum":
-      return { sqlExpr: `SUM(a.${col})`, alias };
+      return { sqlExpr: `SUM(${sqlCol})`, alias };
     case "avg":
-      return { sqlExpr: `AVG(a.${col})`, alias };
+      return { sqlExpr: `AVG(${sqlCol})`, alias };
     case "min":
-      return { sqlExpr: `MIN(a.${col})`, alias };
+      return { sqlExpr: `MIN(${sqlCol})`, alias };
     case "max":
-      return { sqlExpr: `MAX(a.${col})`, alias };
+      return { sqlExpr: `MAX(${sqlCol})`, alias };
     default:
       throw new QueryValidationError(
         `Unknown metric function "${fn}". Supported: count, count_distinct, sum, avg, min, max`
@@ -412,6 +470,25 @@ function buildSQL(
   const table = dataSource.table;
   const ds = validateTable(table);
 
+  // -- Build alias map for joined tables --
+  const aliases: AliasMap = new Map();
+  aliases.set(table, "a");
+
+  const joinClauses: string[] = [];
+  if (dataSource.joins?.length) {
+    for (let i = 0; i < dataSource.joins.length; i++) {
+      const join = dataSource.joins[i];
+      const joinDs = validateTable(join.table);
+      const alias = `j${i + 1}`;
+      aliases.set(join.table, alias);
+
+      const joinType = (join.type ?? "left").toUpperCase();
+      joinClauses.push(
+        `${joinType} JOIN ${join.table} ${alias} ON a.${join.on.primary} = ${alias}.${join.on.foreign} AND ${alias}.${joinDs.cugColumn} = $1`
+      );
+    }
+  }
+
   // Parameter index (starts at 1 for the CUG code)
   let paramIdx = 2;
   const allParams: unknown[] = [cugCode];
@@ -428,7 +505,7 @@ function buildSQL(
     : [];
 
   for (const expr of groupByExprs) {
-    const parsed = parseGroupByExpr(table, expr);
+    const parsed = parseGroupByExpr(table, expr, aliases);
     selectParts.push(`${parsed.sqlExpr} AS ${parsed.alias}`);
     groupByParts.push(parsed.sqlExpr);
   }
@@ -436,14 +513,13 @@ function buildSQL(
   // Metrics
   if (transform.metrics?.length) {
     for (const m of transform.metrics) {
-      const parsed = parseMetric(table, m.metric, m.key);
+      const parsed = parseMetric(table, m.metric, m.key, aliases);
       selectParts.push(`${parsed.sqlExpr} AS ${parsed.alias}`);
     }
   } else if (transform.metric) {
-    const parsed = parseMetric(table, transform.metric);
+    const parsed = parseMetric(table, transform.metric, undefined, aliases);
     selectParts.push(`${parsed.sqlExpr} AS ${parsed.alias}`);
   } else {
-    // No metric specified — select raw count
     selectParts.push("COUNT(*) AS value");
   }
 
@@ -464,7 +540,6 @@ function buildSQL(
         transform.metrics?.length ? transform.metrics[0].key : "value";
       orderBy = `ORDER BY ${metricAlias} DESC`;
     } else if (transform.sort === "asc") {
-      // Default sort by group key ascending (useful for time series)
       orderBy = `ORDER BY ${groupByParts[0]} ASC`;
     }
   }
@@ -474,9 +549,10 @@ function buildSQL(
   const sqlLimit = `LIMIT ${transform.limit ? Math.min(transform.limit, MAX_ROWS) : MAX_ROWS}`;
 
   // -- Build full SQL --
+  const joinSQL = joinClauses.length ? "\n    " + joinClauses.join("\n    ") : "";
   const sql = `SELECT
       ${selectParts.join(",\n      ")}
-    FROM ${table} a
+    FROM ${table} a${joinSQL}
     WHERE a.${ds.cugColumn} = $1
       ${chartWhere.sql}
       ${filterWhere.sql}

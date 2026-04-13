@@ -116,6 +116,7 @@ function transformBar(chart: ChartDefinition, data: Row[]): TransformedData {
       layout: viz.orientation === "horizontal" ? "horizontal" : "vertical",
       showGrid: viz.showGrid ?? true,
       showLegend: viz.showLegend ?? metricKeys.length > 1,
+      colorByIndex: metricKeys.length === 1,
     },
   };
 }

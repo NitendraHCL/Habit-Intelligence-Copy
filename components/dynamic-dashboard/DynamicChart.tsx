@@ -104,6 +104,7 @@ export default function DynamicChart({
     <ChartCard
       title={chart.title}
       description={chart.subtitle}
+      tooltipText={chart.tooltipText}
       height={chart.visualization?.height ?? 350}
       chartData={response?.data}
     >
@@ -267,6 +268,16 @@ function KPICardPremium({
           >
             {chart.title}
           </p>
+          {chart.tooltipText && (
+            <span className="group relative">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-help">
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+              </svg>
+              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-56 px-3 py-2 text-[11px] leading-relaxed text-white bg-gray-900 rounded-lg shadow-lg z-50">
+                {chart.tooltipText}
+              </span>
+            </span>
+          )}
         </div>
 
         {/* Value */}

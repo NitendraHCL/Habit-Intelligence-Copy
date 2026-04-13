@@ -34,6 +34,7 @@ interface ChartCardProps {
   dragHandleProps?: Record<string, unknown>;
   badge?: string;
   chartData?: unknown;
+  tooltipText?: string;
 }
 
 export default function ChartCard({
@@ -47,6 +48,7 @@ export default function ChartCard({
   dragHandleProps,
   badge,
   chartData,
+  tooltipText,
 }: ChartCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showInsight, setShowInsight] = useState(false);
@@ -77,8 +79,18 @@ export default function ChartCard({
           )}
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <CardTitle className="text-sm font-semibold truncate">
+              <CardTitle className="text-sm font-semibold truncate flex items-center gap-1.5">
                 {title}
+                {tooltipText && (
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info size={13} className="text-gray-400 shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent className="text-xs max-w-xs">
+                      {tooltipText}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </CardTitle>
               {badge && (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">

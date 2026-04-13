@@ -263,6 +263,8 @@ export interface ChartDefinition {
   type: ChartTypeId;
   title: string;
   subtitle?: string;
+  /** Tooltip text shown on hover of the info icon next to the title */
+  tooltipText?: string;
   dataSource: DataSourceConfig;
   transform: TransformConfig;
   visualization?: VisualizationConfig;

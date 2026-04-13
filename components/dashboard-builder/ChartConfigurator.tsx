@@ -410,6 +410,16 @@ function DataTab({
         />
       </Field>
 
+      <Field label="Tooltip Info">
+        <input
+          type="text"
+          value={chart.tooltipText ?? ""}
+          onChange={(e) => onChange({ ...chart, tooltipText: e.target.value || undefined })}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          placeholder="Shown on hover of the (i) icon"
+        />
+      </Field>
+
       <Field label="Data Source">
         <select
           value={chart.dataSource?.table ?? ""}

@@ -9,6 +9,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
@@ -593,45 +594,40 @@ export default function BuilderPage({
             </div>
 
             {/* Chart cards — sortable within section, draggable across sections */}
-            <SortableContext
-              items={section.charts}
-              strategy={section.type === "full_width" ? verticalListSortingStrategy : rectSortingStrategy}
-              id={section.id}
-            >
-              <div
-                className="grid gap-3 min-h-[48px]"
-                style={{
-                  gridTemplateColumns:
-                    section.type === "full_width"
-                      ? "1fr"
-                      : section.type === "kpi_row"
-                        ? `repeat(${Math.max(section.charts.length, 1)}, 1fr)`
-                        : `repeat(${section.columns ?? 2}, 1fr)`,
-                }}
+            <DroppableSection sectionId={section.id} isEmpty={section.charts.length === 0}>
+              <SortableContext
+                items={section.charts}
+                strategy={section.type === "full_width" ? verticalListSortingStrategy : rectSortingStrategy}
               >
-                {section.charts.map((chartId) => {
-                  const chart = config.charts[chartId];
-                  if (!chart) return null;
-                  return (
-                    <SortableChartCard
-                      key={chartId}
-                      chartId={chartId}
-                      chart={chart}
-                      isSelected={selectedChartId === chartId}
-                      onSelect={() => setSelectedChartId(chartId)}
-                      onEdit={() => handleEditChart(chartId)}
-                      onDelete={() => handleDeleteChart(chartId)}
-                    />
-                  );
-                })}
-              </div>
-            </SortableContext>
-
-            {section.charts.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
-                Select a chart type from the left panel to add here
-              </div>
-            )}
+                <div
+                  className="grid gap-3 min-h-[48px]"
+                  style={{
+                    gridTemplateColumns:
+                      section.type === "full_width"
+                        ? "1fr"
+                        : section.type === "kpi_row"
+                          ? `repeat(${Math.max(section.charts.length, 1)}, 1fr)`
+                          : `repeat(${section.columns ?? 2}, 1fr)`,
+                  }}
+                >
+                  {section.charts.map((chartId) => {
+                    const chart = config.charts[chartId];
+                    if (!chart) return null;
+                    return (
+                      <SortableChartCard
+                        key={chartId}
+                        chartId={chartId}
+                        chart={chart}
+                        isSelected={selectedChartId === chartId}
+                        onSelect={() => setSelectedChartId(chartId)}
+                        onEdit={() => handleEditChart(chartId)}
+                        onDelete={() => handleDeleteChart(chartId)}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DroppableSection>
           </div>
         ))}
 
@@ -696,6 +692,42 @@ export default function BuilderPage({
             <span>{toast.type === "success" ? "\u2713" : "\u2717"}</span>
             {toast.message}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Droppable Section Container ──
+
+function DroppableSection({
+  sectionId,
+  isEmpty,
+  children,
+}: {
+  sectionId: string;
+  isEmpty: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: sectionId });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded-lg transition-colors ${
+        isOver ? "bg-indigo-50 ring-2 ring-indigo-300 ring-inset" : ""
+      }`}
+    >
+      {children}
+      {isEmpty && (
+        <div
+          className={`py-8 text-center text-sm border-2 border-dashed rounded-lg transition-colors ${
+            isOver
+              ? "border-indigo-400 text-indigo-500 bg-indigo-50"
+              : "border-gray-200 text-gray-400"
+          }`}
+        >
+          {isOver ? "Drop chart here" : "Select a chart type from the left panel to add here"}
         </div>
       )}
     </div>

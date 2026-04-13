@@ -74,9 +74,10 @@ model Client {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  users               User[]
+  users                User[]
   userAssignments      UserClientAssignment[]
   dashboardAnnotations DashboardAnnotation[]
+  dashboardDefinitions DashboardDefinition[]
 
   @@map("clients")
 }
@@ -113,6 +114,57 @@ model DashboardAnnotation {
   author User   @relation(fields: [authorId], references: [id])
 
   @@map("dashboard_annotations")
+}
+
+// ── No-Code Dashboard Builder ──
+
+model DashboardDefinition {
+  id          String    @id @default(uuid())
+  clientId    String?   @map("client_id")
+  slug        String
+  title       String
+  subtitle    String?
+  icon        String    @default("BarChart3")
+  navGroup    String    @default("Custom") @map("nav_group")
+  config      Json
+  isDraft     Boolean   @default(true) @map("is_draft")
+  publishedAt DateTime? @map("published_at")
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  client   Client?            @relation(fields: [clientId], references: [id])
+  versions DashboardVersion[]
+
+  @@unique([clientId, slug])
+  @@map("dashboard_definitions")
+}
+
+model DashboardVersion {
+  id          String   @id @default(uuid())
+  dashboardId String   @map("dashboard_id")
+  version     Int
+  config      Json
+  title       String
+  publishedBy String   @map("published_by")
+  publishedAt DateTime @default(now()) @map("published_at")
+
+  dashboard DashboardDefinition @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@unique([dashboardId, version])
+  @@map("dashboard_versions")
+}
+
+model ChartDefinition {
+  id         String   @id @default(uuid())
+  name       String
+  config     Json
+  isTemplate Boolean  @default(false) @map("is_template")
+  createdBy  String   @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("chart_definitions")
 }
 
 // ── Enums ──

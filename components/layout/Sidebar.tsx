@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
@@ -14,8 +14,10 @@ import {
   X,
 } from "lucide-react";
 
+import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { navigation, type NavItem } from "@/lib/config/navigation";
+import { BarChart3 } from "lucide-react";
 import { useWalkthrough } from "@/components/walkthrough/WalkthroughProvider";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useConfig } from "@/lib/contexts/config-context";
@@ -50,6 +52,7 @@ const sectionLabels: Record<string, string> = {
   "/portal/ahc": "AHC",
   "/portal/employee-experience": "Employee Experience",
   "/portal/engagement": "Insights",
+  "/portal/builder": "Custom Dashboards",
 };
 
 function getSectionLabel(item: NavItem, index: number): string | null {
@@ -323,6 +326,34 @@ export function Sidebar() {
   const activeClient = assignedClients.find((c) => c.id === activeClientId);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
 
+  // Fetch published custom dashboards for the active client
+  const { data: customDashData } = useSWR(
+    activeClientId ? `/api/admin/dashboards?clientId=${activeClientId}` : null,
+    (url: string) => fetch(url).then((r) => r.ok ? r.json() : { dashboards: [] }),
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+
+  // Merge published dashboards into navigation under "Custom Dashboards"
+  const dynamicNavigation = useMemo(() => {
+    const publishedDashboards = (customDashData?.dashboards ?? [])
+      .filter((d: Record<string, unknown>) => !d.isDraft)
+      .map((d: Record<string, unknown>) => ({
+        label: d.title as string,
+        href: d.slug as string,
+        icon: BarChart3,
+      }));
+
+    return navigation.map((item) => {
+      if (item.href === "/portal/custom" && item.children) {
+        return {
+          ...item,
+          children: [...publishedDashboards, ...item.children],
+        };
+      }
+      return item;
+    });
+  }, [customDashData]);
+
   // Force sidebar expanded when walkthrough step requires it
   const effectiveCollapsed = shouldExpandSidebar ? false : isCollapsed;
 
@@ -441,7 +472,7 @@ export function Sidebar() {
       {/* Navigation with section labels */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <nav className={cn("flex flex-col", effectiveCollapsed ? "px-2 py-3" : "")}>
-          {navigation.filter((item) => {
+          {dynamicNavigation.filter((item) => {
             // Filter parent page visibility
             if (!isPageVisible(item.href)) return false;
             return true;

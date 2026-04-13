@@ -14,6 +14,7 @@ import {
   Smartphone,
   GitBranch,
   ListChecks,
+  PenTool,
   type LucideIcon,
 } from "lucide-react";
 
@@ -85,5 +86,18 @@ export const navigation: NavItem[] = [
     href: "/portal/action-plan",
     icon: ListChecks,
     walkthroughId: "nav-action-plan",
+  },
+  {
+    label: "Dashboard Builder",
+    href: "/portal/builder",
+    icon: PenTool,
+    walkthroughId: "nav-builder",
+  },
+  {
+    label: "Custom Dashboards",
+    href: "/portal/custom",
+    icon: BarChart3,
+    walkthroughId: "nav-custom",
+    children: [],
   },
 ];

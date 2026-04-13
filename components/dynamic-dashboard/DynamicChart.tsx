@@ -6,6 +6,8 @@ import dynamic from "next/dynamic";
 import ChartCard from "@/components/charts/ChartCard";
 import { transformForChart } from "@/lib/dashboard/transform";
 import { useCrossFilter } from "./CrossFilterManager";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 import type { ChartDefinition, QueryRequest } from "@/lib/dashboard/types";
 
 // Lazy-load renderers
@@ -269,14 +271,14 @@ function KPICardPremium({
             {chart.title}
           </p>
           {chart.tooltipText && (
-            <span className="group relative">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="cursor-help">
-                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
-              </svg>
-              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-56 px-3 py-2 text-[11px] leading-relaxed text-white bg-gray-900 rounded-lg shadow-lg z-50">
+            <Tooltip>
+              <TooltipTrigger>
+                <Info size={13} style={{ color: "#9CA3AF" }} />
+              </TooltipTrigger>
+              <TooltipContent className="text-xs max-w-xs">
                 {chart.tooltipText}
-              </span>
-            </span>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
 

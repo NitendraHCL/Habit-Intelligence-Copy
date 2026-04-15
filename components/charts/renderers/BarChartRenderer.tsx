@@ -36,6 +36,7 @@ interface BarChartRendererProps {
   rankPalette?: RankPalette;
   tooltipTemplate?: string;
   basePalette?: string[];
+  onClick?: (params: Record<string, unknown>) => void;
 }
 
 export default function BarChartRenderer({
@@ -52,6 +53,7 @@ export default function BarChartRenderer({
   rankPalette,
   tooltipTemplate,
   basePalette = CHART_PALETTE,
+  onClick,
 }: BarChartRendererProps) {
   function bucketColor(value: number, total: number, fallback: string): string {
     if (!colorByValueRange) return fallback;
@@ -149,6 +151,15 @@ export default function BarChartRenderer({
         data={data}
         layout={layout === "horizontal" ? "vertical" : "horizontal"}
         margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+        onClick={
+          onClick
+            ? (state: { activeLabel?: unknown; activePayload?: { payload?: Record<string, unknown> }[] }) => {
+                const label = state?.activeLabel;
+                const payload = state?.activePayload?.[0]?.payload ?? {};
+                if (label) onClick({ name: String(label), ...payload });
+              }
+            : undefined
+        }
       >
         {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />}
         {layout === "horizontal" ? (

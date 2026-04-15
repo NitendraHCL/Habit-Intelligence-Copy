@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import useSWR from "swr";
+import { useSearchParams } from "next/navigation";
 import DashboardSection from "./DashboardSection";
 import { CrossFilterProvider, useCrossFilter } from "./CrossFilterManager";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import BookmarkBar, { type BookmarkState } from "./BookmarkBar";
 import { useConfig } from "@/lib/contexts/config-context";
 import type { PageDefinition, QueryRequest } from "@/lib/dashboard/types";
 import type { PageConfig } from "@/lib/types/dashboard-config";
@@ -151,6 +153,38 @@ function DynamicPageInner({
     specialties.length > 0 ||
     relationships.length > 0;
 
+  // ── PBI-4: Bookmarks — capture + restore filter state ──
+  const captureState = useCallback((): BookmarkState => ({
+    filters: { dateFrom, dateTo, locations, genders, ageGroups, specialties, relationships },
+  }), [dateFrom, dateTo, locations, genders, ageGroups, specialties, relationships]);
+
+  const applyState = useCallback((state: BookmarkState) => {
+    const f = state.filters as Partial<typeof filters> | undefined;
+    if (!f) return;
+    if (f.dateFrom) setDateFrom(f.dateFrom);
+    if (f.dateTo) setDateTo(f.dateTo);
+    setLocations((f as { locations?: string[] }).locations ?? []);
+    setGenders((f as { genders?: string[] }).genders ?? []);
+    setAgeGroups((f as { ageGroups?: string[] }).ageGroups ?? []);
+    setSpecialties((f as { specialties?: string[] }).specialties ?? []);
+    setRelationships((f as { relationships?: string[] }).relationships ?? []);
+  }, []);
+
+  // ── PBI-5: Drill-through — URL query params become extra where-clauses ──
+  // Any ?column=value pair from the incoming URL is merged into every chart's
+  // dataSource.where at render time (see extraWhere below).
+  const searchParams = useSearchParams();
+  const drillThroughWhere = useMemo(() => {
+    if (!searchParams) return {} as Record<string, { eq: string }>;
+    const out: Record<string, { eq: string }> = {};
+    searchParams.forEach((value, key) => {
+      // Ignore reserved keys the page already uses
+      if (["slug", "clientId"].includes(key)) return;
+      if (value) out[key] = { eq: value };
+    });
+    return out;
+  }, [searchParams]);
+
   return (
     <div className="space-y-6">
       {/* Page Glance Header with AI Summary */}
@@ -164,6 +198,31 @@ function DynamicPageInner({
           .slice(0, 4)
           .map((c) => ({ label: c.title, value: "..." }))}
       />
+
+      {/* Bookmarks */}
+      <BookmarkBar
+        dashboardSlug={config.slug}
+        captureState={captureState}
+        applyState={applyState}
+      />
+
+      {/* Drill-through banner */}
+      {Object.keys(drillThroughWhere).length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-[12px] text-indigo-800">
+          <span className="font-semibold">Drilled in:</span>
+          <span>
+            {Object.entries(drillThroughWhere)
+              .map(([k, v]) => `${k} = ${v.eq}`)
+              .join(" · ")}
+          </span>
+          <a
+            href="?"
+            className="ml-auto text-[11px] font-medium underline hover:no-underline"
+          >
+            Clear
+          </a>
+        </div>
+      )}
 
       {/* Filter bar + Configure */}
       {(config.filters?.length > 0 || isSuperAdmin) && (
@@ -308,16 +367,33 @@ function DynamicPageInner({
       )}
 
       {/* Sections */}
-      {config.sections.map((section) => (
-        <DashboardSection
-          key={`${section.id}-${refreshKey}`}
-          section={section}
-          charts={config.charts}
-          clientId={clientId}
-          filters={filters}
-          isChartVisible={isVisible}
-        />
-      ))}
+      {config.sections.map((section) => {
+        // PBI-5: merge drill-through URL where-clauses into each chart's data source
+        const chartsWithDrill = Object.fromEntries(
+          Object.entries(config.charts).map(([id, c]) => [
+            id,
+            Object.keys(drillThroughWhere).length
+              ? {
+                  ...c,
+                  dataSource: {
+                    ...c.dataSource,
+                    where: { ...c.dataSource.where, ...drillThroughWhere },
+                  },
+                }
+              : c,
+          ])
+        );
+        return (
+          <DashboardSection
+            key={`${section.id}-${refreshKey}`}
+            section={section}
+            charts={chartsWithDrill}
+            clientId={clientId}
+            filters={filters}
+            isChartVisible={isVisible}
+          />
+        );
+      })}
     </div>
   );
 }

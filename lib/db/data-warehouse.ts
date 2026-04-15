@@ -28,11 +28,34 @@ if (process.env.NODE_ENV !== "production") {
 
 /**
  * Execute a query against the data warehouse (fact_kx / derived schemas).
+ * Optionally override `statement_timeout` per-query (milliseconds). The
+ * override is scoped to the checked-out connection, not the whole pool.
  */
 export async function dwQuery<T extends Record<string, unknown>>(
   text: string,
-  params?: unknown[]
+  params?: unknown[],
+  opts?: { statementTimeoutMs?: number }
 ): Promise<T[]> {
-  const result = await dwPool.query(text, params);
-  return result.rows as T[];
+  if (!opts?.statementTimeoutMs) {
+    const result = await dwPool.query(text, params);
+    return result.rows as T[];
+  }
+
+  // Acquire a dedicated client so SET is local to this request and
+  // doesn't leak to other queries sharing the pool.
+  const client = await dwPool.connect();
+  try {
+    await client.query(`SET statement_timeout = ${Number(opts.statementTimeoutMs)}`);
+    const result = await client.query(text, params);
+    return result.rows as T[];
+  } finally {
+    try {
+      // Restore the default on the connection before returning it to the pool.
+      await client.query(`RESET statement_timeout`);
+    } catch {
+      // noop — if RESET fails, the pool will still work; idle sessions are
+      // recycled periodically.
+    }
+    client.release();
+  }
 }

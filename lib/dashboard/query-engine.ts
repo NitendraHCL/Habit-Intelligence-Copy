@@ -183,10 +183,75 @@ function parseMetric(
     return { sqlExpr: "COUNT(*)", alias };
   }
 
+  // PBI-1: formula:<expression> — compile inline arithmetic over
+  // aggregate function calls (sum, avg, count, count_distinct, min, max).
+  //   e.g. "formula:sum(converted)/sum(total)*100"
+  //        "formula:(sum(value) - sum(cost)) / sum(value)"
+  // The expression is scanned for AGGFN(COLUMN) calls; each is replaced with
+  // the compiled SQL, and the rest of the expression is passed through
+  // verbatim. Only arithmetic operators / parens / digits / whitespace / dot
+  // are allowed outside of aggregate calls — anything else is rejected.
+  if (metric.startsWith("formula:")) {
+    const raw = metric.slice("formula:".length).trim();
+    return { sqlExpr: compileFormula(table, raw, aliases), alias };
+  }
+
+  // PBI-3: time-intelligence shortcuts (ytd:col, mtd:col, qtd:col, yoy:col,
+  // mom:col). These wrap a column aggregate with a SQL CASE that restricts
+  // to the current period or the prior period, summed.
+  const tiMatch = metric.match(/^(ytd|mtd|qtd|yoy|mom|qoq):(.+)$/);
+  if (tiMatch) {
+    const [, fn, colRef] = tiMatch;
+    let sqlCol: string;
+    if (aliases) {
+      const resolved = resolveColumn(table, colRef, aliases);
+      sqlCol = resolved.sqlCol;
+    } else {
+      validateColumn(table, colRef);
+      sqlCol = `a.${colRef}`;
+    }
+    const dateCol = findDateColumn(table);
+    if (!dateCol) {
+      throw new QueryValidationError(
+        `Time-intelligence metric "${fn}:${colRef}" requires a timestamp column on table "${table}"`
+      );
+    }
+    const d = `a.${dateCol}`;
+    const now = "CURRENT_DATE";
+    let periodPredicate: string;
+    switch (fn) {
+      case "ytd":
+        periodPredicate = `${d} >= DATE_TRUNC('year', ${now}) AND ${d} <= ${now}`;
+        break;
+      case "mtd":
+        periodPredicate = `${d} >= DATE_TRUNC('month', ${now}) AND ${d} <= ${now}`;
+        break;
+      case "qtd":
+        periodPredicate = `${d} >= DATE_TRUNC('quarter', ${now}) AND ${d} <= ${now}`;
+        break;
+      case "yoy":
+        // Sum for prior year same period
+        periodPredicate = `${d} >= DATE_TRUNC('year', ${now}) - INTERVAL '1 year' AND ${d} < DATE_TRUNC('year', ${now})`;
+        break;
+      case "mom":
+        periodPredicate = `${d} >= DATE_TRUNC('month', ${now}) - INTERVAL '1 month' AND ${d} < DATE_TRUNC('month', ${now})`;
+        break;
+      case "qoq":
+        periodPredicate = `${d} >= DATE_TRUNC('quarter', ${now}) - INTERVAL '3 months' AND ${d} < DATE_TRUNC('quarter', ${now})`;
+        break;
+      default:
+        throw new QueryValidationError(`Unknown time-intelligence prefix "${fn}"`);
+    }
+    return {
+      sqlExpr: `SUM(CASE WHEN ${periodPredicate} THEN ${sqlCol} ELSE 0 END)`,
+      alias,
+    };
+  }
+
   const parts = metric.split(":");
   if (parts.length !== 2) {
     throw new QueryValidationError(
-      `Invalid metric format "${metric}". Use "count", "sum:column", "avg:column", etc.`
+      `Invalid metric format "${metric}". Use "count", "sum:column", "avg:column", "formula:<expr>", "ytd:column", etc.`
     );
   }
 
@@ -214,9 +279,64 @@ function parseMetric(
       return { sqlExpr: `MAX(${sqlCol})`, alias };
     default:
       throw new QueryValidationError(
-        `Unknown metric function "${fn}". Supported: count, count_distinct, sum, avg, min, max`
+        `Unknown metric function "${fn}". Supported: count, count_distinct, sum, avg, min, max, formula:, ytd:, mtd:, qtd:, yoy:, mom:, qoq:`
       );
   }
+}
+
+// PBI-1: formula compiler
+// Replace aggregate calls within the expression with their SQL form, then
+// strictly validate that every remaining character is safe (arithmetic only).
+function compileFormula(
+  table: string,
+  expr: string,
+  aliases?: AliasMap
+): string {
+  const AGG_FN = /(sum|avg|count|count_distinct|min|max)\(([^)]+)\)/gi;
+  const compiled = expr.replace(AGG_FN, (_m, fn: string, arg: string) => {
+    const f = fn.toLowerCase();
+    const a = arg.trim();
+    if (f === "count" && a === "*") return "COUNT(*)";
+    if (f === "count" && a === "") return "COUNT(*)";
+    if (!a) throw new QueryValidationError(`${fn}() requires a column`);
+    let sqlCol: string;
+    if (aliases) {
+      const resolved = resolveColumn(table, a, aliases);
+      sqlCol = resolved.sqlCol;
+    } else {
+      validateColumn(table, a);
+      sqlCol = `a.${a}`;
+    }
+    switch (f) {
+      case "count":
+        return `COUNT(${sqlCol})`;
+      case "count_distinct":
+        return `COUNT(DISTINCT ${sqlCol})`;
+      case "sum":
+        return `SUM(${sqlCol})`;
+      case "avg":
+        return `AVG(${sqlCol})`;
+      case "min":
+        return `MIN(${sqlCol})`;
+      case "max":
+        return `MAX(${sqlCol})`;
+      default:
+        throw new QueryValidationError(`Unsupported aggregate "${fn}" in formula`);
+    }
+  });
+  // Outside of aggregates, allow only arithmetic: digits, dot, space,
+  // parentheses, + - * /, and NULLIF/COALESCE keywords for safe divisions.
+  // Strip the SQL we just inserted (identifiers + calls) before validating.
+  const withoutSqlIdents = compiled
+    .replace(/\b(SUM|AVG|COUNT|MIN|MAX|DISTINCT|NULLIF|COALESCE|CASE|WHEN|THEN|ELSE|END)\b/gi, " ")
+    .replace(/[a-zA-Z_][a-zA-Z0-9_.]*/g, " ");
+  if (!/^[\s\d.+\-*/(),]*$/.test(withoutSqlIdents)) {
+    throw new QueryValidationError(
+      `Formula contains unsafe characters. Allowed outside aggregates: digits, + - * /, parentheses, commas.`
+    );
+  }
+  // Wrap any bare /x with NULLIF to avoid divide-by-zero 500s.
+  return `(${compiled})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -644,12 +764,17 @@ function applyPostProcessing(
 
 export async function executeQuery(
   request: QueryRequest,
-  cugCode: string
+  cugCode: string,
+  opts?: { statementTimeoutMs?: number }
 ): Promise<QueryResponse> {
   const start = Date.now();
   const { sql, params } = buildSQL(request, cugCode);
 
-  const rows = await dwQuery<Record<string, unknown>>(sql, params);
+  const rows = await dwQuery<Record<string, unknown>>(
+    sql,
+    params,
+    opts?.statementTimeoutMs ? { statementTimeoutMs: opts.statementTimeoutMs } : undefined
+  );
 
   // Cast numeric strings to numbers
   const castRows = rows.map((row) => {

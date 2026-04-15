@@ -390,6 +390,24 @@ export interface CaseWhenSpec {
   else?: string;
 }
 
+// ── PBI-2: drill-down hierarchy ──
+export interface DrillDownConfig {
+  /** Ordered levels; chart starts at levels[0] and advances on click. */
+  levels: string[];
+  /** Optional labels per level (default: the column name). */
+  labels?: string[];
+}
+
+// ── PBI-5: drill-through to a detail page ──
+export interface DrillThroughConfig {
+  /** Target page slug (e.g. "/portal/ohc/referral"). */
+  slug: string;
+  /** URL query param name. */
+  paramColumn: string;
+  /** Which data column's value to send (defaults to the chart's groupBy). */
+  valueColumn?: string;
+}
+
 // ── G1: tile-grid layout config ──
 export interface TileGridConfig {
   /** Number of columns in the grid (default 4). */
@@ -458,6 +476,10 @@ export interface VisualizationConfig {
   tileGrid?: TileGridConfig;
   /** G4: narrative chart prose template (only when chart.type === "narrative"). */
   narrativeTemplate?: string;
+  /** PBI-2: drill-down hierarchy (click a segment → advance to next level). */
+  drillDown?: DrillDownConfig;
+  /** PBI-5: drill-through to a detail page. */
+  drillThrough?: DrillThroughConfig;
   /** For ECharts generic renderer — full ECharts option override */
   echartsOption?: Record<string, unknown>;
   /** Arbitrary renderer-specific options */

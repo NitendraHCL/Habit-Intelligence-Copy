@@ -213,14 +213,17 @@ export default function ChartConfigurator({
     setPreviewError("");
 
     try {
-      const res = await fetch(`/api/data/query?clientId=${activeClientId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataSource: chart.dataSource,
-          transform: { ...chart.transform, limit: 5 },
-        }),
-      });
+      const res = await fetch(
+        `/api/data/query?clientId=${activeClientId}&testMode=1`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dataSource: chart.dataSource,
+            transform: { ...chart.transform, limit: 5 },
+          }),
+        }
+      );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -497,22 +500,16 @@ function DataTab({
       <ComputedColumnsEditor chart={chart} onChange={onChange} />
 
       <Field label="Metric">
-        <select
+        <MetricInput
           value={chart.transform?.metric ?? "count"}
-          onChange={(e) =>
+          options={metricOptions}
+          onChange={(v) =>
             onChange({
               ...chart,
-              transform: { ...chart.transform, metric: e.target.value },
+              transform: { ...chart.transform, metric: v },
             })
           }
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-        >
-          {metricOptions.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        />
       </Field>
 
       {/* Multi-metric builder for charts that need 2+ metrics */}
@@ -798,6 +795,116 @@ function getGroupByValue(chart: Partial<ChartDefinition>): string {
   const gb = chart.transform?.groupBy;
   if (!gb) return "";
   return Array.isArray(gb) ? gb[0] : gb;
+}
+
+/**
+ * Metric picker with three modes:
+ *   - Built-in aggregate from the dropdown
+ *   - "formula:" — a textarea for inline SQL-ish arithmetic over aggregates
+ *   - "time:"    — time-intelligence prefix (ytd, mtd, qtd, yoy, mom, qoq)
+ */
+function MetricInput({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  const isFormula = value.startsWith("formula:");
+  const tiMatch = value.match(/^(ytd|mtd|qtd|yoy|mom|qoq):(.+)$/);
+  const [mode, setMode] = useState<"builtin" | "formula" | "time">(
+    isFormula ? "formula" : tiMatch ? "time" : "builtin"
+  );
+
+  const [tiFn, setTiFn] = useState<string>(tiMatch?.[1] ?? "ytd");
+  const [tiCol, setTiCol] = useState<string>(tiMatch?.[2] ?? "");
+
+  return (
+    <div className="space-y-1.5">
+      <div className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5 bg-gray-100">
+        {(["builtin", "formula", "time"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${
+              mode === m ? "bg-white shadow-sm text-gray-900" : "text-gray-600"
+            }`}
+          >
+            {m === "builtin" ? "Built-in" : m === "formula" ? "Formula" : "Time intel."}
+          </button>
+        ))}
+      </div>
+      {mode === "builtin" && (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        >
+          {options.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      )}
+      {mode === "formula" && (
+        <>
+          <textarea
+            value={isFormula ? value.slice("formula:".length) : ""}
+            onChange={(e) => onChange(`formula:${e.target.value}`)}
+            rows={2}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+            placeholder="sum(converted) / sum(total_referrals) * 100"
+          />
+          <p className="text-[11px] text-gray-500">
+            Inline arithmetic over aggregates. Supported: <code>sum(col)</code>{" "}
+            <code>avg(col)</code> <code>count(*)</code>{" "}
+            <code>count_distinct(col)</code> <code>min(col)</code>{" "}
+            <code>max(col)</code>, plus <code>+ - * / ( )</code> and numeric
+            constants.
+          </p>
+        </>
+      )}
+      {mode === "time" && (
+        <>
+          <div className="flex items-center gap-2">
+            <select
+              value={tiFn}
+              onChange={(e) => {
+                setTiFn(e.target.value);
+                if (tiCol) onChange(`${e.target.value}:${tiCol}`);
+              }}
+              className="px-2 py-1 border border-gray-200 rounded text-xs"
+            >
+              <option value="ytd">YTD (year-to-date)</option>
+              <option value="mtd">MTD (month-to-date)</option>
+              <option value="qtd">QTD (quarter-to-date)</option>
+              <option value="yoy">YoY (prior-year same period)</option>
+              <option value="mom">MoM (prior month)</option>
+              <option value="qoq">QoQ (prior quarter)</option>
+            </select>
+            <input
+              type="text"
+              value={tiCol}
+              onChange={(e) => {
+                setTiCol(e.target.value);
+                if (e.target.value) onChange(`${tiFn}:${e.target.value}`);
+              }}
+              placeholder="numeric column (e.g. referral_count)"
+              className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+            />
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Emits SUM(col) restricted to the selected period window using the
+            data source's default date column.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ComputedColumnsEditor({
@@ -1248,6 +1355,8 @@ function StyleTab({
     summaryKpis: Array.isArray(viz.summaryKpis) && (viz.summaryKpis as unknown[]).length > 0,
     tileGrid: !!viz.tileGrid,
     narrativeTemplate: !!viz.narrativeTemplate,
+    drillDown: !!(viz.drillDown as { levels?: string[] } | undefined)?.levels?.length,
+    drillThrough: !!(viz.drillThrough as { slug?: string } | undefined)?.slug,
   };
 
   return (
@@ -1566,6 +1675,24 @@ function StyleTab({
             <NarrativeTemplateEditor viz={viz} updateViz={updateViz} />
           </Disclose>
         )}
+
+        <Disclose
+          title="Drill-down Hierarchy"
+          caption="Ordered columns; click a segment to advance to the next level (with back button)."
+          defaultOpen={isConfigured.drillDown}
+          configured={isConfigured.drillDown}
+        >
+          <DrillDownEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Drill-through Page"
+          caption="Click a value to route to another page, passing the value as a URL param."
+          defaultOpen={isConfigured.drillThrough}
+          configured={isConfigured.drillThrough}
+        >
+          <DrillThroughEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
       </div>
     </>
   );
@@ -2731,6 +2858,100 @@ function TileGridEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater })
           + Add color
         </button>
       </div>
+    </div>
+  );
+}
+
+function DrillDownEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.drillDown as { levels?: string[]; labels?: string[] }) ?? {};
+  const levels = cfg.levels ?? [];
+  const labels = cfg.labels ?? [];
+  function update(nextLevels: string[], nextLabels?: string[]) {
+    if (!nextLevels.length) {
+      updateViz({ drillDown: undefined });
+      return;
+    }
+    updateViz({ drillDown: { levels: nextLevels, labels: nextLabels } });
+  }
+  function setLevel(idx: number, col: string) {
+    const next = levels.map((l, i) => (i === idx ? col : l));
+    update(next.filter(Boolean), labels);
+  }
+  function add() {
+    update([...levels, ""], labels);
+  }
+  function remove(idx: number) {
+    update(levels.filter((_, i) => i !== idx), labels);
+  }
+  return (
+    <div className="space-y-1.5">
+      {levels.map((l, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-500 w-12">Level {i + 1}</span>
+          <input
+            type="text"
+            value={l}
+            onChange={(e) => setLevel(i, e.target.value)}
+            placeholder="column (e.g. year, then month, then day)"
+            className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => remove(i)}
+            className="text-gray-400 hover:text-red-500 text-sm"
+          >
+            &times;
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        className="text-xs text-indigo-600 hover:text-indigo-800"
+      >
+        + Add drill level
+      </button>
+    </div>
+  );
+}
+
+function DrillThroughEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.drillThrough as { slug?: string; paramColumn?: string; valueColumn?: string }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    const next = { ...cfg, ...patch };
+    if (!next.slug) {
+      updateViz({ drillThrough: undefined });
+      return;
+    }
+    updateViz({ drillThrough: next });
+  }
+  return (
+    <div className="space-y-1.5">
+      <input
+        type="text"
+        value={cfg.slug ?? ""}
+        onChange={(e) => update({ slug: e.target.value || undefined })}
+        placeholder="Target page slug (e.g. /portal/ohc/referral)"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+      />
+      {cfg.slug && (
+        <>
+          <input
+            type="text"
+            value={cfg.paramColumn ?? ""}
+            onChange={(e) => update({ paramColumn: e.target.value })}
+            placeholder="URL param name (e.g. facility_name)"
+            className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <input
+            type="text"
+            value={cfg.valueColumn ?? ""}
+            onChange={(e) => update({ valueColumn: e.target.value || undefined })}
+            placeholder="Value column (defaults to groupBy)"
+            className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -12,6 +12,10 @@ export async function POST(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
+    // When the builder's "Test Query" button fires this endpoint, it passes
+    // ?testMode=1 so we can give the query a more generous statement_timeout
+    // without relaxing the ceiling for production dashboard requests.
+    const isTestMode = searchParams.get("testMode") === "1";
 
     const cugCode = await getSessionCugCode(clientId ?? undefined);
     if (!cugCode) {
@@ -30,7 +34,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await executeQuery(body, cugCode);
+    const result = await executeQuery(
+      body,
+      cugCode,
+      isTestMode ? { statementTimeoutMs: 60_000 } : undefined
+    );
 
     return NextResponse.json(result);
   } catch (error) {

@@ -3,11 +3,12 @@
 import { useMemo, useState, useEffect } from "react";
 import useSWR from "swr";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import CVCardDynamic from "./CVCardDynamic";
 import { transformForChart } from "@/lib/dashboard/transform";
 import { useCrossFilter } from "./CrossFilterManager";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Info, TrendingUp, TrendingDown } from "lucide-react";
+import { Info, TrendingUp, TrendingDown, ChevronLeft } from "lucide-react";
 import { CHART_PALETTE } from "@/lib/design-tokens";
 import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
 import type {
@@ -19,6 +20,8 @@ import type {
   WhereCondition,
   SummaryKpi,
   ToggleLayout,
+  DrillDownConfig,
+  DrillThroughConfig,
 } from "@/lib/dashboard/types";
 
 // Lazy-load renderers
@@ -61,6 +64,21 @@ export default function DynamicChart({
   filters,
 }: DynamicChartProps) {
   const { getFilter, setFilter } = useCrossFilter();
+  const router = useRouter();
+
+  // ── PBI-2: drill-down state ──
+  const drillDown = chart.visualization?.drillDown as DrillDownConfig | undefined;
+  // Drill-path: each entry is a {column, value} pair selected by the user.
+  const [drillPath, setDrillPath] = useState<{ column: string; value: string }[]>([]);
+  const drillLevelIndex = drillPath.length;
+  const drillCurrentColumn = drillDown?.levels?.[drillLevelIndex];
+
+  const drillWhere: Record<string, WhereCondition> | undefined = useMemo(() => {
+    if (!drillPath.length) return undefined;
+    const out: Record<string, WhereCondition> = {};
+    for (const step of drillPath) out[step.column] = { eq: step.value };
+    return out;
+  }, [drillPath]);
 
   // ── View-mode toggle state ──
   const toggles: ViewToggle[] = (chart.visualization?.toggles as ViewToggle[]) ?? [];
@@ -116,14 +134,20 @@ export default function DynamicChart({
     return { [tabsCfg.column]: { eq: activeTab } };
   }, [tabsCfg?.column, activeTab]);
 
-  // Apply toggle action to transform + dataSource.where
+  // Apply toggle action + drill-down to transform + dataSource.where
   const effectiveTransform: TransformConfig = useMemo(() => {
-    if (!activeToggle) return chart.transform;
-    const t = { ...chart.transform };
-    if (activeToggle.action.regroup) t.groupBy = activeToggle.action.regroup;
-    if (activeToggle.action.metric) t.metric = activeToggle.action.metric;
+    let t: TransformConfig = chart.transform;
+    if (activeToggle) {
+      t = { ...t };
+      if (activeToggle.action.regroup) t.groupBy = activeToggle.action.regroup;
+      if (activeToggle.action.metric) t.metric = activeToggle.action.metric;
+    }
+    // Drill-down overrides groupBy with the current level's column.
+    if (drillCurrentColumn) {
+      t = { ...t, groupBy: drillCurrentColumn };
+    }
     return t;
-  }, [chart.transform, activeToggle]);
+  }, [chart.transform, activeToggle, drillCurrentColumn]);
 
   const toggleWhere: Record<string, WhereCondition> | undefined = useMemo(() => {
     if (!activeToggle?.action.refilter) return undefined;
@@ -144,11 +168,17 @@ export default function DynamicChart({
   const queryBody = useMemo<QueryRequest>(() => ({
     dataSource: {
       table: chart.dataSource.table,
-      where: { ...chart.dataSource.where, ...toggleWhere, ...tabWhere, ...crossFilterWhere },
+      where: {
+        ...chart.dataSource.where,
+        ...toggleWhere,
+        ...tabWhere,
+        ...drillWhere,
+        ...crossFilterWhere,
+      },
     },
     transform: effectiveTransform,
     filters,
-  }), [chart.dataSource, effectiveTransform, filters, crossFilterWhere, toggleWhere, tabWhere]);
+  }), [chart.dataSource, effectiveTransform, filters, crossFilterWhere, toggleWhere, tabWhere, drillWhere]);
 
   const { data: response, isLoading, error } = useSWR(
     [`/api/data/query?clientId=${clientId}`, JSON.stringify(queryBody)],
@@ -165,14 +195,37 @@ export default function DynamicChart({
     );
   }, [chart, effectiveTransform, response?.data]);
 
+  const drillThrough = chart.visualization?.drillThrough as DrillThroughConfig | undefined;
+
   const handleClick = (params: Record<string, unknown>) => {
-    if (!chart.emitFilter || !chart.linkGroup) return;
-    const value = String(params.name ?? params[chart.emitFilter.column] ?? "");
-    if (value) {
-      setFilter(chart.linkGroup, {
-        column: chart.emitFilter.column,
-        value,
-      });
+    const clickValue = String(params.name ?? "");
+
+    // PBI-5: Drill-through — route to another page with the clicked value as a URL param.
+    if (drillThrough && clickValue) {
+      const valueCol = drillThrough.valueColumn ?? drillThrough.paramColumn;
+      const raw = params[valueCol] ?? params.name ?? clickValue;
+      const url = `${drillThrough.slug}?${encodeURIComponent(
+        drillThrough.paramColumn
+      )}=${encodeURIComponent(String(raw))}`;
+      router.push(url);
+      return;
+    }
+
+    // PBI-2: Drill-down — advance the path to the next level.
+    if (drillDown?.levels?.length && drillCurrentColumn && clickValue) {
+      setDrillPath((prev) => [...prev, { column: drillCurrentColumn, value: clickValue }]);
+      return;
+    }
+
+    // Cross-filter behavior (existing)
+    if (chart.emitFilter && chart.linkGroup) {
+      const value = String(params.name ?? params[chart.emitFilter.column] ?? "");
+      if (value) {
+        setFilter(chart.linkGroup, {
+          column: chart.emitFilter.column,
+          value,
+        });
+      }
     }
   };
 
@@ -350,11 +403,30 @@ export default function DynamicChart({
           ))}
         </div>
       )}
+      {drillDown?.levels?.length && drillPath.length > 0 && (
+        <div className="flex items-center gap-2 mb-3 text-[11.5px] text-gray-600">
+          <button
+            type="button"
+            onClick={() => setDrillPath((p) => p.slice(0, -1))}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+          >
+            <ChevronLeft className="size-3" /> Back
+          </button>
+          <span className="font-medium">Drill path:</span>
+          <span className="text-gray-500">
+            {drillPath.map((s) => `${s.column} = ${s.value}`).join(" → ")}
+          </span>
+        </div>
+      )}
       {!isLoading && !error && transformed && (
         <div style={{ height: chart.visualization?.height ?? 350 }}>
           <ChartRenderer
             transformed={transformed}
-            onChartClick={chart.emitFilter ? handleClick : undefined}
+            onChartClick={
+              chart.emitFilter || drillDown?.levels?.length || drillThrough
+                ? handleClick
+                : undefined
+            }
           />
         </div>
       )}
@@ -380,7 +452,7 @@ function ChartRenderer({
 
   switch (renderer) {
     case "bar":
-      return <BarChartRenderer {...(props as any)} />;
+      return <BarChartRenderer {...(props as any)} onClick={onChartClick} />;
     case "line":
       return <LineChartRenderer {...(props as any)} />;
     case "area":

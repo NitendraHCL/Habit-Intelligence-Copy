@@ -50,12 +50,22 @@ interface BuilderPageProps {
   initialTitle?: string;
 }
 
+const NAV_GROUP_OPTIONS = ["OHC", "AHC", "Employee Experience", "Custom Dashboards"] as const;
+type NavGroupOption = typeof NAV_GROUP_OPTIONS[number];
+
+function coerceNavGroup(value: unknown): NavGroupOption {
+  if (typeof value === "string" && (NAV_GROUP_OPTIONS as readonly string[]).includes(value)) {
+    return value as NavGroupOption;
+  }
+  return "Custom Dashboards";
+}
+
 const defaultConfig: PageDefinition = {
   slug: "",
   title: "",
   subtitle: "",
   icon: "BarChart3",
-  navGroup: "Custom",
+  navGroup: "Custom Dashboards",
   filters: ["dateRange"],
   sections: [],
   charts: {},
@@ -71,7 +81,9 @@ export default function BuilderPage({
   const clientId = activeClientId ?? "";
 
   const [config, _setConfig] = useState<PageDefinition>(
-    initialConfig ?? defaultConfig
+    initialConfig
+      ? { ...initialConfig, navGroup: coerceNavGroup(initialConfig.navGroup) }
+      : defaultConfig
   );
   const configRef = useRef(config);
   const setConfig = useCallback((updater: PageDefinition | ((prev: PageDefinition) => PageDefinition)) => {
@@ -486,16 +498,15 @@ export default function BuilderPage({
                   Nav Group
                 </label>
                 <select
-                  value={config.navGroup}
+                  value={coerceNavGroup(config.navGroup)}
                   onChange={(e) =>
                     setConfig((p) => ({ ...p, navGroup: e.target.value }))
                   }
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                 >
-                  <option value="OHC">OHC</option>
-                  <option value="AHC">AHC</option>
-                  <option value="Employee Experience">Employee Experience</option>
-                  <option value="Custom Dashboards">Custom Dashboards</option>
+                  {NAV_GROUP_OPTIONS.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">

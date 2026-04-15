@@ -116,6 +116,77 @@ export const dataSources: Record<string, DataSourceEntry> = {
     },
   },
 
+  "aggregated_table.agg_referral_kpi": {
+    label: "OHC Referral KPIs (Pre-aggregated)",
+    cugColumn: "cug_code_mapped",
+    columns: {
+      consult_month: {
+        label: "Consult Month",
+        type: "timestamp",
+        groupable: true,
+        filterable: true,
+      },
+      relationship: {
+        label: "Relationship",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      facility_name: {
+        label: "Location",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      referring_speciality: {
+        label: "From Specialty",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      speciality_referred_to: {
+        label: "To Specialty",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      patient_gender: {
+        label: "Gender",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      age_group: {
+        label: "Age Group",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      converted: {
+        label: "Conversion Status",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      conversion_bucket: {
+        label: "Conversion Bucket",
+        type: "text",
+        groupable: true,
+        filterable: true,
+      },
+      referral_count: {
+        label: "Referral Count",
+        type: "number",
+        aggregatable: true,
+      },
+      unique_patients: {
+        label: "Unique Patients",
+        type: "number",
+        aggregatable: true,
+      },
+    },
+  },
+
   "aggregated_table.agg_referral": {
     label: "OHC Referrals",
     cugColumn: "cug_code_mapped",

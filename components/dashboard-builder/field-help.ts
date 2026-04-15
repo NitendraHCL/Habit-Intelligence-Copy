@@ -430,4 +430,47 @@ export const FIELD_HELP: Record<string, FieldHelp> = {
       body: "0–30   → #ef4444 (Low)\n30–70  → #f59e0b (Medium)\n70–100 → #059669 (High)",
     },
   },
+  "thresholds.min": {
+    summary: "Lower bound for this threshold band (inclusive).",
+    description: "Leave blank for 'no lower bound' — the band covers all values below max.",
+  },
+  "thresholds.max": {
+    summary: "Upper bound (inclusive) for this threshold band.",
+    description: "Leave blank for 'no upper bound' — the band covers all values above min.",
+  },
+  "thresholds.above": {
+    summary: "Applies when the metric is strictly above this number.",
+    description:
+      "Convenience for single-sided thresholds (e.g. 'above 10000 → High'). When set, min/max are ignored for this band.",
+  },
+  "thresholds.color": {
+    summary: "Hex color used when the KPI value falls in this band.",
+    description: "The accent/text color applied to the KPI tile for matches.",
+  },
+  "thresholds.label": {
+    summary: "Short label for this band (e.g. Low / Medium / High).",
+    description: "Displayed as a small tag on the KPI. Optional.",
+  },
+
+  // ─────────────────────────── STYLE CHECKBOXES ──────────────────
+  "style.checkbox.showLegend": {
+    summary: "Show the series legend (one row per metric / color).",
+    description:
+      "Recommended on when you have 2+ series. Turned off automatically when only one series is rendered.",
+  },
+  "style.checkbox.showGrid": {
+    summary: "Show axis grid lines behind the chart.",
+    description:
+      "Helps viewers estimate values. Turn off for a cleaner look when the axis values are shown at labels or tooltips anyway.",
+  },
+  "style.checkbox.showLabels": {
+    summary: "Render value labels directly on bars/slices.",
+    description:
+      "Useful for small datasets. With many categories it becomes cluttered — rely on tooltips instead.",
+  },
+  "style.checkbox.stacked": {
+    summary: "Stack the series on top of each other.",
+    description:
+      "Applies when you have 2+ metrics. When on, each bar shows the sum of all metrics broken into segments. Off → each metric gets its own side-by-side bar.",
+  },
 };

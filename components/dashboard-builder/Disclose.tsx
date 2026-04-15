@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import InfoHint, { type FieldHelp } from "./InfoHint";
+import { FIELD_HELP } from "./field-help";
 
 interface DiscloseProps {
   title: string;
@@ -9,6 +11,10 @@ interface DiscloseProps {
   defaultOpen?: boolean;
   /** Show a small dot when there's any non-default config inside. */
   configured?: boolean;
+  /** Optional detailed help popover rendered beside the title. */
+  help?: FieldHelp;
+  /** Convenience alternative to `help` — looks up FIELD_HELP by key. */
+  infoKey?: string;
   children: React.ReactNode;
 }
 
@@ -17,8 +23,11 @@ export default function Disclose({
   caption,
   defaultOpen = false,
   configured = false,
+  help,
+  infoKey,
   children,
 }: DiscloseProps) {
+  const resolvedHelp = help ?? (infoKey ? FIELD_HELP[infoKey] : undefined);
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -43,6 +52,11 @@ export default function Disclose({
                 className="inline-block size-1.5 rounded-full bg-indigo-500"
                 title="Configured"
               />
+            )}
+            {resolvedHelp && (
+              <span onClick={(e) => e.stopPropagation()}>
+                <InfoHint help={resolvedHelp} />
+              </span>
             )}
           </span>
           {caption && (

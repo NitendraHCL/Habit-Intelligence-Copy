@@ -1420,7 +1420,8 @@ function StyleTab({
             onChange={(e) => updateViz({ showLegend: e.target.checked })}
             className="rounded border-gray-300"
           />
-          Show Legend
+          <span>Show Legend</span>
+          <InfoHint help={FIELD_HELP["style.checkbox.showLegend"]} />
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -1429,7 +1430,8 @@ function StyleTab({
             onChange={(e) => updateViz({ showGrid: e.target.checked })}
             className="rounded border-gray-300"
           />
-          Show Grid
+          <span>Show Grid</span>
+          <InfoHint help={FIELD_HELP["style.checkbox.showGrid"]} />
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -1438,7 +1440,8 @@ function StyleTab({
             onChange={(e) => updateViz({ showLabels: e.target.checked })}
             className="rounded border-gray-300"
           />
-          Show Labels
+          <span>Show Labels</span>
+          <InfoHint help={FIELD_HELP["style.checkbox.showLabels"]} />
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -1447,7 +1450,8 @@ function StyleTab({
             onChange={(e) => updateViz({ stacked: e.target.checked })}
             className="rounded border-gray-300"
           />
-          Stacked
+          <span>Stacked</span>
+          <InfoHint help={FIELD_HELP["style.checkbox.stacked"]} />
         </label>
       </div>
 
@@ -1501,6 +1505,7 @@ function StyleTab({
 
         <Disclose
           title="Label → Color Overrides"
+          infoKey="style.colorOverrides"
           caption="Map a category label (e.g. <20) to a specific color."
           defaultOpen={defaultOpen.has("colorOverrides") || isConfigured.colorOverrides}
           configured={isConfigured.colorOverrides}
@@ -1519,6 +1524,7 @@ function StyleTab({
 
         <Disclose
           title="Tooltip Template"
+          infoKey="style.tooltipTemplate"
           caption="Customize the hover popup text. Click a chip to insert a token."
           defaultOpen={defaultOpen.has("tooltipTemplate") || isConfigured.tooltipTemplate}
           configured={isConfigured.tooltipTemplate}
@@ -1528,6 +1534,7 @@ function StyleTab({
 
         <Disclose
           title="Insight Template"
+          infoKey="style.insightTemplate"
           caption="Auto-generated text below the chart. Leave blank for default."
           defaultOpen={defaultOpen.has("insightTemplate") || isConfigured.insightTemplate}
           configured={isConfigured.insightTemplate}
@@ -1537,6 +1544,7 @@ function StyleTab({
 
         <Disclose
           title="View Toggles"
+          infoKey="style.toggles"
           caption="Button group above the chart that swaps groupBy / metric / filter."
           defaultOpen={defaultOpen.has("toggles") || isConfigured.toggles}
           configured={isConfigured.toggles}
@@ -1546,6 +1554,7 @@ function StyleTab({
 
         <Disclose
           title="Color By Column"
+          infoKey="style.colorByColumn"
           caption="Route palette by a categorical column (e.g. in-clinic vs external)."
           defaultOpen={defaultOpen.has("colorByColumn") || isConfigured.colorByColumn}
           configured={isConfigured.colorByColumn}
@@ -1555,6 +1564,7 @@ function StyleTab({
 
         <Disclose
           title="Rank Palette"
+          infoKey="style.rankPalette"
           caption="Per-bar dark→light gradient. Best for stacked bars."
           defaultOpen={defaultOpen.has("rankPalette") || isConfigured.rankPalette}
           configured={isConfigured.rankPalette}
@@ -1565,6 +1575,7 @@ function StyleTab({
         {(chart.type === "kpi" || chart.type === "stat_card") && (
           <Disclose
             title="Stat Card Style"
+            infoKey="style.statCard"
             caption="Card background, value color, sublabel, value format."
             defaultOpen={defaultOpen.has("statCard") || isConfigured.statCard}
             configured={isConfigured.statCard}
@@ -1575,6 +1586,7 @@ function StyleTab({
 
         <Disclose
           title="Auto Tabs (from column)"
+          infoKey="style.tabsFromColumn"
           caption="Generate one tab per distinct value of a column. Click a tab to refilter the chart."
           defaultOpen={isConfigured.tabsFromColumn}
           configured={isConfigured.tabsFromColumn}
@@ -1584,6 +1596,7 @@ function StyleTab({
 
         <Disclose
           title="Color By Value Range (numeric buckets)"
+          infoKey="style.colorByValueRange"
           caption="Color cells/segments by binning a metric into ranges (e.g. % female: <40 / 40-60 / >60)."
           defaultOpen={isConfigured.colorByValueRange}
           configured={isConfigured.colorByValueRange}
@@ -1593,6 +1606,7 @@ function StyleTab({
 
         <Disclose
           title="Background Overlay"
+          infoKey="style.background"
           caption="Faint horizontal bars behind a bubble chart (e.g. capacity per location)."
           defaultOpen={isConfigured.background}
           configured={isConfigured.background}
@@ -1602,6 +1616,7 @@ function StyleTab({
 
         <Disclose
           title="Value Range Slider"
+          infoKey="style.valueSlider"
           caption="Adds a dual-handle slider above the chart to hide cells outside the range."
           defaultOpen={isConfigured.valueSlider}
           configured={isConfigured.valueSlider}
@@ -1611,6 +1626,7 @@ function StyleTab({
 
         <Disclose
           title="Per-Series Styles"
+          infoKey="style.seriesStyles"
           caption="Per-metric overrides: line/area/bar type, dashed stroke, filled area."
           defaultOpen={isConfigured.seriesStyles}
           configured={isConfigured.seriesStyles}
@@ -1620,6 +1636,7 @@ function StyleTab({
 
         <Disclose
           title="VisualMap (heatmap color scale)"
+          infoKey="style.visualMap"
           caption="Min/max colors, position, and an optional marker label."
           defaultOpen={isConfigured.visualMap}
           configured={isConfigured.visualMap}
@@ -1629,6 +1646,7 @@ function StyleTab({
 
         <Disclose
           title="Top Insight Slot"
+          infoKey="style.topInsightTemplate"
           caption="Auto-generated text rendered ABOVE the chart body. Same tokens as the bottom insight."
           defaultOpen={isConfigured.topInsightTemplate}
           configured={isConfigured.topInsightTemplate}
@@ -1638,6 +1656,7 @@ function StyleTab({
 
         <Disclose
           title="Sub-KPI Strip"
+          infoKey="style.summaryKpis"
           caption="Stat boxes rendered below the chart inside the same card."
           defaultOpen={isConfigured.summaryKpis}
           configured={isConfigured.summaryKpis}
@@ -1648,6 +1667,7 @@ function StyleTab({
         {(chart.type === "data_table" || chart.type === "metric_table") && (
           <Disclose
             title="Column Cell Renderers"
+            infoKey="style.columnConfig"
             caption="Per-column badges, progress bars, and threshold pills."
             defaultOpen={isConfigured.columnConfig}
             configured={isConfigured.columnConfig}
@@ -1659,6 +1679,7 @@ function StyleTab({
         {chart.type === "tile_grid" && (
           <Disclose
             title="Tile Grid Layout"
+            infoKey="style.tileGrid"
             caption="Columns, color column/map, sublabel template, caption column."
             defaultOpen
             configured={isConfigured.tileGrid}
@@ -1670,6 +1691,7 @@ function StyleTab({
         {chart.type === "narrative" && (
           <Disclose
             title="Narrative Template"
+            infoKey="style.narrative"
             caption="Markdown-ish prose with token interpolation."
             defaultOpen
             configured={isConfigured.narrativeTemplate}
@@ -1680,6 +1702,7 @@ function StyleTab({
 
         <Disclose
           title="Drill-down Hierarchy"
+          infoKey="style.drillDown"
           caption="Ordered columns; click a segment to advance to the next level (with back button)."
           defaultOpen={isConfigured.drillDown}
           configured={isConfigured.drillDown}
@@ -1689,6 +1712,7 @@ function StyleTab({
 
         <Disclose
           title="Drill-through Page"
+          infoKey="style.drillThrough"
           caption="Click a value to route to another page, passing the value as a URL param."
           defaultOpen={isConfigured.drillThrough}
           configured={isConfigured.drillThrough}
@@ -3095,7 +3119,7 @@ function ThresholdsTab({
             </button>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Max" compact>
+            <Field label="Max" compact infoKey="thresholds.max">
               <input
                 type="number"
                 value={t.max ?? ""}
@@ -3107,7 +3131,7 @@ function ThresholdsTab({
                 className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs"
               />
             </Field>
-            <Field label="Color" compact>
+            <Field label="Color" compact infoKey="thresholds.color">
               <input
                 type="color"
                 value={t.color}
@@ -3115,7 +3139,7 @@ function ThresholdsTab({
                 className="w-full h-8 rounded border border-gray-200"
               />
             </Field>
-            <Field label="Label" compact>
+            <Field label="Label" compact infoKey="thresholds.label">
               <input
                 type="text"
                 value={t.label}

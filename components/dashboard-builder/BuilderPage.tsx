@@ -23,6 +23,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import ChartPalette from "./ChartPalette";
 import ChartConfigurator from "./ChartConfigurator";
+import DataSourceRegistryProvider from "./DataSourceRegistryProvider";
 import { useAuth } from "@/lib/contexts/auth-context";
 import type {
   ChartDefinition,
@@ -392,6 +393,7 @@ export default function BuilderPage({
   const activeChart = activeChartId ? config.charts[activeChartId] : null;
 
   return (
+    <DataSourceRegistryProvider>
     <div className="flex h-[calc(100vh-64px)]">
       {/* Left Panel — Chart Palette */}
       <div className="w-72 border-r border-gray-200 bg-white flex-shrink-0 overflow-hidden flex flex-col">
@@ -706,6 +708,7 @@ export default function BuilderPage({
         </div>
       )}
     </div>
+    </DataSourceRegistryProvider>
   );
 }
 

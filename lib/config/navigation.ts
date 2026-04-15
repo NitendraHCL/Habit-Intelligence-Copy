@@ -15,6 +15,7 @@ import {
   GitBranch,
   ListChecks,
   PenTool,
+  Database,
   type LucideIcon,
 } from "lucide-react";
 
@@ -92,6 +93,12 @@ export const navigation: NavItem[] = [
     href: "/portal/builder",
     icon: PenTool,
     walkthroughId: "nav-builder",
+  },
+  {
+    label: "Data Sources",
+    href: "/portal/admin/data-sources",
+    icon: Database,
+    walkthroughId: "nav-data-sources",
   },
   {
     label: "Custom Dashboards",

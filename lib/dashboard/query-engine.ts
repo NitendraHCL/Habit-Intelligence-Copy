@@ -767,6 +767,12 @@ export async function executeQuery(
   cugCode: string,
   opts?: { statementTimeoutMs?: number }
 ): Promise<QueryResponse> {
+  // Refresh the in-memory whitelist from the DB before validating tables —
+  // this is what lets Super Admin additions via the /portal/admin/data-sources
+  // UI take effect without a deploy.
+  const { refreshRegistryFromDB } = await import("@/lib/config/data-sources-server");
+  await refreshRegistryFromDB(false);
+
   const start = Date.now();
   const { sql, params } = buildSQL(request, cugCode);
 

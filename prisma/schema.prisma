@@ -167,6 +167,23 @@ model ChartDefinition {
   @@map("chart_definitions")
 }
 
+/// DS-1: Admin-editable data source registry. Replaces the hardcoded
+/// lib/config/data-sources.ts whitelist — Super Admins can add/edit tables
+/// and columns through the /portal/admin/data-sources UI without a deploy.
+model DataSourceRegistry {
+  id         String   @id @default(uuid())
+  table      String   @unique
+  label      String
+  cugColumn  String   @map("cug_column")
+  columns    Json
+  joins      Json?
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("data_source_registry")
+}
+
 // ── Enums ──
 
 enum CommentType {

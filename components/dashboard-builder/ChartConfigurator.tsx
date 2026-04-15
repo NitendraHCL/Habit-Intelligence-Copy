@@ -1069,6 +1069,12 @@ function StyleTab({
     colorByColumn: !!(viz.colorByColumn as { column?: string } | undefined)?.column,
     rankPalette: !!viz.rankPalette,
     statCard: !!viz.statCard && Object.keys(viz.statCard as object).length > 0,
+    tabsFromColumn: !!(viz.tabsFromColumn as { column?: string } | undefined)?.column,
+    colorByValueRange: !!viz.colorByValueRange,
+    background: !!(viz.background as { column?: string } | undefined)?.column,
+    valueSlider: !!(viz.valueSlider as { enabled?: boolean } | undefined)?.enabled,
+    seriesStyles: !!viz.seriesStyles && Object.keys(viz.seriesStyles as object).length > 0,
+    visualMap: !!viz.visualMap,
   };
 
   return (
@@ -1282,6 +1288,60 @@ function StyleTab({
             <StatCardStyleEditor viz={viz} updateViz={updateViz} />
           </Disclose>
         )}
+
+        <Disclose
+          title="Auto Tabs (from column)"
+          caption="Generate one tab per distinct value of a column. Click a tab to refilter the chart."
+          defaultOpen={isConfigured.tabsFromColumn}
+          configured={isConfigured.tabsFromColumn}
+        >
+          <TabsFromColumnEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Color By Value Range (numeric buckets)"
+          caption="Color cells/segments by binning a metric into ranges (e.g. % female: <40 / 40-60 / >60)."
+          defaultOpen={isConfigured.colorByValueRange}
+          configured={isConfigured.colorByValueRange}
+        >
+          <ColorByValueRangeEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Background Overlay"
+          caption="Faint horizontal bars behind a bubble chart (e.g. capacity per location)."
+          defaultOpen={isConfigured.background}
+          configured={isConfigured.background}
+        >
+          <BackgroundEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Value Range Slider"
+          caption="Adds a dual-handle slider above the chart to hide cells outside the range."
+          defaultOpen={isConfigured.valueSlider}
+          configured={isConfigured.valueSlider}
+        >
+          <ValueSliderEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Per-Series Styles"
+          caption="Per-metric overrides: line/area/bar type, dashed stroke, filled area."
+          defaultOpen={isConfigured.seriesStyles}
+          configured={isConfigured.seriesStyles}
+        >
+          <SeriesStylesEditor viz={viz} updateViz={updateViz} chart={chart} />
+        </Disclose>
+
+        <Disclose
+          title="VisualMap (heatmap color scale)"
+          caption="Min/max colors, position, and an optional marker label."
+          defaultOpen={isConfigured.visualMap}
+          configured={isConfigured.visualMap}
+        >
+          <VisualMapEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
       </div>
     </>
   );
@@ -1809,6 +1869,392 @@ function StatCardStyleEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdat
         </div>
       </div>
     </Field>
+  );
+}
+
+function TabsFromColumnEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.tabsFromColumn as { column?: string; showAll?: boolean; limit?: number; allLabel?: string }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    const next = { ...cfg, ...patch };
+    if (!next.column) {
+      updateViz({ tabsFromColumn: undefined });
+      return;
+    }
+    updateViz({ tabsFromColumn: next });
+  }
+  return (
+    <div className="space-y-1.5">
+      <input
+        type="text"
+        value={cfg.column ?? ""}
+        onChange={(e) => update({ column: e.target.value })}
+        placeholder="Column (e.g. speciality_referred_to)"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+      />
+      {cfg.column && (
+        <>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={cfg.showAll !== false}
+                onChange={(e) => update({ showAll: e.target.checked })}
+              />
+              Show "All" tab
+            </label>
+            <input
+              type="text"
+              value={cfg.allLabel ?? ""}
+              onChange={(e) => update({ allLabel: e.target.value || undefined })}
+              placeholder="All-tab label"
+              className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-600">Max tabs:</span>
+            <input
+              type="number"
+              value={cfg.limit ?? 12}
+              min={2}
+              max={50}
+              onChange={(e) => update({ limit: Number(e.target.value) })}
+              className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ColorByValueRangeEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.colorByValueRange as { source?: "value" | "pct"; buckets?: { from?: number; to?: number; color: string; label?: string }[] }) ?? {};
+  const buckets = cfg.buckets ?? [];
+
+  function update(patch: { source?: "value" | "pct"; buckets?: typeof buckets }) {
+    const next = { source: cfg.source ?? "value", buckets: buckets, ...patch };
+    if (next.buckets.length === 0) {
+      updateViz({ colorByValueRange: undefined });
+      return;
+    }
+    updateViz({ colorByValueRange: next });
+  }
+
+  function setBucket(idx: number, patch: Partial<typeof buckets[0]>) {
+    update({ buckets: buckets.map((b, i) => (i === idx ? { ...b, ...patch } : b)) });
+  }
+
+  function addBucket() {
+    update({ buckets: [...buckets, { from: 0, to: 100, color: "#4f46e5" }] });
+  }
+
+  function removeBucket(idx: number) {
+    update({ buckets: buckets.filter((_, i) => i !== idx) });
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600">Source:</span>
+        <select
+          value={cfg.source ?? "value"}
+          onChange={(e) => update({ source: e.target.value as "value" | "pct" })}
+          className="px-2 py-1 border border-gray-200 rounded text-xs"
+        >
+          <option value="value">Raw value</option>
+          <option value="pct">% of row total</option>
+        </select>
+      </div>
+      {buckets.map((b, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <input
+            type="number"
+            value={b.from ?? ""}
+            onChange={(e) => setBucket(i, { from: e.target.value === "" ? undefined : Number(e.target.value) })}
+            placeholder="from"
+            className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <span className="text-[11px] text-gray-500">→</span>
+          <input
+            type="number"
+            value={b.to ?? ""}
+            onChange={(e) => setBucket(i, { to: e.target.value === "" ? undefined : Number(e.target.value) })}
+            placeholder="to"
+            className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <input
+            type="color"
+            value={b.color}
+            onChange={(e) => setBucket(i, { color: e.target.value })}
+            className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+          />
+          <input
+            type="text"
+            value={b.label ?? ""}
+            onChange={(e) => setBucket(i, { label: e.target.value || undefined })}
+            placeholder="label"
+            className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => removeBucket(i)}
+            className="text-gray-400 hover:text-red-500 text-sm"
+          >
+            &times;
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={addBucket}
+        className="text-xs text-indigo-600 hover:text-indigo-800"
+      >
+        + Add bucket
+      </button>
+      <p className="text-[11px] text-gray-500">
+        Leave <code>from</code> blank for "lowest open" or <code>to</code> blank
+        for "highest open".
+      </p>
+    </div>
+  );
+}
+
+function BackgroundEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.background as { type?: string; column?: string; color?: string; opacity?: number }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    const next = { type: "horizontal_bar", ...cfg, ...patch };
+    if (!next.column) {
+      updateViz({ background: undefined });
+      return;
+    }
+    updateViz({ background: next });
+  }
+  return (
+    <div className="space-y-1.5">
+      <input
+        type="text"
+        value={cfg.column ?? ""}
+        onChange={(e) => update({ column: e.target.value })}
+        placeholder="Column whose value drives bar width"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+      />
+      {cfg.column && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-600">Color</span>
+          <input
+            type="color"
+            value={cfg.color ?? "#E0E7FF"}
+            onChange={(e) => update({ color: e.target.value })}
+            className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+          />
+          <span className="text-[11px] text-gray-600">Opacity</span>
+          <input
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={cfg.opacity ?? 0.35}
+            onChange={(e) => update({ opacity: Number(e.target.value) })}
+            className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValueSliderEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.valueSlider as { enabled?: boolean; min?: number; max?: number }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    const next = { ...cfg, ...patch };
+    updateViz({ valueSlider: next.enabled ? next : undefined });
+  }
+  return (
+    <div className="space-y-1.5">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={!!cfg.enabled}
+          onChange={(e) => update({ enabled: e.target.checked })}
+        />
+        Enable value-range slider
+      </label>
+      {cfg.enabled && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-600">Min</span>
+          <input
+            type="number"
+            value={cfg.min ?? ""}
+            onChange={(e) => update({ min: e.target.value === "" ? undefined : Number(e.target.value) })}
+            placeholder="auto"
+            className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <span className="text-[11px] text-gray-600">Max</span>
+          <input
+            type="number"
+            value={cfg.max ?? ""}
+            onChange={(e) => update({ max: e.target.value === "" ? undefined : Number(e.target.value) })}
+            placeholder="auto"
+            className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SeriesStylesEditor({
+  viz,
+  updateViz,
+  chart,
+}: {
+  viz: Viz;
+  updateViz: VizUpdater;
+  chart: Partial<ChartDefinition>;
+}) {
+  const cfg = (viz.seriesStyles as Record<string, { type?: string; dashed?: boolean; filled?: boolean; color?: string }>) ?? {};
+  const metricKeys = chart.transform?.metrics?.length
+    ? chart.transform.metrics.map((m) => ({ key: m.key, label: m.label }))
+    : [{ key: "value", label: chart.title ?? "value" }];
+
+  function update(key: string, patch: Partial<{ type: string; dashed: boolean; filled: boolean; color: string }>) {
+    const next = { ...cfg, [key]: { ...cfg[key], ...patch } };
+    // Drop empty entries
+    Object.keys(next).forEach((k) => {
+      const e = next[k];
+      if (!e.type && !e.dashed && !e.filled && !e.color) delete next[k];
+    });
+    updateViz({ seriesStyles: Object.keys(next).length ? next : undefined });
+  }
+
+  return (
+    <div className="space-y-2">
+      {metricKeys.map((m) => {
+        const s = cfg[m.key] ?? {};
+        return (
+          <div
+            key={m.key}
+            className="border border-gray-200 rounded-lg p-2 space-y-1.5"
+          >
+            <p className="text-[11px] font-semibold text-gray-700">{m.label}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={s.type ?? ""}
+                onChange={(e) => update(m.key, { type: e.target.value || undefined })}
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+              >
+                <option value="">Default</option>
+                <option value="line">Line</option>
+                <option value="area">Area</option>
+                <option value="bar">Bar</option>
+              </select>
+              <label className="flex items-center gap-1 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={!!s.dashed}
+                  onChange={(e) => update(m.key, { dashed: e.target.checked || undefined })}
+                />
+                Dashed
+              </label>
+              <label className="flex items-center gap-1 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={!!s.filled}
+                  onChange={(e) => update(m.key, { filled: e.target.checked || undefined })}
+                />
+                Filled
+              </label>
+              <input
+                type="color"
+                value={s.color ?? "#4f46e5"}
+                onChange={(e) => update(m.key, { color: e.target.value })}
+                className="h-6 w-8 border border-gray-200 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function VisualMapEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.visualMap as { min?: number; max?: number; minColor?: string; maxColor?: string; position?: string; markerValue?: number; markerLabel?: string }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    const next = { ...cfg, ...patch };
+    Object.keys(next).forEach((k) => {
+      const v = (next as Record<string, unknown>)[k];
+      if (v === "" || v === undefined) delete (next as Record<string, unknown>)[k];
+    });
+    updateViz({ visualMap: Object.keys(next).length ? next : undefined });
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-16">Min color</span>
+        <input
+          type="color"
+          value={cfg.minColor ?? "#f3e8ff"}
+          onChange={(e) => update({ minColor: e.target.value })}
+          className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+        />
+        <span className="text-[11px] text-gray-600 w-16">Max color</span>
+        <input
+          type="color"
+          value={cfg.maxColor ?? "#7C3AED"}
+          onChange={(e) => update({ maxColor: e.target.value })}
+          className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-16">Min</span>
+        <input
+          type="number"
+          value={cfg.min ?? ""}
+          onChange={(e) => update({ min: e.target.value === "" ? undefined : Number(e.target.value) })}
+          placeholder="auto"
+          className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+        />
+        <span className="text-[11px] text-gray-600 w-16">Max</span>
+        <input
+          type="number"
+          value={cfg.max ?? ""}
+          onChange={(e) => update({ max: e.target.value === "" ? undefined : Number(e.target.value) })}
+          placeholder="auto"
+          className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-16">Position</span>
+        <select
+          value={cfg.position ?? "bottom"}
+          onChange={(e) => update({ position: e.target.value })}
+          className="px-2 py-1 border border-gray-200 rounded text-xs"
+        >
+          <option value="bottom">Bottom</option>
+          <option value="top">Top</option>
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-16">Marker</span>
+        <input
+          type="number"
+          value={cfg.markerValue ?? ""}
+          onChange={(e) => update({ markerValue: e.target.value === "" ? undefined : Number(e.target.value) })}
+          placeholder="value"
+          className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+        />
+        <input
+          type="text"
+          value={cfg.markerLabel ?? ""}
+          onChange={(e) => update({ markerLabel: e.target.value || undefined })}
+          placeholder="label (e.g. Peak)"
+          className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+        />
+      </div>
+    </div>
   );
 }
 

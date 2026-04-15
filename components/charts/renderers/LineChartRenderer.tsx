@@ -3,6 +3,8 @@
 import {
   LineChart,
   Line,
+  Area,
+  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -16,7 +18,13 @@ import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
 interface LineChartRendererProps {
   data: Record<string, unknown>[];
   xKey: string;
-  lines: { key: string; name?: string; color?: string; dashed?: boolean }[];
+  lines: {
+    key: string;
+    name?: string;
+    color?: string;
+    dashed?: boolean;
+    filled?: boolean;
+  }[];
   showGrid?: boolean;
   showLegend?: boolean;
   showDots?: boolean;
@@ -88,3 +96,8 @@ export default function LineChartRenderer({
     </ResponsiveContainer>
   );
 }
+
+// Re-export: when any line wants `filled`, the transform layer should switch
+// the renderer to "composed" instead. We keep this file focused on plain
+// + dashed lines.
+export { Area, ComposedChart };

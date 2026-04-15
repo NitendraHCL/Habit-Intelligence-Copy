@@ -21,6 +21,8 @@ interface SeriesConfig {
   color?: string;
   yAxisId?: string;
   stackId?: string;
+  dashed?: boolean;
+  filled?: boolean;
 }
 
 interface ComposedChartRendererProps {
@@ -88,6 +90,7 @@ export default function ComposedChartRenderer({
                   stroke={color}
                   yAxisId={yId}
                   strokeWidth={2}
+                  strokeDasharray={s.dashed ? "5 5" : undefined}
                   dot={{ r: 3 }}
                 />
               );
@@ -99,10 +102,11 @@ export default function ComposedChartRenderer({
                   dataKey={s.key}
                   name={s.name || s.key}
                   stroke={color}
-                  fill={color}
-                  fillOpacity={0.15}
+                  fill={s.filled !== false ? color : "transparent"}
+                  fillOpacity={s.filled !== false ? 0.15 : 0}
                   yAxisId={yId}
                   strokeWidth={2}
+                  strokeDasharray={s.dashed ? "5 5" : undefined}
                 />
               );
           }

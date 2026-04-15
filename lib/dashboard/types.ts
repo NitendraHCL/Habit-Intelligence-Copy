@@ -269,6 +269,76 @@ export interface RankPalette {
   applyPerGroup?: boolean;
 }
 
+/** Auto-generate tabs from the distinct values of a column. */
+export interface TabsFromColumn {
+  /** Column whose distinct values become tab labels. */
+  column: string;
+  /** Optional first "All" tab that disables the filter. Default: true. */
+  showAll?: boolean;
+  /** Cap on number of tabs rendered (most frequent values picked first). */
+  limit?: number;
+  /** Optional label override for the "All" tab. */
+  allLabel?: string;
+}
+
+export interface ColorByValueBucket {
+  /** Inclusive lower bound. Omit for the lowest open bucket. */
+  from?: number;
+  /** Exclusive upper bound. Omit for the highest open bucket. */
+  to?: number;
+  color: string;
+  label?: string;
+}
+
+/** Color cells/segments by binning a numeric metric into buckets. */
+export interface ColorByValueRange {
+  /** "value" = the metric column, "pct" = value as % of row total. */
+  source: "value" | "pct";
+  buckets: ColorByValueBucket[];
+}
+
+/** Background overlay rendered behind a bubble/scatter chart. */
+export interface BackgroundOverlay {
+  /** Currently only horizontal_bar (capacity-style overlay). */
+  type: "horizontal_bar";
+  /** Column whose value drives the bar width per row. */
+  column: string;
+  color?: string;
+  opacity?: number;
+}
+
+/** Show a numeric range slider above the chart that hides values outside. */
+export interface ValueSlider {
+  enabled: boolean;
+  /** Slider min (defaults to data min). */
+  min?: number;
+  /** Slider max (defaults to data max). */
+  max?: number;
+}
+
+/** Per-series style overrides keyed by metric key. */
+export interface SeriesStyle {
+  /** Override series rendering: line | area | bar | scatter. */
+  type?: "line" | "area" | "bar" | "scatter";
+  /** Dashed stroke (line/area only). */
+  dashed?: boolean;
+  /** Fill area under the line (line only). */
+  filled?: boolean;
+  color?: string;
+}
+
+/** Editor-friendly visualMap config for ECharts heatmap/scatter/sunburst. */
+export interface VisualMapConfig {
+  min?: number;
+  max?: number;
+  minColor?: string;
+  maxColor?: string;
+  position?: "top" | "bottom" | "left" | "right";
+  /** Optional marker value to highlight (e.g. current peak). */
+  markerValue?: number;
+  markerLabel?: string;
+}
+
 export interface VisualizationConfig {
   colors?: string[] | "default";
   showLegend?: boolean;
@@ -299,6 +369,18 @@ export interface VisualizationConfig {
   colorByColumn?: ColorByColumn;
   /** Per-group rank-based dark→light gradient. */
   rankPalette?: RankPalette;
+  /** Auto-generate tabs from distinct values of a column. */
+  tabsFromColumn?: TabsFromColumn;
+  /** Color cells by numeric bucket (e.g. % female ranges). */
+  colorByValueRange?: ColorByValueRange;
+  /** Background overlay (horizontal capacity bars behind a bubble chart). */
+  background?: BackgroundOverlay;
+  /** Range slider above the chart that hides values outside. */
+  valueSlider?: ValueSlider;
+  /** Per-series style overrides keyed by metric key. */
+  seriesStyles?: Record<string, SeriesStyle>;
+  /** First-class visualMap config (ECharts heatmap/scatter). */
+  visualMap?: VisualMapConfig;
   /** For ECharts generic renderer — full ECharts option override */
   echartsOption?: Record<string, unknown>;
   /** Arbitrary renderer-specific options */

@@ -20,6 +20,7 @@ import {
   type ColorByColumn,
   type RankPalette,
 } from "@/lib/dashboard/render-helpers";
+import type { ColorByValueRange } from "@/lib/dashboard/types";
 
 interface BarChartRendererProps {
   data: Record<string, unknown>[];
@@ -31,6 +32,7 @@ interface BarChartRendererProps {
   colorByIndex?: boolean;
   colorOverrides?: Record<string, string>;
   colorByColumn?: ColorByColumn;
+  colorByValueRange?: ColorByValueRange;
   rankPalette?: RankPalette;
   tooltipTemplate?: string;
   basePalette?: string[];
@@ -46,14 +48,34 @@ export default function BarChartRenderer({
   colorByIndex = false,
   colorOverrides,
   colorByColumn,
+  colorByValueRange,
   rankPalette,
   tooltipTemplate,
   basePalette = CHART_PALETTE,
 }: BarChartRendererProps) {
+  function bucketColor(value: number, total: number, fallback: string): string {
+    if (!colorByValueRange) return fallback;
+    const v = colorByValueRange.source === "pct"
+      ? (total > 0 ? (value / total) * 100 : 0)
+      : value;
+    for (const b of colorByValueRange.buckets) {
+      const okMin = b.from === undefined || v >= b.from;
+      const okMax = b.to === undefined || v < b.to;
+      if (okMin && okMax) return b.color;
+    }
+    return fallback;
+  }
   // Pre-compute per-row, per-bar color when colorByColumn or rankPalette is set.
   // Shape: cellColors[barIndex][rowIndex] = hex
   const cellColors: (string | undefined)[][] = bars.map((bar, barIdx) => {
     return data.map((row, rowIdx) => {
+      // colorByValueRange — bucketed coloring by metric value or % of row total
+      if (colorByValueRange) {
+        const v = Number(row[bar.key] ?? 0);
+        const total = bars.reduce((s, b) => s + Number(row[b.key] ?? 0), 0);
+        const seriesFallback = bar.color || basePalette[barIdx % basePalette.length];
+        return bucketColor(v, total, seriesFallback);
+      }
       // colorByColumn — palette routed by a categorical column on the row
       if (colorByColumn) {
         const tag = String(row[colorByColumn.column] ?? "");

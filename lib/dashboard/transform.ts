@@ -153,6 +153,7 @@ function transformBar(chart: ChartDefinition, data: Row[]): TransformedData {
       colorByIndex: metricKeys.length === 1,
       colorOverrides: viz.colorOverrides,
       colorByColumn: viz.colorByColumn,
+      colorByValueRange: viz.colorByValueRange,
       rankPalette: viz.rankPalette,
       tooltipTemplate: viz.tooltipTemplate,
       basePalette: colors,
@@ -168,13 +169,50 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
   const labels = getMetricLabels(chart);
   const viz = chart.visualization ?? {};
   const colors = Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE;
+  const seriesStyles = (viz.seriesStyles as Record<string, { type?: string; dashed?: boolean; filled?: boolean; color?: string }>) ?? {};
 
-  const lines = metricKeys.map((key, i) => ({
-    key,
-    name: labels[key] ?? key,
-    color: colors[i % colors.length],
-    ...(viz.stepped ? { type: "step" as const } : {}),
-  }));
+  // If any series has filled or a non-line type override, route to composed
+  const hasMixedStyles = metricKeys.some((k) => {
+    const s = seriesStyles[k];
+    return s && (s.filled || (s.type && s.type !== "line"));
+  });
+
+  if (hasMixedStyles) {
+    const series = metricKeys.map((key, i) => {
+      const s = seriesStyles[key] ?? {};
+      const color = s.color ?? colors[i % colors.length];
+      return {
+        key,
+        name: labels[key] ?? key,
+        type: s.type ?? (s.filled ? "area" : "line"),
+        color,
+        dashed: s.dashed,
+        filled: s.filled,
+      };
+    });
+    return {
+      renderer: "composed",
+      props: {
+        data,
+        xKey,
+        series,
+        showGrid: viz.showGrid ?? true,
+        showLegend: viz.showLegend ?? metricKeys.length > 1,
+        tooltipTemplate: viz.tooltipTemplate,
+      },
+    };
+  }
+
+  const lines = metricKeys.map((key, i) => {
+    const s = seriesStyles[key] ?? {};
+    return {
+      key,
+      name: labels[key] ?? key,
+      color: s.color ?? colors[i % colors.length],
+      dashed: s.dashed,
+      ...(viz.stepped ? { type: "step" as const } : {}),
+    };
+  });
 
   return {
     renderer: "line",
@@ -283,6 +321,10 @@ function transformScatter(
       yKey: metricKeys[1] ?? "y",
       ...(renderer === "bubble" ? { zKey: metricKeys[2] ?? "z" } : {}),
       ...(Array.isArray(viz.colors) ? { colors: viz.colors } : {}),
+      colorByValueRange: viz.colorByValueRange,
+      background: viz.background,
+      valueSlider: viz.valueSlider,
+      tooltipTemplate: viz.tooltipTemplate,
     },
   };
 }
@@ -364,6 +406,8 @@ function transformHeatmap(
       xLabels: (viz.xLabels as string[]) ?? xLabels,
       yLabels: (viz.yLabels as string[]) ?? yLabels,
       tooltipTemplate: viz.tooltipTemplate,
+      valueSlider: viz.valueSlider,
+      visualMap: viz.visualMap,
     },
   };
 }

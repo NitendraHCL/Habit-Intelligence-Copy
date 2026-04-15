@@ -15,6 +15,7 @@ import type {
   QueryRequest,
   TransformConfig,
   ViewToggle,
+  TabsFromColumn,
   WhereCondition,
 } from "@/lib/dashboard/types";
 
@@ -63,6 +64,51 @@ export default function DynamicChart({
   const [activeToggleId, setActiveToggleId] = useState<string | null>(defaultToggleId);
   const activeToggle = toggles.find((t) => t.id === activeToggleId);
 
+  // ── Auto-tabs from column ──
+  const tabsCfg = chart.visualization?.tabsFromColumn as TabsFromColumn | undefined;
+  const [tabValues, setTabValues] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tabsCfg?.column || !clientId) return;
+    let cancelled = false;
+    fetch(`/api/data/query?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataSource: chart.dataSource,
+        transform: {
+          groupBy: tabsCfg.column,
+          metric: "count",
+          sort: "desc",
+          limit: tabsCfg.limit ?? 12,
+        },
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.data?.length) return;
+        const vals = d.data
+          .map((r: Record<string, unknown>) => String(r[tabsCfg.column] ?? ""))
+          .filter(Boolean);
+        setTabValues(vals);
+        if (tabsCfg.showAll !== false) {
+          setActiveTab(null);
+        } else if (vals.length) {
+          setActiveTab(vals[0]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tabsCfg?.column, tabsCfg?.limit, tabsCfg?.showAll, clientId, chart.dataSource]);
+
+  const tabWhere: Record<string, WhereCondition> | undefined = useMemo(() => {
+    if (!tabsCfg?.column || !activeTab) return undefined;
+    return { [tabsCfg.column]: { eq: activeTab } };
+  }, [tabsCfg?.column, activeTab]);
+
   // Apply toggle action to transform + dataSource.where
   const effectiveTransform: TransformConfig = useMemo(() => {
     if (!activeToggle) return chart.transform;
@@ -91,11 +137,11 @@ export default function DynamicChart({
   const queryBody = useMemo<QueryRequest>(() => ({
     dataSource: {
       table: chart.dataSource.table,
-      where: { ...chart.dataSource.where, ...toggleWhere, ...crossFilterWhere },
+      where: { ...chart.dataSource.where, ...toggleWhere, ...tabWhere, ...crossFilterWhere },
     },
     transform: effectiveTransform,
     filters,
-  }), [chart.dataSource, effectiveTransform, filters, crossFilterWhere, toggleWhere]);
+  }), [chart.dataSource, effectiveTransform, filters, crossFilterWhere, toggleWhere, tabWhere]);
 
   const { data: response, isLoading, error } = useSWR(
     [`/api/data/query?clientId=${clientId}`, JSON.stringify(queryBody)],
@@ -202,6 +248,31 @@ export default function DynamicChart({
               </button>
             ))}
           </div>
+        </div>
+      )}
+      {tabsCfg?.column && tabValues.length > 0 && (
+        <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
+          {tabsCfg.showAll !== false && (
+            <button
+              onClick={() => setActiveTab(null)}
+              className={`px-3 py-1.5 text-[11.5px] font-medium rounded-md whitespace-nowrap transition-all ${
+                activeTab === null ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {tabsCfg.allLabel ?? "All"}
+            </button>
+          )}
+          {tabValues.map((v) => (
+            <button
+              key={v}
+              onClick={() => setActiveTab(v)}
+              className={`px-3 py-1.5 text-[11.5px] font-medium rounded-md whitespace-nowrap transition-all ${
+                activeTab === v ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
         </div>
       )}
       {!isLoading && !error && transformed && (

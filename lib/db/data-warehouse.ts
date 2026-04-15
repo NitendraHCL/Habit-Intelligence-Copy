@@ -11,8 +11,11 @@ function createPool() {
     connectionString: process.env.DATA_WAREHOUSE_URL,
     max: 50,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 60000,
-    statement_timeout: 120000,
+    // Fail fast when the pool is saturated or the warehouse is unreachable —
+    // a 5s acquire ceiling prevents cascading 60s waits from blocking the UI.
+    connectionTimeoutMillis: 5000,
+    // Kill runaway queries fast so they release their pool slot.
+    statement_timeout: 15000,
     ssl: { rejectUnauthorized: false },
   });
 }

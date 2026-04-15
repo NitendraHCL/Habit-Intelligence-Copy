@@ -57,9 +57,39 @@ export function transformForChart(
       return transformKPI(chart, data);
     case "html":
       return transformHTML(chart, data);
+    case "tile_grid":
+      return transformTileGrid(chart, data);
+    case "narrative":
+      return transformNarrative(chart, data);
     default:
       return { renderer: "table", props: { data } };
   }
+}
+
+function transformTileGrid(chart: ChartDefinition, data: Row[]): TransformedData {
+  const groupKey = getGroupKey(chart);
+  const metricKey = getMetricKeys(chart)[0];
+  const viz = chart.visualization ?? {};
+  return {
+    renderer: "tile_grid",
+    props: {
+      data,
+      groupKey,
+      metricKey,
+      config: viz.tileGrid ?? {},
+    },
+  };
+}
+
+function transformNarrative(chart: ChartDefinition, data: Row[]): TransformedData {
+  const viz = chart.visualization ?? {};
+  return {
+    renderer: "narrative",
+    props: {
+      template: (viz.narrativeTemplate as string) ?? "",
+      data,
+    },
+  };
 }
 
 // ── Helpers ──
@@ -684,6 +714,7 @@ function transformTable(chart: ChartDefinition, data: Row[]): TransformedData {
       pageSize: viz.pageSize ?? 10,
       sortable: viz.sortable ?? true,
       striped: viz.striped ?? true,
+      columnConfig: viz.columnConfig,
     },
   };
 }

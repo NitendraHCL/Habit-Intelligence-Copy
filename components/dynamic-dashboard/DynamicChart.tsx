@@ -17,6 +17,8 @@ import type {
   ViewToggle,
   TabsFromColumn,
   WhereCondition,
+  SummaryKpi,
+  ToggleLayout,
 } from "@/lib/dashboard/types";
 
 // Lazy-load renderers
@@ -34,6 +36,8 @@ const TreemapRenderer = dynamic(() => import("@/components/charts/renderers/Tree
 const SunburstRenderer = dynamic(() => import("@/components/charts/renderers/SunburstRenderer"));
 const GenericEChartsRenderer = dynamic(() => import("@/components/charts/renderers/GenericEChartsRenderer"));
 const TableRenderer = dynamic(() => import("@/components/charts/renderers/TableRenderer"));
+const TileGridRenderer = dynamic(() => import("@/components/charts/renderers/TileGridRenderer"));
+const NarrativeRenderer = dynamic(() => import("@/components/charts/renderers/NarrativeRenderer"));
 
 const fetcher = async (url: string, body: QueryRequest) => {
   const res = await fetch(url, {
@@ -69,14 +73,17 @@ export default function DynamicChart({
   const [tabValues, setTabValues] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
 
+  // Only refetch tab values when the *primitive* table identity changes,
+  // not when the parent re-creates dataSource/transform objects on each render.
+  const dataSourceTable = chart.dataSource?.table;
   useEffect(() => {
-    if (!tabsCfg?.column || !clientId) return;
+    if (!tabsCfg?.column || !clientId || !dataSourceTable) return;
     let cancelled = false;
     fetch(`/api/data/query?clientId=${clientId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        dataSource: chart.dataSource,
+        dataSource: { table: dataSourceTable },
         transform: {
           groupBy: tabsCfg.column,
           metric: "count",
@@ -102,7 +109,7 @@ export default function DynamicChart({
     return () => {
       cancelled = true;
     };
-  }, [tabsCfg?.column, tabsCfg?.limit, tabsCfg?.showAll, clientId, chart.dataSource]);
+  }, [tabsCfg?.column, tabsCfg?.limit, tabsCfg?.showAll, clientId, dataSourceTable]);
 
   const tabWhere: Record<string, WhereCondition> | undefined = useMemo(() => {
     if (!tabsCfg?.column || !activeTab) return undefined;
@@ -182,6 +189,58 @@ export default function DynamicChart({
     );
   }, [chart, effectiveTransform, response?.data, isLoading]);
 
+  // G3: top-of-card insight slot
+  const topInsight = useMemo(() => {
+    if (!response?.data?.length || isLoading) return null;
+    const template = chart.visualization?.topInsightTemplate as string | undefined;
+    if (!template) return null;
+    return generateInsight(
+      { ...chart, transform: effectiveTransform },
+      response.data,
+      template
+    );
+  }, [chart, effectiveTransform, response?.data, isLoading]);
+
+  // G8: sub-KPI strip below the chart inside the same card
+  const summaryKpis = (chart.visualization?.summaryKpis as SummaryKpi[] | undefined) ?? [];
+  const summaryStrip = useMemo(() => {
+    if (!summaryKpis.length || !response?.data?.length) return null;
+    return (
+      <div
+        className="grid gap-3 mt-4"
+        style={{
+          gridTemplateColumns: `repeat(${Math.min(summaryKpis.length, 4)}, minmax(0, 1fr))`,
+        }}
+      >
+        {summaryKpis.map((kpi, i) => {
+          const value = evaluateKpiExpr(kpi.expr, response.data ?? []);
+          return (
+            <div
+              key={i}
+              className="rounded-xl px-3 py-3 text-center"
+              style={{ backgroundColor: kpi.bgColor ?? "#F5F6FA" }}
+            >
+              <p
+                className="text-[16px] font-extrabold"
+                style={{ color: kpi.color ?? "#111827" }}
+              >
+                {value}
+              </p>
+              <p className="text-[11px] font-medium" style={{ color: "#6B7280" }}>
+                {kpi.label}
+              </p>
+              {kpi.sublabel && (
+                <p className="text-[10px] mt-0.5" style={{ color: "#9CA3AF" }}>
+                  {kpi.sublabel}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }, [summaryKpis, response?.data]);
+
   // Auto-generate interaction hint subtitle
   const interactionHint = useMemo(() => {
     if (chart.subtitle) return chart.subtitle;
@@ -216,6 +275,8 @@ export default function DynamicChart({
       chartTitle={chart.title}
       chartDescription={interactionHint}
       insightText={autoInsight ?? undefined}
+      topInsightText={topInsight ?? undefined}
+      belowContent={summaryStrip}
     >
       {isLoading && !error && (
         <div className="flex items-center justify-center" style={{ height: chart.visualization?.height ?? 350 }}>
@@ -229,25 +290,39 @@ export default function DynamicChart({
       )}
       {toggles.length > 0 && (
         <div className="flex items-center gap-2 mb-3">
-          <div
-            className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5"
-            style={{ backgroundColor: "#F3F4F6" }}
-          >
-            {toggles.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveToggleId(t.id)}
-                className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${
-                  activeToggleId === t.id ? "bg-white shadow-sm" : ""
-                }`}
-                style={{
-                  color: activeToggleId === t.id ? "#111827" : "#6B7280",
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          {(chart.visualization?.toggleLayout as ToggleLayout) === "dropdown" ? (
+            <select
+              value={activeToggleId ?? ""}
+              onChange={(e) => setActiveToggleId(e.target.value || null)}
+              className="px-3 py-1.5 text-[11.5px] font-medium rounded-md border border-gray-200 bg-white"
+            >
+              {toggles.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div
+              className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5"
+              style={{ backgroundColor: "#F3F4F6" }}
+            >
+              {toggles.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveToggleId(t.id)}
+                  className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${
+                    activeToggleId === t.id ? "bg-white shadow-sm" : ""
+                  }`}
+                  style={{
+                    color: activeToggleId === t.id ? "#111827" : "#6B7280",
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {tabsCfg?.column && tabValues.length > 0 && (
@@ -341,6 +416,10 @@ function ChartRenderer({
       );
     case "table":
       return <TableRenderer {...(props as any)} />;
+    case "tile_grid":
+      return <TileGridRenderer {...(props as any)} />;
+    case "narrative":
+      return <NarrativeRenderer {...(props as any)} />;
     case "kpi":
       return null; // KPIs handled by KPICardPremium before ChartRenderer
     case "html":
@@ -404,6 +483,45 @@ function getInteractionHint(chartType: string): string | undefined {
     funnel: "Stages flow top to bottom. Width shows the drop-off at each stage.",
   };
   return hints[chartType];
+}
+
+// ── G8: evaluate a SummaryKpi expression against the chart's data rows ──
+// Supported expressions:
+//   - "sum:col"      → sum of column across rows
+//   - "avg:col"      → average
+//   - "max:col"      → max
+//   - "min:col"      → min
+//   - "count"        → row count
+//   - "first.col"    → first row's column literal
+//   - any other      → returned verbatim
+function evaluateKpiExpr(expr: string, rows: Record<string, unknown>[]): string {
+  if (!expr) return "";
+  if (expr === "count") return formatNum(rows.length);
+  const colonMatch = expr.match(/^(sum|avg|min|max|count_distinct):(.+)$/);
+  if (colonMatch) {
+    const [, fn, col] = colonMatch;
+    const values = rows.map((r) => Number(r[col] ?? 0)).filter((n) => !isNaN(n));
+    if (!values.length) return "0";
+    switch (fn) {
+      case "sum":
+        return formatNum(values.reduce((a, b) => a + b, 0));
+      case "avg":
+        return formatNum(values.reduce((a, b) => a + b, 0) / values.length);
+      case "min":
+        return formatNum(Math.min(...values));
+      case "max":
+        return formatNum(Math.max(...values));
+      case "count_distinct":
+        return formatNum(new Set(rows.map((r) => r[col])).size);
+    }
+  }
+  const firstMatch = expr.match(/^first\.(.+)$/);
+  if (firstMatch && rows[0]) {
+    const v = rows[0][firstMatch[1]];
+    if (typeof v === "number") return formatNum(v);
+    return String(v ?? "");
+  }
+  return expr;
 }
 
 // ── Auto-generate insight text from data ──

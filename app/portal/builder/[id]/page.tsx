@@ -25,7 +25,8 @@ export default function EditDashboardPage({
 function EditExisting({ dashboardId }: { dashboardId: string }) {
   const { data, isLoading } = useSWR(
     `/api/admin/dashboards/${dashboardId}`,
-    fetcher
+    fetcher,
+    { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 60_000 }
   );
 
   if (isLoading) {

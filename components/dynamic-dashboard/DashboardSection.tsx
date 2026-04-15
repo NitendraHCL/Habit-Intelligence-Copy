@@ -112,6 +112,47 @@ export default function DashboardSection({
     );
   }
 
+  if (section.type === "composite") {
+    // G5: All sub-charts share a single card with one title/subtitle row.
+    const cols = section.columns ?? Math.min(visibleCharts.length, 2);
+    return (
+      <div
+        className="bg-white rounded-2xl overflow-hidden"
+        style={{
+          border: "1px solid #E5E7EB",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div className="px-6 pt-5 pb-3">
+          {section.accentColor && (
+            <AccentBar color={section.accentColor} />
+          )}
+          {section.title && (
+            <h3 className="text-[15px] font-bold text-gray-900">
+              {section.title}
+            </h3>
+          )}
+          {section.subtitle && (
+            <p className="text-[13px] text-gray-500 mt-0.5">{section.subtitle}</p>
+          )}
+        </div>
+        <div
+          className="grid gap-6 px-6 pb-6"
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+        >
+          {visibleCharts.map((chart) => (
+            <DynamicChart
+              key={chart.id}
+              chart={chart}
+              clientId={clientId}
+              filters={filters}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (section.type === "tabs") {
     return (
       <div>

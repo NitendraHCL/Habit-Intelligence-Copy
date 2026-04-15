@@ -65,6 +65,32 @@ export default function BarChartRenderer({
     }
     return fallback;
   }
+  // ── G9: when both colorByColumn AND rankPalette are set, each routed
+  //         palette becomes a rank gradient. Group rows by their colorByColumn
+  //         value first; rank within group; pick gradient endpoints from the
+  //         routed palette (first = darkest, last = lightest) or use rankPalette.gradient.
+  const groupedRanks: Record<string, Map<number, number>> | null = (() => {
+    if (!(colorByColumn && rankPalette)) return null;
+    const groups: Record<string, { idx: number; v: number }[]> = {};
+    data.forEach((row, idx) => {
+      const tag = String(row[colorByColumn.column] ?? "");
+      // Use first-bar value for ranking (single-series case).
+      const v = Number(row[bars[0]?.key ?? "value"] ?? 0);
+      (groups[tag] ??= []).push({ idx, v });
+    });
+    const result: Record<string, Map<number, number>> = {};
+    for (const [tag, entries] of Object.entries(groups)) {
+      entries.sort((a, b) => b.v - a.v);
+      const m = new Map<number, number>();
+      entries.forEach(({ idx }, rank) => {
+        const t = entries.length === 1 ? 0 : rank / (entries.length - 1);
+        m.set(idx, t);
+      });
+      result[tag] = m;
+    }
+    return result;
+  })();
+
   // Pre-compute per-row, per-bar color when colorByColumn or rankPalette is set.
   // Shape: cellColors[barIndex][rowIndex] = hex
   const cellColors: (string | undefined)[][] = bars.map((bar, barIdx) => {
@@ -75,6 +101,18 @@ export default function BarChartRenderer({
         const total = bars.reduce((s, b) => s + Number(row[b.key] ?? 0), 0);
         const seriesFallback = bar.color || basePalette[barIdx % basePalette.length];
         return bucketColor(v, total, seriesFallback);
+      }
+      // G9: colorByColumn + rankPalette → per-group rank gradient
+      if (colorByColumn && rankPalette && groupedRanks) {
+        const tag = String(row[colorByColumn.column] ?? "");
+        const t = groupedRanks[tag]?.get(rowIdx);
+        if (t !== undefined) {
+          const palette = colorByColumn.palettes[tag];
+          // Prefer category-specific palette endpoints; fall back to rankPalette.gradient.
+          const from = palette?.[0] ?? rankPalette.gradient[0];
+          const to = palette?.[palette.length - 1] ?? rankPalette.gradient[1];
+          return interpolateHex(from, to, t);
+        }
       }
       // colorByColumn — palette routed by a categorical column on the row
       if (colorByColumn) {

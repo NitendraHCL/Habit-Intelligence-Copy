@@ -5,6 +5,9 @@
 // ---------------------------------------------------------------------------
 
 export type ChartTypeId =
+  // Layout / non-data
+  | "narrative"
+  | "tile_grid"
   // Comparison
   | "bar"
   | "stacked_bar"
@@ -83,7 +86,9 @@ export type RendererType =
   | "echarts"
   | "table"
   | "kpi"
-  | "html";
+  | "html"
+  | "narrative"
+  | "tile_grid";
 
 // ---------------------------------------------------------------------------
 // Chart Preset — maps a ChartTypeId to its renderer + default config
@@ -214,6 +219,8 @@ export interface TransformConfig {
   limit?: number;
   /** Label for aggregated overflow bucket */
   groupRest?: string;
+  /** G2: derived/computed columns produced via SQL CASE WHEN. */
+  computed?: CaseWhenSpec[];
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +259,9 @@ export interface ViewToggle {
   /** Default-active toggle (only one should be true). */
   default?: boolean;
 }
+
+/** G7: how the toggles are presented above the chart. */
+export type ToggleLayout = "buttons" | "dropdown";
 
 /** Route series colors based on a categorical column (e.g. in-clinic vs external). */
 export interface ColorByColumn {
@@ -339,6 +349,61 @@ export interface VisualMapConfig {
   markerLabel?: string;
 }
 
+// ── G6: per-column cell renderer config for data_table ──
+export type CellRenderer = "text" | "badge" | "progress_bar" | "pill" | "threshold_pill";
+
+export interface CellRendererConfig {
+  /** How to render this column's cells. */
+  renderer: CellRenderer;
+  /** For badge / pill — explicit color map (value → hex). */
+  colorMap?: Record<string, string>;
+  /** For threshold_pill — threshold→color buckets. */
+  thresholds?: { from?: number; to?: number; color: string }[];
+  /** For progress_bar — max value (defaults to row max). */
+  max?: number;
+  /** Optional value formatter: number | percent | inr-lakhs | inr-crores. */
+  format?: "number" | "percent" | "inr-lakhs" | "inr-crores";
+  /** Display label for the column (header). */
+  label?: string;
+}
+
+// ── G8: sub-KPI strip below a chart ──
+export interface SummaryKpi {
+  /** Label shown above the value. */
+  label: string;
+  /** Either an "agg:column" expression or a literal "{first.col}" reference. */
+  expr: string;
+  color?: string;
+  bgColor?: string;
+  sublabel?: string;
+}
+
+// ── G2: derived/computed columns ──
+export interface CaseWhenSpec {
+  /** Logical column name produced. */
+  as: string;
+  /** Source column to inspect. */
+  column: string;
+  /** Cases evaluated in order. */
+  cases: { when: string | number; then: string }[];
+  /** Default value if no case matches. */
+  else?: string;
+}
+
+// ── G1: tile-grid layout config ──
+export interface TileGridConfig {
+  /** Number of columns in the grid (default 4). */
+  columns?: number;
+  /** Optional categorical color column. */
+  colorColumn?: string;
+  /** Color overrides per category value. */
+  colorMap?: Record<string, string>;
+  /** Sublabel template for each tile, e.g. "{count} cases". */
+  sublabelTemplate?: string;
+  /** Show a small caption (e.g. season label) under the tile name. */
+  captionColumn?: string;
+}
+
 export interface VisualizationConfig {
   colors?: string[] | "default";
   showLegend?: boolean;
@@ -363,8 +428,10 @@ export interface VisualizationConfig {
   tooltipTemplate?: string;
   /** Auto-insight template with {topLabel}, {topValue}, {topPct}, {bottomLabel}, {bottomValue}, {total}, {count} tokens. Set to "" to suppress. */
   insightTemplate?: string;
-  /** View-mode toggles rendered as a button group above the chart. */
+  /** View-mode toggles rendered as a button group (or dropdown) above the chart. */
   toggles?: ViewToggle[];
+  /** How toggles are presented (default: buttons). */
+  toggleLayout?: ToggleLayout;
   /** Categorical palette routing (e.g. in-clinic vs external). */
   colorByColumn?: ColorByColumn;
   /** Per-group rank-based dark→light gradient. */
@@ -381,6 +448,16 @@ export interface VisualizationConfig {
   seriesStyles?: Record<string, SeriesStyle>;
   /** First-class visualMap config (ECharts heatmap/scatter). */
   visualMap?: VisualMapConfig;
+  /** G3: insight slot rendered ABOVE the chart body (in addition to the bottom one). */
+  topInsightTemplate?: string;
+  /** G6: per-column cell renderer config keyed by column name. */
+  columnConfig?: Record<string, CellRendererConfig>;
+  /** G8: sub-KPI strip rendered below the chart inside the same card. */
+  summaryKpis?: SummaryKpi[];
+  /** G1: tile-grid layout config (only when chart.type === "tile_grid"). */
+  tileGrid?: TileGridConfig;
+  /** G4: narrative chart prose template (only when chart.type === "narrative"). */
+  narrativeTemplate?: string;
   /** For ECharts generic renderer — full ECharts option override */
   echartsOption?: Record<string, unknown>;
   /** Arbitrary renderer-specific options */
@@ -425,12 +502,14 @@ export interface ChartDefinition {
 
 export interface SectionDefinition {
   id: string;
-  type: "kpi_row" | "chart_grid" | "full_width" | "tabs";
+  type: "kpi_row" | "chart_grid" | "full_width" | "tabs" | "composite";
   columns?: number;
   charts: string[];
   label?: string;
   title?: string;
   subtitle?: string;
+  /** For composite: optional accent color for the shared card. */
+  accentColor?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -497,6 +497,30 @@ function buildSQL(
   const selectParts: string[] = [];
   const groupByParts: string[] = [];
 
+  // ── G2: Compile derived/computed columns to CASE WHEN SQL.
+  //         Build a map { as → sqlExpr } so groupBy can reference them.
+  const computedSqlByAlias: Record<string, string> = {};
+  if (transform.computed?.length) {
+    for (const c of transform.computed) {
+      validateColumn(table, c.column);
+      const safeAlias = c.as.replace(/[^a-z0-9_]/gi, "_");
+      const cases = c.cases
+        .map((cc) => {
+          const isNumber = typeof cc.when === "number";
+          const lhs = isNumber ? `a.${c.column}` : `LOWER(TRIM(a.${c.column}::text))`;
+          const rhs = isNumber
+            ? String(cc.when)
+            : `'${String(cc.when).toLowerCase().replace(/'/g, "''")}'`;
+          return `WHEN ${lhs} = ${rhs} THEN '${String(cc.then).replace(/'/g, "''")}'`;
+        })
+        .join(" ");
+      const elseClause = c.else
+        ? `ELSE '${String(c.else).replace(/'/g, "''")}'`
+        : `ELSE NULL`;
+      computedSqlByAlias[safeAlias] = `CASE ${cases} ${elseClause} END`;
+    }
+  }
+
   // Group by columns
   const groupByExprs = transform.groupBy
     ? Array.isArray(transform.groupBy)
@@ -505,6 +529,12 @@ function buildSQL(
     : [];
 
   for (const expr of groupByExprs) {
+    // G2: groupBy may reference a computed column by its alias
+    if (computedSqlByAlias[expr]) {
+      selectParts.push(`${computedSqlByAlias[expr]} AS ${expr}`);
+      groupByParts.push(computedSqlByAlias[expr]);
+      continue;
+    }
     const parsed = parseGroupByExpr(table, expr, aliases);
     selectParts.push(`${parsed.sqlExpr} AS ${parsed.alias}`);
     groupByParts.push(parsed.sqlExpr);

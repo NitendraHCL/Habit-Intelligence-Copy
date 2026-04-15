@@ -145,6 +145,10 @@ interface CVCardDynamicProps {
   chartTitle?: string;
   chartDescription?: string;
   insightText?: string;
+  /** G3: insight rendered ABOVE the chart body (in addition to the bottom one). */
+  topInsightText?: string;
+  /** G8: sub-KPI strip rendered below the chart inside the same card. */
+  belowContent?: React.ReactNode;
 }
 
 export default function CVCardDynamic({
@@ -160,6 +164,8 @@ export default function CVCardDynamic({
   chartTitle,
   chartDescription,
   insightText,
+  topInsightText,
+  belowContent,
 }: CVCardDynamicProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -230,7 +236,20 @@ export default function CVCardDynamic({
         </div>
       )}
       <div className={`px-6 pb-5 ${expanded ? "min-h-[500px]" : ""}`}>
+        {topInsightText && (
+          <div
+            className="rounded-[14px] px-4 py-3 mb-4 text-[12px] leading-[1.7] font-medium"
+            style={{
+              backgroundColor: "#eef2ff",
+              border: "1px solid #c7d2fe",
+              color: "#3730a3",
+            }}
+          >
+            {topInsightText}
+          </div>
+        )}
         {children}
+        {belowContent}
         {insightText && <InsightBox text={insightText} />}
       </div>
     </div>

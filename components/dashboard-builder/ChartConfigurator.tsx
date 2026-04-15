@@ -494,6 +494,8 @@ function DataTab({
         timeFunctions={timeFunctions}
       />
 
+      <ComputedColumnsEditor chart={chart} onChange={onChange} />
+
       <Field label="Metric">
         <select
           value={chart.transform?.metric ?? "count"}
@@ -798,6 +800,172 @@ function getGroupByValue(chart: Partial<ChartDefinition>): string {
   return Array.isArray(gb) ? gb[0] : gb;
 }
 
+function ComputedColumnsEditor({
+  chart,
+  onChange,
+}: {
+  chart: Partial<ChartDefinition>;
+  onChange: (c: Partial<ChartDefinition>) => void;
+}) {
+  type CC = { as: string; column: string; cases: { when: string | number; then: string }[]; else?: string };
+  const computed: CC[] = (chart.transform?.computed as CC[]) ?? [];
+
+  function update(next: CC[] | undefined) {
+    onChange({
+      ...chart,
+      transform: { ...chart.transform, computed: next?.length ? next : undefined },
+    });
+  }
+
+  function add() {
+    update([
+      ...computed,
+      { as: `derived_${computed.length + 1}`, column: "", cases: [{ when: "", then: "" }] },
+    ]);
+  }
+
+  function setRow(idx: number, patch: Partial<CC>) {
+    update(computed.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+  }
+
+  function setCase(idx: number, caseIdx: number, patch: Partial<{ when: string | number; then: string }>) {
+    update(
+      computed.map((c, i) => {
+        if (i !== idx) return c;
+        const nextCases = c.cases.map((cc, j) => (j === caseIdx ? { ...cc, ...patch } : cc));
+        return { ...c, cases: nextCases };
+      })
+    );
+  }
+
+  function addCase(idx: number) {
+    update(computed.map((c, i) => (i === idx ? { ...c, cases: [...c.cases, { when: "", then: "" }] } : c)));
+  }
+
+  function removeCase(idx: number, caseIdx: number) {
+    update(
+      computed.map((c, i) =>
+        i === idx ? { ...c, cases: c.cases.filter((_, j) => j !== caseIdx) } : c
+      )
+    );
+  }
+
+  function remove(idx: number) {
+    update(computed.filter((_, i) => i !== idx));
+  }
+
+  if (computed.length === 0) {
+    return (
+      <Field label="Computed Columns (CASE WHEN)">
+        <button
+          type="button"
+          onClick={add}
+          className="text-xs text-indigo-600 hover:text-indigo-800"
+        >
+          + Add a derived column (e.g. month → season)
+        </button>
+        <p className="text-[11px] text-gray-500 mt-1">
+          Map values of a column to derived labels. Then select the derived
+          name in Group By above.
+        </p>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label="Computed Columns (CASE WHEN)">
+      <div className="space-y-2 min-w-0">
+        {computed.map((c, i) => (
+          <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1.5 min-w-0">
+            <div className="flex items-start gap-2 min-w-0">
+              <div className="flex-1 min-w-0 space-y-1">
+                <input
+                  type="text"
+                  value={c.as}
+                  onChange={(e) => setRow(i, { as: e.target.value })}
+                  placeholder="Derived name (e.g. season)"
+                  className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+                />
+                <input
+                  type="text"
+                  value={c.column}
+                  onChange={(e) => setRow(i, { column: e.target.value })}
+                  placeholder="Source column (e.g. month_num)"
+                  className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="text-gray-400 hover:text-red-500 text-sm shrink-0 mt-1"
+              >
+                &times;
+              </button>
+            </div>
+            {c.cases.map((cc, j) => (
+              <div key={j} className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[11px] text-gray-500 shrink-0 w-9">when</span>
+                <input
+                  type="text"
+                  value={String(cc.when)}
+                  onChange={(e) =>
+                    setCase(i, j, {
+                      when: isNaN(Number(e.target.value))
+                        ? e.target.value
+                        : Number(e.target.value),
+                    })
+                  }
+                  placeholder="value"
+                  className="flex-1 min-w-0 px-2 py-1 border border-gray-200 rounded text-xs"
+                />
+                <span className="text-[11px] text-gray-500 shrink-0 w-7">then</span>
+                <input
+                  type="text"
+                  value={cc.then}
+                  onChange={(e) => setCase(i, j, { then: e.target.value })}
+                  placeholder="label"
+                  className="flex-1 min-w-0 px-2 py-1 border border-gray-200 rounded text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeCase(i, j)}
+                  className="text-gray-400 hover:text-red-500 text-sm shrink-0"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[11px] text-gray-500 shrink-0 w-9">else</span>
+              <input
+                type="text"
+                value={c.else ?? ""}
+                onChange={(e) => setRow(i, { else: e.target.value || undefined })}
+                placeholder="default (optional)"
+                className="flex-1 min-w-0 px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => addCase(i)}
+              className="text-[11px] text-indigo-600 hover:text-indigo-800"
+            >
+              + Add case
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={add}
+          className="text-xs text-indigo-600 hover:text-indigo-800"
+        >
+          + Add another derived column
+        </button>
+      </div>
+    </Field>
+  );
+}
+
 function getGroupByArray(chart: Partial<ChartDefinition>): string[] {
   const gb = chart.transform?.groupBy;
   if (!gb) return [];
@@ -1075,6 +1243,11 @@ function StyleTab({
     valueSlider: !!(viz.valueSlider as { enabled?: boolean } | undefined)?.enabled,
     seriesStyles: !!viz.seriesStyles && Object.keys(viz.seriesStyles as object).length > 0,
     visualMap: !!viz.visualMap,
+    topInsightTemplate: !!viz.topInsightTemplate,
+    columnConfig: !!viz.columnConfig && Object.keys(viz.columnConfig as object).length > 0,
+    summaryKpis: Array.isArray(viz.summaryKpis) && (viz.summaryKpis as unknown[]).length > 0,
+    tileGrid: !!viz.tileGrid,
+    narrativeTemplate: !!viz.narrativeTemplate,
   };
 
   return (
@@ -1342,6 +1515,57 @@ function StyleTab({
         >
           <VisualMapEditor viz={viz} updateViz={updateViz} />
         </Disclose>
+
+        <Disclose
+          title="Top Insight Slot"
+          caption="Auto-generated text rendered ABOVE the chart body. Same tokens as the bottom insight."
+          defaultOpen={isConfigured.topInsightTemplate}
+          configured={isConfigured.topInsightTemplate}
+        >
+          <TopInsightTemplateEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Sub-KPI Strip"
+          caption="Stat boxes rendered below the chart inside the same card."
+          defaultOpen={isConfigured.summaryKpis}
+          configured={isConfigured.summaryKpis}
+        >
+          <SummaryKpisEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        {(chart.type === "data_table" || chart.type === "metric_table") && (
+          <Disclose
+            title="Column Cell Renderers"
+            caption="Per-column badges, progress bars, and threshold pills."
+            defaultOpen={isConfigured.columnConfig}
+            configured={isConfigured.columnConfig}
+          >
+            <ColumnConfigEditor viz={viz} updateViz={updateViz} chart={chart} />
+          </Disclose>
+        )}
+
+        {chart.type === "tile_grid" && (
+          <Disclose
+            title="Tile Grid Layout"
+            caption="Columns, color column/map, sublabel template, caption column."
+            defaultOpen
+            configured={isConfigured.tileGrid}
+          >
+            <TileGridEditor viz={viz} updateViz={updateViz} />
+          </Disclose>
+        )}
+
+        {chart.type === "narrative" && (
+          <Disclose
+            title="Narrative Template"
+            caption="Markdown-ish prose with token interpolation."
+            defaultOpen
+            configured={isConfigured.narrativeTemplate}
+          >
+            <NarrativeTemplateEditor viz={viz} updateViz={updateViz} />
+          </Disclose>
+        )}
       </div>
     </>
   );
@@ -1534,6 +1758,17 @@ function ViewTogglesEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater
   return (
     <Field label="View Toggles (button group above chart)">
       <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-600">Layout:</span>
+          <select
+            value={(viz.toggleLayout as string) ?? "buttons"}
+            onChange={(e) => updateViz({ toggleLayout: e.target.value })}
+            className="px-2 py-1 border border-gray-200 rounded text-xs"
+          >
+            <option value="buttons">Buttons</option>
+            <option value="dropdown">Dropdown</option>
+          </select>
+        </div>
         {toggles.map((t, i) => (
           <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1.5">
             <div className="flex items-center gap-2">
@@ -2255,6 +2490,269 @@ function VisualMapEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }
         />
       </div>
     </div>
+  );
+}
+
+function TopInsightTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const value = (viz.topInsightTemplate as string) ?? "";
+  return (
+    <Field label="Top Insight Template (rendered above the chart)">
+      <TokenChips
+        value={value}
+        onChange={(v) => updateViz({ topInsightTemplate: v || undefined })}
+        tokens={INSIGHT_TOKENS}
+        placeholder="Viewing {topLabel} — {topValue} ({topPct}%)"
+        rows={2}
+      />
+    </Field>
+  );
+}
+
+function SummaryKpisEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const kpis = (viz.summaryKpis as { label: string; expr: string; color?: string; bgColor?: string; sublabel?: string }[]) ?? [];
+  function update(idx: number, patch: Partial<typeof kpis[0]>) {
+    const next = kpis.map((k, i) => (i === idx ? { ...k, ...patch } : k));
+    updateViz({ summaryKpis: next });
+  }
+  function add() {
+    updateViz({ summaryKpis: [...kpis, { label: "", expr: "sum:value", color: "#4f46e5", bgColor: "#EEF2FF" }] });
+  }
+  function remove(idx: number) {
+    const next = kpis.filter((_, i) => i !== idx);
+    updateViz({ summaryKpis: next.length ? next : undefined });
+  }
+  return (
+    <div className="space-y-2">
+      {kpis.map((k, i) => (
+        <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={k.label}
+              onChange={(e) => update(i, { label: e.target.value })}
+              placeholder="Label (e.g. Top Age Group)"
+              className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+            />
+            <button
+              onClick={() => remove(i)}
+              className="text-gray-400 hover:text-red-500 text-sm"
+              type="button"
+            >
+              &times;
+            </button>
+          </div>
+          <input
+            type="text"
+            value={k.expr}
+            onChange={(e) => update(i, { expr: e.target.value })}
+            placeholder='Expression: "sum:col" / "avg:col" / "count" / "first.col"'
+            className="w-full px-2 py-1 border border-gray-200 rounded text-xs font-mono"
+          />
+          <input
+            type="text"
+            value={k.sublabel ?? ""}
+            onChange={(e) => update(i, { sublabel: e.target.value || undefined })}
+            placeholder="Sublabel (optional)"
+            className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-600">Value</span>
+            <input
+              type="color"
+              value={k.color ?? "#4f46e5"}
+              onChange={(e) => update(i, { color: e.target.value })}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+            <span className="text-[11px] text-gray-600">Bg</span>
+            <input
+              type="color"
+              value={k.bgColor ?? "#EEF2FF"}
+              onChange={(e) => update(i, { bgColor: e.target.value })}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        className="text-xs text-indigo-600 hover:text-indigo-800"
+      >
+        + Add KPI
+      </button>
+    </div>
+  );
+}
+
+function ColumnConfigEditor({ viz, updateViz, chart }: { viz: Viz; updateViz: VizUpdater; chart: Partial<ChartDefinition> }) {
+  const cfg = (viz.columnConfig as Record<string, { renderer: string; colorMap?: Record<string, string>; thresholds?: { from?: number; to?: number; color: string }[]; max?: number; format?: string; label?: string }>) ?? {};
+  const cols = chart.transform?.metrics?.length
+    ? chart.transform.metrics.map((m) => m.key)
+    : [];
+  if (chart.transform?.groupBy) {
+    const gb = Array.isArray(chart.transform.groupBy) ? chart.transform.groupBy : [chart.transform.groupBy];
+    cols.push(...gb);
+  }
+  const allCols = Array.from(new Set(cols));
+
+  function update(col: string, patch: Partial<{ renderer: string; format: string; label: string }>) {
+    const existing = cfg[col] ?? { renderer: "text" };
+    const next = { ...cfg, [col]: { ...existing, ...patch } };
+    updateViz({ columnConfig: next });
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {allCols.length === 0 && (
+        <p className="text-[11px] text-gray-500">Set Group By + Metric on the Data tab first.</p>
+      )}
+      {allCols.map((col) => {
+        const c = cfg[col] ?? { renderer: "text" };
+        return (
+          <div key={col} className="border border-gray-200 rounded-lg p-2 space-y-1">
+            <p className="text-[11px] font-semibold text-gray-700">{col}</p>
+            <div className="flex items-center gap-2">
+              <select
+                value={c.renderer}
+                onChange={(e) => update(col, { renderer: e.target.value })}
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+              >
+                <option value="text">Text</option>
+                <option value="badge">Badge (categorical)</option>
+                <option value="pill">Pill (numeric)</option>
+                <option value="threshold_pill">Threshold Pill</option>
+                <option value="progress_bar">Progress Bar</option>
+              </select>
+              {(c.renderer === "pill" || c.renderer === "threshold_pill" || c.renderer === "progress_bar") && (
+                <select
+                  value={c.format ?? ""}
+                  onChange={(e) => update(col, { format: e.target.value })}
+                  className="px-2 py-1 border border-gray-200 rounded text-xs"
+                >
+                  <option value="">Number</option>
+                  <option value="percent">Percent</option>
+                  <option value="inr-lakhs">INR Lakhs</option>
+                  <option value="inr-crores">INR Crores</option>
+                </select>
+              )}
+              <input
+                type="text"
+                value={c.label ?? ""}
+                onChange={(e) => update(col, { label: e.target.value })}
+                placeholder="Header label"
+                className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TileGridEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cfg = (viz.tileGrid as { columns?: number; colorColumn?: string; colorMap?: Record<string, string>; sublabelTemplate?: string; captionColumn?: string }) ?? {};
+  function update(patch: Partial<typeof cfg>) {
+    updateViz({ tileGrid: { ...cfg, ...patch } });
+  }
+  const colorEntries = Object.entries(cfg.colorMap ?? {});
+  function setMapEntry(idx: number, key: string, value: string) {
+    const next: Record<string, string> = {};
+    colorEntries.forEach(([k, v], i) => {
+      next[i === idx ? key : k] = i === idx ? value : v;
+    });
+    update({ colorMap: next });
+  }
+  function addMapEntry() {
+    update({ colorMap: { ...(cfg.colorMap ?? {}), "": "#E0E7FF" } });
+  }
+  function removeMapEntry(idx: number) {
+    const next: Record<string, string> = {};
+    colorEntries.forEach(([k, v], i) => {
+      if (i !== idx) next[k] = v;
+    });
+    update({ colorMap: next });
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-20">Columns</span>
+        <input
+          type="number"
+          min={2}
+          max={12}
+          value={cfg.columns ?? 4}
+          onChange={(e) => update({ columns: Number(e.target.value) })}
+          className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+        />
+      </div>
+      <input
+        type="text"
+        value={cfg.captionColumn ?? ""}
+        onChange={(e) => update({ captionColumn: e.target.value || undefined })}
+        placeholder="Caption column (e.g. season)"
+        className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+      />
+      <input
+        type="text"
+        value={cfg.colorColumn ?? ""}
+        onChange={(e) => update({ colorColumn: e.target.value || undefined })}
+        placeholder="Color column (defaults to caption)"
+        className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+      />
+      <input
+        type="text"
+        value={cfg.sublabelTemplate ?? ""}
+        onChange={(e) => update({ sublabelTemplate: e.target.value || undefined })}
+        placeholder="Sublabel template e.g. {value} cases"
+        className="w-full px-2 py-1 border border-gray-200 rounded text-xs"
+      />
+      <div className="space-y-1">
+        <p className="text-[11px] text-gray-600">Color map (caption → color)</p>
+        {colorEntries.map(([k, v], i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={k}
+              onChange={(e) => setMapEntry(i, e.target.value, v)}
+              placeholder="value"
+              className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+            />
+            <input
+              type="color"
+              value={v}
+              onChange={(e) => setMapEntry(i, k, e.target.value)}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+            <button onClick={() => removeMapEntry(i)} type="button" className="text-gray-400 hover:text-red-500 text-sm">&times;</button>
+          </div>
+        ))}
+        <button type="button" onClick={addMapEntry} className="text-xs text-indigo-600 hover:text-indigo-800">
+          + Add color
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NarrativeTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const value = (viz.narrativeTemplate as string) ?? "";
+  return (
+    <Field label="Narrative Markdown / Template">
+      <textarea
+        value={value}
+        onChange={(e) => updateViz({ narrativeTemplate: e.target.value || undefined })}
+        rows={6}
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        placeholder={`Compare engagement patterns and visit frequencies across repeat patient cohorts.\n\nLong-tenured patients show {sum_total_consults} total consults...`}
+      />
+      <p className="text-[11px] text-gray-500 mt-1">
+        Tokens: column names from the first row, plus
+        {" "}<code>{`{sum_<col>}`}</code>{" "}
+        <code>{`{avg_<col>}`}</code>{" "}
+        <code>{`{row_count}`}</code>. Double newline = paragraph break.
+      </p>
+    </Field>
   );
 }
 

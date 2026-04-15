@@ -459,6 +459,30 @@ export const chartPresets: ChartPreset[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // LAYOUT — non-data / narrative
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "tile_grid",
+    label: "Tile Grid",
+    description: "N small tiles in a grid (e.g. 12 months / 12 cohorts)",
+    category: "comparison",
+    renderer: "tile_grid",
+    icon: "LayoutGrid",
+    defaults: {},
+    requiredFields: { groupBy: true, metric: true },
+  },
+  {
+    id: "narrative",
+    label: "Narrative Card",
+    description: "Rich text card with optional data interpolation",
+    category: "text",
+    renderer: "narrative",
+    icon: "FileText",
+    defaults: {},
+    requiredFields: {},
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // TEXT
   // ═══════════════════════════════════════════════════════════════
   {

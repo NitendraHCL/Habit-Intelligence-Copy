@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { CHART_PALETTE } from "@/lib/design-tokens";
+import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
 
 interface LineChartRendererProps {
   data: Record<string, unknown>[];
@@ -19,6 +20,7 @@ interface LineChartRendererProps {
   showGrid?: boolean;
   showLegend?: boolean;
   showDots?: boolean;
+  tooltipTemplate?: string;
 }
 
 export default function LineChartRenderer({
@@ -28,6 +30,7 @@ export default function LineChartRenderer({
   showGrid = true,
   showLegend = true,
   showDots = true,
+  tooltipTemplate,
 }: LineChartRendererProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -45,6 +48,27 @@ export default function LineChartRenderer({
             boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
             fontSize: 12,
           }}
+          formatter={
+            (tooltipTemplate
+              ? (value: unknown, name: unknown, ctx: { payload?: Record<string, unknown> }) => {
+                  const v = Number(value ?? 0);
+                  const n = String(name ?? "");
+                  const total = lines.reduce(
+                    (s, l) => s + (Number(ctx.payload?.[l.key]) || 0),
+                    0
+                  );
+                  return [
+                    renderTemplate(tooltipTemplate, {
+                      name: n,
+                      value: v,
+                      pct: safePct(v, total),
+                      seriesName: n,
+                    }),
+                    "",
+                  ];
+                }
+              : undefined) as never
+          }
         />
         {showLegend && <Legend wrapperStyle={{ fontSize: 11 }} />}
         {lines.map((line, i) => (

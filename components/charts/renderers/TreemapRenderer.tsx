@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { CHART_PALETTE } from "@/lib/design-tokens";
+import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -9,18 +10,32 @@ interface TreemapData {
   name: string;
   value: number;
   children?: TreemapData[];
+  itemStyle?: { color?: string };
 }
 
 interface TreemapRendererProps {
   data: TreemapData[];
+  colorOverrides?: Record<string, string>;
+  tooltipTemplate?: string;
 }
 
-export default function TreemapRenderer({ data }: TreemapRendererProps) {
+export default function TreemapRenderer({
+  data,
+  colorOverrides,
+  tooltipTemplate,
+}: TreemapRendererProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   const option = {
     tooltip: {
       formatter: (params: { name: string; value: number }) => {
+        if (tooltipTemplate) {
+          return renderTemplate(tooltipTemplate, {
+            name: params.name,
+            value: params.value,
+            pct: safePct(params.value, total),
+          });
+        }
         const pct = total > 0 ? ((params.value / total) * 100).toFixed(1) : "0";
         return `<strong>${params.name}</strong><br/>${params.value.toLocaleString()} &nbsp;(${pct}%)`;
       },
@@ -30,7 +45,13 @@ export default function TreemapRenderer({ data }: TreemapRendererProps) {
         type: "treemap",
         data: data.map((d, i) => ({
           ...d,
-          itemStyle: { color: CHART_PALETTE[i % CHART_PALETTE.length] },
+          itemStyle:
+            d.itemStyle?.color
+              ? d.itemStyle
+              : {
+                  color:
+                    colorOverrides?.[d.name] ?? CHART_PALETTE[i % CHART_PALETTE.length],
+                },
         })),
         roam: false,
         breadcrumb: { show: false },

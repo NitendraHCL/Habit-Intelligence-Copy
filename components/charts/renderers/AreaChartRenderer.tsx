@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { CHART_PALETTE } from "@/lib/design-tokens";
+import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
 
 interface AreaChartRendererProps {
   data: Record<string, unknown>[];
@@ -18,6 +19,7 @@ interface AreaChartRendererProps {
   areas: { key: string; name?: string; color?: string; stackId?: string }[];
   showGrid?: boolean;
   showLegend?: boolean;
+  tooltipTemplate?: string;
 }
 
 export default function AreaChartRenderer({
@@ -26,6 +28,7 @@ export default function AreaChartRenderer({
   areas,
   showGrid = true,
   showLegend = true,
+  tooltipTemplate,
 }: AreaChartRendererProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -43,6 +46,27 @@ export default function AreaChartRenderer({
             boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
             fontSize: 12,
           }}
+          formatter={
+            (tooltipTemplate
+              ? (value: unknown, name: unknown, ctx: { payload?: Record<string, unknown> }) => {
+                  const v = Number(value ?? 0);
+                  const n = String(name ?? "");
+                  const total = areas.reduce(
+                    (s, a) => s + (Number(ctx.payload?.[a.key]) || 0),
+                    0
+                  );
+                  return [
+                    renderTemplate(tooltipTemplate, {
+                      name: n,
+                      value: v,
+                      pct: safePct(v, total),
+                      seriesName: n,
+                    }),
+                    "",
+                  ];
+                }
+              : undefined) as never
+          }
         />
         {showLegend && <Legend wrapperStyle={{ fontSize: 11 }} />}
         {areas.map((area, i) => {

@@ -220,6 +220,55 @@ export interface TransformConfig {
 // Visualization config — style / presentation options
 // ---------------------------------------------------------------------------
 
+/** Map a category label to a specific hex color (e.g. {"<20": "#818cf8"}). */
+export type ColorOverrides = Record<string, string>;
+
+/** Custom styling for a single stat_card / KPI tile. */
+export interface StatCardStyle {
+  /** Card background color (CSS color or hex). */
+  bgColor?: string;
+  /** Accent color for the value text. */
+  accentColor?: string;
+  /** Sublabel template under the value, e.g. "{value}% of total". */
+  sublabelTemplate?: string;
+  /** Value formatting: number | percent | inr-lakhs | inr-crores. */
+  valueFormat?: "number" | "percent" | "inr-lakhs" | "inr-crores" | "decimal";
+}
+
+/** Action a view-mode toggle performs when clicked. */
+export interface ViewToggleAction {
+  /** Replace the chart's groupBy with this column. */
+  regroup?: string;
+  /** Add a where clause restricting one column to one value. */
+  refilter?: { column: string; value: string | number };
+  /** Replace the chart's metric (e.g. "count" or "sum:referral_count"). */
+  metric?: string;
+}
+
+export interface ViewToggle {
+  id: string;
+  label: string;
+  action: ViewToggleAction;
+  /** Default-active toggle (only one should be true). */
+  default?: boolean;
+}
+
+/** Route series colors based on a categorical column (e.g. in-clinic vs external). */
+export interface ColorByColumn {
+  /** Column whose value drives palette selection. */
+  column: string;
+  /** Map of column-value → palette (array of hex). Series color = palette[seriesIndex %]. */
+  palettes: Record<string, string[]>;
+}
+
+/** Per-group dark→light gradient applied by rank within each bar/group. */
+export interface RankPalette {
+  /** [from, to] hex; #1 in each bar gets `from`, last gets `to`. */
+  gradient: [string, string];
+  /** When true, ranks are computed per group (per bar); otherwise globally. */
+  applyPerGroup?: boolean;
+}
+
 export interface VisualizationConfig {
   colors?: string[] | "default";
   showLegend?: boolean;
@@ -236,6 +285,20 @@ export interface VisualizationConfig {
   xAxisLabel?: string;
   yAxisLabel?: string;
   height?: number;
+  /** Map a category label to a specific hex color. */
+  colorOverrides?: ColorOverrides;
+  /** Custom styling for stat_card / KPI tiles. */
+  statCard?: StatCardStyle;
+  /** Tooltip template with {name}, {value}, {pct}, {seriesName} tokens. */
+  tooltipTemplate?: string;
+  /** Auto-insight template with {topLabel}, {topValue}, {topPct}, {bottomLabel}, {bottomValue}, {total}, {count} tokens. Set to "" to suppress. */
+  insightTemplate?: string;
+  /** View-mode toggles rendered as a button group above the chart. */
+  toggles?: ViewToggle[];
+  /** Categorical palette routing (e.g. in-clinic vs external). */
+  colorByColumn?: ColorByColumn;
+  /** Per-group rank-based dark→light gradient. */
+  rankPalette?: RankPalette;
   /** For ECharts generic renderer — full ECharts option override */
   echartsOption?: Record<string, unknown>;
   /** Arbitrary renderer-specific options */

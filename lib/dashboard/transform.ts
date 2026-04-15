@@ -72,6 +72,40 @@ function getGroupKey(chart: ChartDefinition): string {
   return fnMatch ? "period" : expr;
 }
 
+/** All groupBy column aliases (post time-function resolution). */
+function getGroupKeys(chart: ChartDefinition): string[] {
+  const gb = chart.transform.groupBy;
+  if (!gb) return [];
+  const exprs = Array.isArray(gb) ? gb : [gb];
+  return exprs.map((expr) => {
+    const fnMatch = expr.match(/^(\w+)\((\w+)\)$/);
+    return fnMatch ? "period" : expr;
+  });
+}
+
+/** Linearly interpolate between two hex colors. t in [0,1]. */
+function interpolateHex(from: string, to: string, t: number): string {
+  const parse = (h: string): [number, number, number] => {
+    const s = h.replace("#", "");
+    return [
+      parseInt(s.slice(0, 2), 16),
+      parseInt(s.slice(2, 4), 16),
+      parseInt(s.slice(4, 6), 16),
+    ];
+  };
+  const [r1, g1, b1] = parse(from);
+  const [r2, g2, b2] = parse(to);
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
+  const toHex = (v: number) => v.toString(16).padStart(2, "0");
+  return `#${toHex(lerp(r1, r2))}${toHex(lerp(g1, g2))}${toHex(lerp(b1, b2))}`;
+}
+
+/** Build a gradient palette of N steps from a [from, to] tuple. */
+function buildGradient(from: string, to: string, n: number): string[] {
+  if (n <= 1) return [from];
+  return Array.from({ length: n }, (_, i) => interpolateHex(from, to, i / (n - 1)));
+}
+
 function getMetricKeys(chart: ChartDefinition): string[] {
   if (chart.transform.metrics?.length) {
     return chart.transform.metrics.map((m) => m.key);
@@ -117,6 +151,11 @@ function transformBar(chart: ChartDefinition, data: Row[]): TransformedData {
       showGrid: viz.showGrid ?? true,
       showLegend: viz.showLegend ?? metricKeys.length > 1,
       colorByIndex: metricKeys.length === 1,
+      colorOverrides: viz.colorOverrides,
+      colorByColumn: viz.colorByColumn,
+      rankPalette: viz.rankPalette,
+      tooltipTemplate: viz.tooltipTemplate,
+      basePalette: colors,
     },
   };
 }
@@ -146,6 +185,7 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
       showGrid: viz.showGrid ?? true,
       showLegend: viz.showLegend ?? metricKeys.length > 1,
       strokeWidth: viz.strokeWidth ?? 2,
+      tooltipTemplate: viz.tooltipTemplate,
     },
   };
 }
@@ -174,6 +214,7 @@ function transformArea(chart: ChartDefinition, data: Row[]): TransformedData {
       areas,
       showGrid: viz.showGrid ?? true,
       showLegend: viz.showLegend ?? metricKeys.length > 1,
+      tooltipTemplate: viz.tooltipTemplate,
     },
   };
 }
@@ -198,6 +239,8 @@ function transformPie(chart: ChartDefinition, data: Row[]): TransformedData {
       showLegend: viz.showLegend ?? true,
       showLabel: viz.showLabels ?? true,
       colors: Array.isArray(viz.colors) ? viz.colors as string[] : CHART_PALETTE,
+      colorOverrides: viz.colorOverrides,
+      tooltipTemplate: viz.tooltipTemplate,
     },
   };
 }
@@ -320,6 +363,7 @@ function transformHeatmap(
       data: heatData,
       xLabels: (viz.xLabels as string[]) ?? xLabels,
       yLabels: (viz.yLabels as string[]) ?? yLabels,
+      tooltipTemplate: viz.tooltipTemplate,
     },
   };
 }
@@ -340,30 +384,105 @@ function transformTreemap(
 ): TransformedData {
   const groupKey = getGroupKey(chart);
   const metricKey = getMetricKeys(chart)[0];
+  const viz = chart.visualization ?? {};
 
-  const treeData = data.map((row) => ({
-    name: String(row[groupKey] ?? ""),
-    value: Number(row[metricKey] ?? 0),
-  }));
+  const treeData = data.map((row) => {
+    const name = String(row[groupKey] ?? "");
+    const node: { name: string; value: number; itemStyle?: { color: string } } = {
+      name,
+      value: Number(row[metricKey] ?? 0),
+    };
+    if (viz.colorOverrides?.[name]) {
+      node.itemStyle = { color: viz.colorOverrides[name] };
+    }
+    return node;
+  });
 
-  return { renderer: "treemap", props: { data: treeData } };
+  return {
+    renderer: "treemap",
+    props: {
+      data: treeData,
+      colorOverrides: viz.colorOverrides,
+      tooltipTemplate: viz.tooltipTemplate,
+    },
+  };
 }
 
 // ── Sunburst ──
+//
+// Multi-level: when transform.groupBy is an array of 2-3 columns, build a
+// nested {name, value, children[]} tree (one ring per groupBy column).
+// Single level: flat {name, value}[].
 
 function transformSunburst(
   chart: ChartDefinition,
   data: Row[]
 ): TransformedData {
-  const groupKey = getGroupKey(chart);
+  const groupKeys = getGroupKeys(chart);
   const metricKey = getMetricKeys(chart)[0];
+  const viz = chart.visualization ?? {};
+  const overrides = viz.colorOverrides ?? {};
 
-  const sunburstData = data.map((row) => ({
-    name: String(row[groupKey] ?? ""),
-    value: Number(row[metricKey] ?? 0),
-  }));
+  type SunNode = {
+    name: string;
+    value?: number;
+    children?: SunNode[];
+    itemStyle?: { color: string };
+  };
 
-  return { renderer: "sunburst", props: { data: sunburstData } };
+  function applyColor(name: string, node: SunNode): SunNode {
+    if (overrides[name]) node.itemStyle = { color: overrides[name] };
+    return node;
+  }
+
+  let sunburstData: SunNode[];
+
+  if (groupKeys.length <= 1) {
+    const groupKey = groupKeys[0] ?? "label";
+    sunburstData = data.map((row) => {
+      const name = String(row[groupKey] ?? "");
+      return applyColor(name, { name, value: Number(row[metricKey] ?? 0) });
+    });
+  } else {
+    // Nest by each groupBy key in order. Aggregate value at the leaf.
+    const root = new Map<string, Map<string, Map<string, number> | number>>();
+    for (const row of data) {
+      const path = groupKeys.map((k) => String(row[k] ?? ""));
+      const value = Number(row[metricKey] ?? 0);
+      // Walk into nested maps
+      let level: any = root;
+      for (let i = 0; i < path.length - 1; i++) {
+        const key = path[i];
+        if (!level.has(key)) level.set(key, new Map());
+        level = level.get(key);
+      }
+      const leafKey = path[path.length - 1];
+      level.set(leafKey, (Number(level.get(leafKey)) || 0) + value);
+    }
+
+    function mapToNodes(level: Map<string, any>): SunNode[] {
+      return Array.from(level.entries()).map(([name, child]) => {
+        if (typeof child === "number") {
+          return applyColor(name, { name, value: child });
+        }
+        const children = mapToNodes(child as Map<string, any>);
+        const value = children.reduce((s, c) => s + (c.value ?? 0), 0);
+        return applyColor(name, { name, value, children });
+      });
+    }
+
+    sunburstData = mapToNodes(root);
+  }
+
+  return {
+    renderer: "sunburst",
+    props: {
+      data: sunburstData,
+      depth: Math.max(1, groupKeys.length),
+      colorOverrides: overrides,
+      tooltipTemplate: viz.tooltipTemplate,
+    },
+  };
 }
 
 // ── ECharts (generic) ──

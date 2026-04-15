@@ -9,7 +9,14 @@ import { useCrossFilter } from "./CrossFilterManager";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Info, TrendingUp, TrendingDown } from "lucide-react";
 import { CHART_PALETTE } from "@/lib/design-tokens";
-import type { ChartDefinition, QueryRequest } from "@/lib/dashboard/types";
+import { renderTemplate, safePct } from "@/lib/dashboard/render-helpers";
+import type {
+  ChartDefinition,
+  QueryRequest,
+  TransformConfig,
+  ViewToggle,
+  WhereCondition,
+} from "@/lib/dashboard/types";
 
 // Lazy-load renderers
 const BarChartRenderer = dynamic(() => import("@/components/charts/renderers/BarChartRenderer"));
@@ -50,6 +57,27 @@ export default function DynamicChart({
 }: DynamicChartProps) {
   const { getFilter, setFilter } = useCrossFilter();
 
+  // ── View-mode toggle state ──
+  const toggles: ViewToggle[] = (chart.visualization?.toggles as ViewToggle[]) ?? [];
+  const defaultToggleId = toggles.find((t) => t.default)?.id ?? toggles[0]?.id ?? null;
+  const [activeToggleId, setActiveToggleId] = useState<string | null>(defaultToggleId);
+  const activeToggle = toggles.find((t) => t.id === activeToggleId);
+
+  // Apply toggle action to transform + dataSource.where
+  const effectiveTransform: TransformConfig = useMemo(() => {
+    if (!activeToggle) return chart.transform;
+    const t = { ...chart.transform };
+    if (activeToggle.action.regroup) t.groupBy = activeToggle.action.regroup;
+    if (activeToggle.action.metric) t.metric = activeToggle.action.metric;
+    return t;
+  }, [chart.transform, activeToggle]);
+
+  const toggleWhere: Record<string, WhereCondition> | undefined = useMemo(() => {
+    if (!activeToggle?.action.refilter) return undefined;
+    const { column, value } = activeToggle.action.refilter;
+    return { [column]: { eq: value } };
+  }, [activeToggle]);
+
   // Build cross-filter WHERE additions
   const crossFilterWhere = useMemo(() => {
     if (!chart.receiveFilter?.length || !chart.linkGroup) return undefined;
@@ -63,11 +91,11 @@ export default function DynamicChart({
   const queryBody = useMemo<QueryRequest>(() => ({
     dataSource: {
       table: chart.dataSource.table,
-      where: { ...chart.dataSource.where, ...crossFilterWhere },
+      where: { ...chart.dataSource.where, ...toggleWhere, ...crossFilterWhere },
     },
-    transform: chart.transform,
+    transform: effectiveTransform,
     filters,
-  }), [chart.dataSource, chart.transform, filters, crossFilterWhere]);
+  }), [chart.dataSource, effectiveTransform, filters, crossFilterWhere, toggleWhere]);
 
   const { data: response, isLoading, error } = useSWR(
     [`/api/data/query?clientId=${clientId}`, JSON.stringify(queryBody)],
@@ -77,8 +105,12 @@ export default function DynamicChart({
 
   const transformed = useMemo(() => {
     if (!response?.data) return null;
-    return transformForChart(chart, response.data);
-  }, [chart, response?.data]);
+    // Pass effective transform so view-mode toggles affect chart shape
+    return transformForChart(
+      { ...chart, transform: effectiveTransform },
+      response.data
+    );
+  }, [chart, effectiveTransform, response?.data]);
 
   const handleClick = (params: Record<string, unknown>) => {
     if (!chart.emitFilter || !chart.linkGroup) return;
@@ -91,11 +123,18 @@ export default function DynamicChart({
     }
   };
 
-  // Generate auto-insight from data
+  // Generate auto-insight from data (honors visualization.insightTemplate;
+  // empty string = suppress; undefined = default sentence)
   const autoInsight = useMemo(() => {
     if (!response?.data?.length || isLoading) return null;
-    return generateInsight(chart, response.data);
-  }, [chart, response?.data, isLoading]);
+    const template = chart.visualization?.insightTemplate;
+    if (template === "") return null;
+    return generateInsight(
+      { ...chart, transform: effectiveTransform },
+      response.data,
+      typeof template === "string" ? template : undefined
+    );
+  }, [chart, effectiveTransform, response?.data, isLoading]);
 
   // Auto-generate interaction hint subtitle
   const interactionHint = useMemo(() => {
@@ -140,6 +179,29 @@ export default function DynamicChart({
       {error && (
         <div className="flex items-center justify-center text-sm text-red-400" style={{ height: chart.visualization?.height ?? 350 }}>
           Query failed — check chart configuration
+        </div>
+      )}
+      {toggles.length > 0 && (
+        <div className="flex items-center gap-2 mb-3">
+          <div
+            className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5"
+            style={{ backgroundColor: "#F3F4F6" }}
+          >
+            {toggles.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setActiveToggleId(t.id)}
+                className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${
+                  activeToggleId === t.id ? "bg-white shadow-sm" : ""
+                }`}
+                style={{
+                  color: activeToggleId === t.id ? "#111827" : "#6B7280",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {!isLoading && !error && transformed && (
@@ -235,8 +297,13 @@ function formatNum(n: number): string {
 
 function formatKPIValue(value: number, format?: string): string {
   switch (format) {
+    case "percent":
     case "percentage":
       return `${value.toFixed(1)}%`;
+    case "inr-lakhs":
+      return `${(value / 100_000).toFixed(2)}L`;
+    case "inr-crores":
+      return `${(value / 10_000_000).toFixed(2)}Cr`;
     case "compact":
       return formatNum(value);
     case "currency":
@@ -272,7 +339,8 @@ function getInteractionHint(chartType: string): string | undefined {
 
 function generateInsight(
   chart: ChartDefinition,
-  data: Record<string, unknown>[]
+  data: Record<string, unknown>[],
+  template?: string
 ): string | null {
   if (data.length === 0) return null;
 
@@ -296,17 +364,31 @@ function generateInsight(
   if (!top || !bottom) return null;
 
   const topLabel = String(top[groupKey] ?? "");
-  const topValue = formatNum(Number(top[metricKey] ?? 0));
+  const topValueNum = Number(top[metricKey] ?? 0);
   const bottomLabel = String(bottom[groupKey] ?? "");
-  const bottomValue = formatNum(Number(bottom[metricKey] ?? 0));
+  const bottomValueNum = Number(bottom[metricKey] ?? 0);
   const total = data.reduce((s, r) => s + Number(r[metricKey] ?? 0), 0);
-  const topPct = total > 0 ? Math.round((Number(top[metricKey] ?? 0) / total) * 100) : 0;
+  const topPct = safePct(topValueNum, total);
 
-  if (data.length === 1) {
-    return `${topLabel} shows ${topValue} for ${chart.title.toLowerCase()}.`;
+  // Custom template wins
+  if (template) {
+    return renderTemplate(template, {
+      topLabel,
+      topValue: topValueNum,
+      bottomLabel,
+      bottomValue: bottomValueNum,
+      total,
+      count: data.length,
+      topPct,
+      title: chart.title,
+    });
   }
 
-  return `${topLabel} leads with ${topValue} (${topPct}% of total). ${bottomLabel} is lowest at ${bottomValue}. ${data.length} categories shown.`;
+  if (data.length === 1) {
+    return `${topLabel} shows ${formatNum(topValueNum)} for ${chart.title.toLowerCase()}.`;
+  }
+
+  return `${topLabel} leads with ${formatNum(topValueNum)} (${topPct}% of total). ${bottomLabel} is lowest at ${formatNum(bottomValueNum)}. ${data.length} categories shown.`;
 }
 
 // ── KPI Card with YoY ──
@@ -330,7 +412,15 @@ function KPICardPremium({
     ? chart.transform.metrics[0].key
     : "value";
   const value = data?.length ? Number(data[0][metricKey] ?? 0) : 0;
-  const formatted = formatKPIValue(value, chart.visualization?.format as string);
+  const statCardStyle = (chart.visualization?.statCard ?? {}) as {
+    bgColor?: string;
+    accentColor?: string;
+    sublabelTemplate?: string;
+    valueFormat?: string;
+  };
+  const effectiveFormat =
+    statCardStyle.valueFormat ?? (chart.visualization?.format as string | undefined);
+  const formatted = formatKPIValue(value, effectiveFormat);
 
   // YoY: fetch prior year data
   const [yoy, setYoy] = useState<number | null>(null);
@@ -358,7 +448,7 @@ function KPICardPremium({
   }, [filters?.dateFrom, filters?.dateTo, value]);
 
   // Threshold evaluation
-  let accentColor = "#4f46e5";
+  let accentColor = statCardStyle.accentColor ?? "#4f46e5";
   let thresholdLabel = "";
   if (chart.thresholds?.length) {
     for (const t of chart.thresholds) {
@@ -375,10 +465,18 @@ function KPICardPremium({
     }
   }
 
+  const sublabel = statCardStyle.sublabelTemplate
+    ? renderTemplate(statCardStyle.sublabelTemplate, {
+        value,
+        formatted,
+      })
+    : null;
+
   return (
     <div
-      className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px"
+      className="rounded-2xl overflow-hidden transition-all hover:-translate-y-px"
       style={{
+        backgroundColor: statCardStyle.bgColor ?? "#FFFFFF",
         border: "1px solid #E5E7EB",
         boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(0,0,0,0.06)",
       }}
@@ -433,6 +531,13 @@ function KPICardPremium({
               {yoy >= 0 ? "+" : ""}{yoy}% vs Last Year
             </span>
           </div>
+        )}
+
+        {/* Sublabel from template */}
+        {sublabel && (
+          <p className="text-xs mt-1.5" style={{ color: "#6B7280" }}>
+            {sublabel}
+          </p>
         )}
 
         {/* Description in blue info box */}

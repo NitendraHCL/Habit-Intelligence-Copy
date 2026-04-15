@@ -13,6 +13,14 @@ import {
 import type { ChartDefinition, ChartTypeId, WhereCondition } from "@/lib/dashboard/types";
 import { getPreset } from "@/lib/config/chart-presets";
 import { useAuth } from "@/lib/contexts/auth-context";
+import Disclose from "./Disclose";
+import TokenChips from "./TokenChips";
+import ChartPreview from "./ChartPreview";
+import DataPreview from "./DataPreview";
+import {
+  getPresetsForType,
+  getDefaultOpenSections,
+} from "./visualization-presets";
 
 interface ChartConfiguratorProps {
   chart: Partial<ChartDefinition>;
@@ -159,8 +167,43 @@ export default function ChartConfigurator({
       }
     }
 
+    // Visualization-config sanity checks
+    const viz = chart.visualization ?? {};
+    const tooltipTpl = viz.tooltipTemplate;
+    if (typeof tooltipTpl === "string" && tooltipTpl.length > 0) {
+      const refs = Array.from(tooltipTpl.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+      const allowed = new Set(["name", "value", "pct", "seriesName", "x", "y"]);
+      for (const r of refs) {
+        if (!allowed.has(r)) {
+          warns.push(`Tooltip template uses unknown token \"{${r}}\" — will render as empty`);
+        }
+      }
+    }
+    const insightTpl = viz.insightTemplate;
+    if (typeof insightTpl === "string" && insightTpl.length > 0) {
+      const refs = Array.from(insightTpl.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+      const allowed = new Set([
+        "topLabel", "topValue", "topPct", "bottomLabel", "bottomValue",
+        "total", "count", "title",
+      ]);
+      for (const r of refs) {
+        if (!allowed.has(r)) {
+          warns.push(`Insight template uses unknown token \"{${r}}\" — will render as empty`);
+        }
+      }
+    }
+    // ColorByColumn: must specify column
+    const cbc = viz.colorByColumn as { column?: string; palettes?: Record<string, string[]> } | undefined;
+    if (cbc && (!cbc.column || Object.keys(cbc.palettes ?? {}).length === 0)) {
+      warns.push("Color By Column is partially configured — set a column and at least one value→palette");
+    }
+    // Rank palette + only 1 metric: warns user that single-series uses per-row ranks
+    if (viz.rankPalette && (chart.transform?.metrics?.length ?? 1) === 1) {
+      warns.push("Rank Palette with a single metric ranks rows by value (darkest = #1). Use a stacked bar with multiple metrics for per-bar ranking.");
+    }
+
     return warns;
-  }, [chart.transform?.groupBy, chart.type, chart.transform?.metric, chart.transform?.metrics, chart.transform?.limit]);
+  }, [chart.transform?.groupBy, chart.type, chart.transform?.metric, chart.transform?.metrics, chart.transform?.limit, chart.visualization]);
 
   // ── Test Query ──
   const runTestQuery = useCallback(async () => {
@@ -241,7 +284,7 @@ export default function ChartConfigurator({
           />
         )}
         {activeTab === "style" && (
-          <StyleTab chart={chart} onChange={onChange} />
+          <StyleTab chart={chart} onChange={onChange} clientId={activeClientId ?? ""} />
         )}
         {activeTab === "behavior" && (
           <BehaviorTab chart={chart} onChange={onChange} groupableCols={groupableCols} />
@@ -442,69 +485,14 @@ function DataTab({
 
       <JoinBuilder chart={chart} onChange={onChange} />
 
-      <Field label="Group By">
-        <select
-          value={getGroupByValue(chart)}
-          onChange={(e) => {
-            const val = e.target.value;
-            onChange({
-              ...chart,
-              transform: { ...chart.transform, groupBy: val || undefined },
-            });
-          }}
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-        >
-          <option value="">None</option>
-          {/* Primary table columns */}
-          {groupableCols
-            .filter((c) => c.type !== "timestamp")
-            .map((col) => (
-              <option key={col.key} value={col.key}>
-                {col.label}
-              </option>
-            ))}
-          {hasTimestamp &&
-            timestampCols.map((col) =>
-              timeFunctions
-                .filter((tf) => tf.value)
-                .map((tf) => (
-                  <option
-                    key={`${tf.value}(${col.key})`}
-                    value={`${tf.value}(${col.key})`}
-                  >
-                    {col.label} ({tf.label})
-                  </option>
-                ))
-            )}
-          {/* Joined table columns */}
-          {(chart.dataSource?.joins ?? []).map((join) => {
-            const joinedCols = getMergedColumns(join.table, []).filter((c) => c.groupable && c.type !== "timestamp");
-            const joinedTimestamps = getMergedColumns(join.table, []).filter((c) => c.groupable && c.type === "timestamp");
-            const joinDs = getDataSource(join.table);
-            return (
-              <optgroup key={join.table} label={joinDs?.label ?? join.table}>
-                {joinedCols.map((col) => (
-                  <option key={col.key} value={col.key}>
-                    {col.label}
-                  </option>
-                ))}
-                {joinedTimestamps.flatMap((col) =>
-                  timeFunctions
-                    .filter((tf) => tf.value)
-                    .map((tf) => (
-                      <option
-                        key={`${tf.value}(${col.key})`}
-                        value={`${tf.value}(${col.key})`}
-                      >
-                        {col.label} ({tf.label})
-                      </option>
-                    ))
-                )}
-              </optgroup>
-            );
-          })}
-        </select>
-      </Field>
+      <GroupByEditor
+        chart={chart}
+        onChange={onChange}
+        groupableCols={groupableCols}
+        hasTimestamp={hasTimestamp}
+        timestampCols={timestampCols}
+        timeFunctions={timeFunctions}
+      />
 
       <Field label="Metric">
         <select
@@ -810,6 +798,137 @@ function getGroupByValue(chart: Partial<ChartDefinition>): string {
   return Array.isArray(gb) ? gb[0] : gb;
 }
 
+function getGroupByArray(chart: Partial<ChartDefinition>): string[] {
+  const gb = chart.transform?.groupBy;
+  if (!gb) return [];
+  return Array.isArray(gb) ? gb : [gb];
+}
+
+interface GroupByEditorProps {
+  chart: Partial<ChartDefinition>;
+  onChange: (c: Partial<ChartDefinition>) => void;
+  groupableCols: { key: string; label: string; type?: string }[];
+  hasTimestamp: boolean;
+  timestampCols: { key: string; label: string }[];
+  timeFunctions: { value: string; label: string }[];
+}
+
+function GroupByEditor({
+  chart,
+  onChange,
+  groupableCols,
+  hasTimestamp,
+  timestampCols,
+  timeFunctions,
+}: GroupByEditorProps) {
+  const groupBys = getGroupByArray(chart);
+  const setLevel = (level: number, value: string) => {
+    const next = [...groupBys];
+    if (value) {
+      next[level] = value;
+    } else {
+      // Clear this and all deeper levels
+      next.length = level;
+    }
+    // Trim trailing empty
+    while (next.length && !next[next.length - 1]) next.pop();
+    onChange({
+      ...chart,
+      transform: {
+        ...chart.transform,
+        groupBy:
+          next.length === 0
+            ? undefined
+            : next.length === 1
+              ? next[0]
+              : next,
+      },
+    });
+  };
+
+  const renderSelect = (level: number) => (
+    <select
+      value={groupBys[level] ?? ""}
+      onChange={(e) => setLevel(level, e.target.value)}
+      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+    >
+      <option value="">{level === 0 ? "None" : "(none)"}</option>
+      {groupableCols
+        .filter((c) => c.type !== "timestamp")
+        .map((col) => (
+          <option key={col.key} value={col.key}>
+            {col.label}
+          </option>
+        ))}
+      {hasTimestamp &&
+        timestampCols.map((col) =>
+          timeFunctions
+            .filter((tf) => tf.value)
+            .map((tf) => (
+              <option
+                key={`${tf.value}(${col.key})`}
+                value={`${tf.value}(${col.key})`}
+              >
+                {col.label} ({tf.label})
+              </option>
+            ))
+        )}
+      {(chart.dataSource?.joins ?? []).map((join) => {
+        const joinedCols = getMergedColumns(join.table, []).filter(
+          (c) => c.groupable && c.type !== "timestamp"
+        );
+        const joinedTimestamps = getMergedColumns(join.table, []).filter(
+          (c) => c.groupable && c.type === "timestamp"
+        );
+        const joinDs = getDataSource(join.table);
+        return (
+          <optgroup key={join.table} label={joinDs?.label ?? join.table}>
+            {joinedCols.map((col) => (
+              <option key={col.key} value={col.key}>
+                {col.label}
+              </option>
+            ))}
+            {joinedTimestamps.flatMap((col) =>
+              timeFunctions
+                .filter((tf) => tf.value)
+                .map((tf) => (
+                  <option
+                    key={`${tf.value}(${col.key})`}
+                    value={`${tf.value}(${col.key})`}
+                  >
+                    {col.label} ({tf.label})
+                  </option>
+                ))
+            )}
+          </optgroup>
+        );
+      })}
+    </select>
+  );
+
+  return (
+    <>
+      <Field label="Group By">{renderSelect(0)}</Field>
+      {groupBys[0] && (
+        <Field label="Secondary Group By (sunburst ring 2 / heatmap Y)">
+          {renderSelect(1)}
+        </Field>
+      )}
+      {groupBys[0] && groupBys[1] && (
+        <Field label="Tertiary Group By (sunburst ring 3)">
+          {renderSelect(2)}
+        </Field>
+      )}
+      {groupBys.length > 1 && (
+        <p className="text-[11px] text-gray-500 -mt-2 mb-2">
+          Multi-level grouping nests data into a tree (sunburst rings, heatmap
+          axes).
+        </p>
+      )}
+    </>
+  );
+}
+
 // ── Where condition builder ──
 
 function WhereBuilder({
@@ -917,18 +1036,81 @@ function WhereBuilder({
 function StyleTab({
   chart,
   onChange,
+  clientId,
 }: {
   chart: Partial<ChartDefinition>;
   onChange: (c: Partial<ChartDefinition>) => void;
+  clientId: string;
 }) {
   const viz = chart.visualization ?? {};
+  const presets = getPresetsForType(chart.type);
+  const defaultOpen = useMemo(() => new Set(getDefaultOpenSections(chart.type)), [chart.type]);
 
   function updateViz(updates: Record<string, unknown>) {
     onChange({ ...chart, visualization: { ...viz, ...updates } });
   }
 
+  function applyPreset(presetId: string) {
+    const p = presets.find((x) => x.id === presetId);
+    if (!p) return;
+    const nextViz = { ...viz, ...p.visualization };
+    const nextTransform = p.transform
+      ? { ...(chart.transform ?? {}), ...p.transform }
+      : chart.transform;
+    onChange({ ...chart, visualization: nextViz, transform: nextTransform });
+  }
+
+  // Determine which advanced sections are "configured" (have non-default state)
+  const isConfigured = {
+    colorOverrides: !!viz.colorOverrides && Object.keys(viz.colorOverrides as object).length > 0,
+    tooltipTemplate: !!viz.tooltipTemplate,
+    insightTemplate: viz.insightTemplate !== undefined,
+    toggles: Array.isArray(viz.toggles) && (viz.toggles as unknown[]).length > 0,
+    colorByColumn: !!(viz.colorByColumn as { column?: string } | undefined)?.column,
+    rankPalette: !!viz.rankPalette,
+    statCard: !!viz.statCard && Object.keys(viz.statCard as object).length > 0,
+  };
+
   return (
     <>
+      {/* Live preview at the top */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+        <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-600 border-b border-gray-200 bg-white">
+          Live Preview
+        </div>
+        <div className="p-2">
+          <ChartPreview chart={chart} clientId={clientId} />
+        </div>
+      </div>
+
+      {/* Preset gallery */}
+      {presets.length > 0 && (
+        <div className="border border-indigo-100 bg-indigo-50/40 rounded-lg p-2.5">
+          <div className="flex items-start justify-between mb-1.5">
+            <div>
+              <p className="text-xs font-semibold text-indigo-900">Quick Presets</p>
+              <p className="text-[11px] text-indigo-700/80">
+                One click applies a polished starter config.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => applyPreset(p.id)}
+                title={p.description}
+                className="px-2.5 py-1.5 text-[11px] font-medium rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Basics — always visible */}
       <Field label="Height (px)">
         <input
           type="number"
@@ -1020,7 +1202,613 @@ function StyleTab({
           placeholder="#4f46e5, #0d9488, #f59e0b"
         />
       </Field>
+
+      {/* Advanced — collapsed by default; chart-type-aware default-open */}
+      <div className="space-y-2 pt-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          Advanced
+        </p>
+
+        <Disclose
+          title="Label → Color Overrides"
+          caption="Map a category label (e.g. <20) to a specific color."
+          defaultOpen={defaultOpen.has("colorOverrides") || isConfigured.colorOverrides}
+          configured={isConfigured.colorOverrides}
+        >
+          <ColorOverridesEditor viz={viz} updateViz={updateViz} />
+          <DataPreview
+            chart={chart}
+            clientId={clientId}
+            onPickValue={(label) => {
+              const current = (viz.colorOverrides as Record<string, string>) ?? {};
+              if (current[label]) return; // already set
+              updateViz({ colorOverrides: { ...current, [label]: "#4f46e5" } });
+            }}
+          />
+        </Disclose>
+
+        <Disclose
+          title="Tooltip Template"
+          caption="Customize the hover popup text. Click a chip to insert a token."
+          defaultOpen={defaultOpen.has("tooltipTemplate") || isConfigured.tooltipTemplate}
+          configured={isConfigured.tooltipTemplate}
+        >
+          <TooltipTemplateEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Insight Template"
+          caption="Auto-generated text below the chart. Leave blank for default."
+          defaultOpen={defaultOpen.has("insightTemplate") || isConfigured.insightTemplate}
+          configured={isConfigured.insightTemplate}
+        >
+          <InsightTemplateEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="View Toggles"
+          caption="Button group above the chart that swaps groupBy / metric / filter."
+          defaultOpen={defaultOpen.has("toggles") || isConfigured.toggles}
+          configured={isConfigured.toggles}
+        >
+          <ViewTogglesEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Color By Column"
+          caption="Route palette by a categorical column (e.g. in-clinic vs external)."
+          defaultOpen={defaultOpen.has("colorByColumn") || isConfigured.colorByColumn}
+          configured={isConfigured.colorByColumn}
+        >
+          <ColorByColumnEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Rank Palette"
+          caption="Per-bar dark→light gradient. Best for stacked bars."
+          defaultOpen={defaultOpen.has("rankPalette") || isConfigured.rankPalette}
+          configured={isConfigured.rankPalette}
+        >
+          <RankPaletteEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        {(chart.type === "kpi" || chart.type === "stat_card") && (
+          <Disclose
+            title="Stat Card Style"
+            caption="Card background, value color, sublabel, value format."
+            defaultOpen={defaultOpen.has("statCard") || isConfigured.statCard}
+            configured={isConfigured.statCard}
+          >
+            <StatCardStyleEditor viz={viz} updateViz={updateViz} />
+          </Disclose>
+        )}
+      </div>
     </>
+  );
+}
+
+// ── New visualization editors ──
+
+type VizUpdater = (updates: Record<string, unknown>) => void;
+type Viz = Record<string, unknown>;
+
+function ColorOverridesEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const overrides = (viz.colorOverrides as Record<string, string>) ?? {};
+  const entries = Object.entries(overrides);
+
+  function setEntry(idx: number, key: string, value: string) {
+    const next: Record<string, string> = {};
+    entries.forEach(([k, v], i) => {
+      if (i === idx) {
+        if (key) next[key] = value;
+      } else {
+        next[k] = v;
+      }
+    });
+    updateViz({ colorOverrides: Object.keys(next).length ? next : undefined });
+  }
+
+  function addEntry() {
+    updateViz({ colorOverrides: { ...overrides, "": "#4f46e5" } });
+  }
+
+  function removeEntry(idx: number) {
+    const next: Record<string, string> = {};
+    entries.forEach(([k, v], i) => {
+      if (i !== idx) next[k] = v;
+    });
+    updateViz({ colorOverrides: Object.keys(next).length ? next : undefined });
+  }
+
+  return (
+    <Field label="Label → Color Overrides">
+      <div className="space-y-1.5">
+        {entries.map(([key, value], i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={key}
+              onChange={(e) => setEntry(i, e.target.value, value)}
+              placeholder="Label (e.g. <20)"
+              className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs"
+            />
+            <input
+              type="color"
+              value={value}
+              onChange={(e) => setEntry(i, key, e.target.value)}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => setEntry(i, key, e.target.value)}
+              className="w-20 px-2 py-1.5 border border-gray-200 rounded text-xs font-mono"
+            />
+            <button
+              onClick={() => removeEntry(i)}
+              className="text-gray-400 hover:text-red-500 text-sm leading-none"
+              type="button"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={addEntry}
+          className="text-xs text-indigo-600 hover:text-indigo-800"
+          type="button"
+        >
+          + Add label override
+        </button>
+        <p className="text-[11px] text-gray-500">
+          Maps a category label (e.g. <code>&lt;20</code>) to a specific hex
+          color.
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+const TOOLTIP_TOKENS = [
+  { token: "{name}", description: "The category label / x-value" },
+  { token: "{value}", description: "The numeric value" },
+  { token: "{pct}", description: "Percent of total (rounded)" },
+  { token: "{seriesName}", description: "The metric/series name" },
+];
+
+const INSIGHT_TOKENS = [
+  { token: "{topLabel}", description: "Top category label" },
+  { token: "{topValue}", description: "Top value (formatted)" },
+  { token: "{topPct}", description: "Top % of total" },
+  { token: "{bottomLabel}", description: "Bottom category label" },
+  { token: "{bottomValue}", description: "Bottom value (formatted)" },
+  { token: "{total}", description: "Sum of all values" },
+  { token: "{count}", description: "Number of categories" },
+  { token: "{title}", description: "The chart title" },
+];
+
+const SUBLABEL_TOKENS = [
+  { token: "{value}", description: "Raw numeric value" },
+  { token: "{formatted}", description: "Formatted display value" },
+];
+
+function TooltipTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const value = (viz.tooltipTemplate as string) ?? "";
+  return (
+    <Field label="Tooltip Template">
+      <TokenChips
+        value={value}
+        onChange={(v) => updateViz({ tooltipTemplate: v || undefined })}
+        tokens={TOOLTIP_TOKENS}
+        placeholder="{name}: {value} ({pct}%)"
+        rows={2}
+      />
+      {value && (
+        <p className="text-[11px] text-gray-600 mt-1">
+          Example: <span className="font-mono">{previewTemplate(value, "Cardiology", 1234, 24)}</span>
+        </p>
+      )}
+    </Field>
+  );
+}
+
+function InsightTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const value = (viz.insightTemplate as string) ?? "";
+  return (
+    <Field label="Insight Template (auto-generated text below the chart)">
+      <TokenChips
+        value={value}
+        onChange={(v) =>
+          updateViz({
+            insightTemplate: v === "" && value !== "" ? "" : v || undefined,
+          })
+        }
+        tokens={INSIGHT_TOKENS}
+        placeholder="{topLabel} leads with {topValue} ({topPct}% of total)."
+        rows={3}
+      />
+      <p className="text-[11px] text-gray-500 mt-1">
+        Leave empty to use the default sentence; type a single space to suppress
+        entirely.
+      </p>
+    </Field>
+  );
+}
+
+/** Tiny live-preview of a tooltip template using sample values. */
+function previewTemplate(template: string, name: string, value: number, pct: number): string {
+  return template
+    .replace(/\{name\}/g, name)
+    .replace(/\{value\}/g, String(value))
+    .replace(/\{pct\}/g, String(pct))
+    .replace(/\{seriesName\}/g, name);
+}
+
+interface ViewToggleSpec {
+  id: string;
+  label: string;
+  action: { regroup?: string; metric?: string; refilter?: { column: string; value: string } };
+  default?: boolean;
+}
+
+function ViewTogglesEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const toggles = (viz.toggles as ViewToggleSpec[]) ?? [];
+
+  function update(idx: number, patch: Partial<ViewToggleSpec>) {
+    const next = toggles.map((t, i) => (i === idx ? { ...t, ...patch } : t));
+    updateViz({ toggles: next });
+  }
+  function add() {
+    updateViz({
+      toggles: [
+        ...toggles,
+        { id: `t${toggles.length + 1}`, label: "View", action: {} },
+      ],
+    });
+  }
+  function remove(idx: number) {
+    const next = toggles.filter((_, i) => i !== idx);
+    updateViz({ toggles: next.length ? next : undefined });
+  }
+
+  return (
+    <Field label="View Toggles (button group above chart)">
+      <div className="space-y-2">
+        {toggles.map((t, i) => (
+          <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={t.id}
+                onChange={(e) => update(i, { id: e.target.value })}
+                placeholder="id"
+                className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+              <input
+                type="text"
+                value={t.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder="Label (e.g. AGE GROUPS)"
+                className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+              <label className="flex items-center gap-1 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={!!t.default}
+                  onChange={(e) => {
+                    const next = toggles.map((tt, ii) => ({
+                      ...tt,
+                      default: ii === i ? e.target.checked : false,
+                    }));
+                    updateViz({ toggles: next });
+                  }}
+                />
+                Default
+              </label>
+              <button
+                onClick={() => remove(i)}
+                className="text-gray-400 hover:text-red-500 text-sm"
+                type="button"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                type="text"
+                value={t.action.regroup ?? ""}
+                onChange={(e) =>
+                  update(i, { action: { ...t.action, regroup: e.target.value || undefined } })
+                }
+                placeholder="regroup column"
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+              <input
+                type="text"
+                value={t.action.metric ?? ""}
+                onChange={(e) =>
+                  update(i, { action: { ...t.action, metric: e.target.value || undefined } })
+                }
+                placeholder="metric (e.g. count or sum:col)"
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+              <input
+                type="text"
+                value={t.action.refilter?.column ?? ""}
+                onChange={(e) =>
+                  update(i, {
+                    action: {
+                      ...t.action,
+                      refilter: e.target.value
+                        ? { column: e.target.value, value: t.action.refilter?.value ?? "" }
+                        : undefined,
+                    },
+                  })
+                }
+                placeholder="filter column"
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+              />
+              <input
+                type="text"
+                value={t.action.refilter?.value ?? ""}
+                onChange={(e) =>
+                  update(i, {
+                    action: {
+                      ...t.action,
+                      refilter: t.action.refilter
+                        ? { column: t.action.refilter.column, value: e.target.value }
+                        : undefined,
+                    },
+                  })
+                }
+                placeholder="filter value"
+                className="px-2 py-1 border border-gray-200 rounded text-xs"
+                disabled={!t.action.refilter}
+              />
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={add}
+          className="text-xs text-indigo-600 hover:text-indigo-800"
+          type="button"
+        >
+          + Add toggle
+        </button>
+      </div>
+    </Field>
+  );
+}
+
+function ColorByColumnEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const cbc = (viz.colorByColumn as { column?: string; palettes?: Record<string, string[]> }) ?? {};
+  const palettes = cbc.palettes ?? {};
+  const entries = Object.entries(palettes);
+
+  function update(column: string | undefined, palettes: Record<string, string[]>) {
+    if (!column) {
+      updateViz({ colorByColumn: undefined });
+      return;
+    }
+    updateViz({ colorByColumn: { column, palettes } });
+  }
+
+  function setKey(idx: number, key: string) {
+    const next: Record<string, string[]> = {};
+    entries.forEach(([k, v], i) => {
+      next[i === idx ? key : k] = v;
+    });
+    update(cbc.column, next);
+  }
+
+  function setPalette(key: string, value: string) {
+    const next = { ...palettes, [key]: value.split(",").map((s) => s.trim()).filter(Boolean) };
+    update(cbc.column, next);
+  }
+
+  function addEntry() {
+    update(cbc.column, { ...palettes, "": [] });
+  }
+
+  function removeEntry(idx: number) {
+    const next: Record<string, string[]> = {};
+    entries.forEach(([k, v], i) => {
+      if (i !== idx) next[k] = v;
+    });
+    update(cbc.column, next);
+  }
+
+  return (
+    <Field label="Color By Column (categorical palette routing)">
+      <input
+        type="text"
+        value={cbc.column ?? ""}
+        onChange={(e) => update(e.target.value || undefined, palettes)}
+        placeholder="Column name (e.g. is_available_in_clinic)"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-2"
+      />
+      {cbc.column && (
+        <>
+          <div className="space-y-1.5">
+            {entries.map(([key, palette], i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={key}
+                  onChange={(e) => setKey(i, e.target.value)}
+                  placeholder="value"
+                  className="w-24 px-2 py-1.5 border border-gray-200 rounded text-xs"
+                />
+                <input
+                  type="text"
+                  value={palette.join(", ")}
+                  onChange={(e) => setPalette(key, e.target.value)}
+                  placeholder="#hex, #hex, ..."
+                  className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs font-mono"
+                />
+                <button
+                  onClick={() => removeEntry(i)}
+                  className="text-gray-400 hover:text-red-500 text-sm"
+                  type="button"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addEntry}
+              className="text-xs text-indigo-600 hover:text-indigo-800"
+              type="button"
+            >
+              + Add value → palette
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Routes series colors based on a categorical column. Each value gets its own palette.
+          </p>
+        </>
+      )}
+    </Field>
+  );
+}
+
+function RankPaletteEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const rp = (viz.rankPalette as { gradient?: [string, string]; applyPerGroup?: boolean }) ?? {};
+  const gradient = rp.gradient ?? ["#3730A3", "#C7D2FE"];
+
+  function update(patch: Partial<{ gradient: [string, string]; applyPerGroup: boolean }>) {
+    if (patch.gradient === undefined && rp.gradient === undefined) {
+      // Just toggling on
+    }
+    updateViz({
+      rankPalette: { gradient, applyPerGroup: true, ...rp, ...patch },
+    });
+  }
+
+  function clear() {
+    updateViz({ rankPalette: undefined });
+  }
+
+  const enabled = !!rp.gradient;
+
+  return (
+    <Field label="Rank Palette (per-bar dark→light)">
+      <div className="space-y-1.5">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) =>
+              e.target.checked
+                ? updateViz({ rankPalette: { gradient, applyPerGroup: true } })
+                : clear()
+            }
+          />
+          Enable rank palette
+        </label>
+        {enabled && (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-600">From</span>
+            <input
+              type="color"
+              value={gradient[0]}
+              onChange={(e) => update({ gradient: [e.target.value, gradient[1]] })}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+            <span className="text-[11px] text-gray-600">→ To</span>
+            <input
+              type="color"
+              value={gradient[1]}
+              onChange={(e) => update({ gradient: [gradient[0], e.target.value] })}
+              className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+            />
+          </div>
+        )}
+        <p className="text-[11px] text-gray-500">
+          Sorts segments per bar by value and colors by rank: #1 gets the dark
+          color, last gets the light. Best for stacked bars.
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+function StatCardStyleEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
+  const sc = (viz.statCard as {
+    bgColor?: string;
+    accentColor?: string;
+    sublabelTemplate?: string;
+    valueFormat?: string;
+  }) ?? {};
+
+  function update(patch: Partial<typeof sc>) {
+    const next = { ...sc, ...patch };
+    Object.keys(next).forEach((k) => {
+      if ((next as Record<string, unknown>)[k] === "") {
+        delete (next as Record<string, unknown>)[k];
+      }
+    });
+    updateViz({ statCard: Object.keys(next).length ? next : undefined });
+  }
+
+  return (
+    <Field label="Stat Card Style">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="w-20 text-[11px] text-gray-600">Background</span>
+          <input
+            type="color"
+            value={sc.bgColor ?? "#FFFFFF"}
+            onChange={(e) => update({ bgColor: e.target.value })}
+            className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+          />
+          <input
+            type="text"
+            value={sc.bgColor ?? ""}
+            onChange={(e) => update({ bgColor: e.target.value })}
+            placeholder="#FFFFFF"
+            className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs font-mono"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-20 text-[11px] text-gray-600">Value color</span>
+          <input
+            type="color"
+            value={sc.accentColor ?? "#4f46e5"}
+            onChange={(e) => update({ accentColor: e.target.value })}
+            className="h-7 w-10 border border-gray-200 rounded cursor-pointer"
+          />
+          <input
+            type="text"
+            value={sc.accentColor ?? ""}
+            onChange={(e) => update({ accentColor: e.target.value })}
+            placeholder="#4f46e5"
+            className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs font-mono"
+          />
+        </div>
+        <select
+          value={sc.valueFormat ?? "number"}
+          onChange={(e) => update({ valueFormat: e.target.value })}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        >
+          <option value="number">Number (auto: 1.2K, 5.03L, 4.22Cr)</option>
+          <option value="percent">Percent</option>
+          <option value="inr-lakhs">INR Lakhs (always L)</option>
+          <option value="inr-crores">INR Crores (always Cr)</option>
+          <option value="decimal">Decimal (2 places)</option>
+        </select>
+        <div>
+          <p className="text-[11px] font-medium text-gray-600 mb-1">Sublabel template</p>
+          <TokenChips
+            value={sc.sublabelTemplate ?? ""}
+            onChange={(v) => update({ sublabelTemplate: v })}
+            tokens={SUBLABEL_TOKENS}
+            placeholder="e.g. {value}% of total"
+            rows={1}
+          />
+        </div>
+      </div>
+    </Field>
   );
 }
 

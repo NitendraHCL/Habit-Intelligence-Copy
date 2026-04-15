@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { renderTemplate } from "@/lib/dashboard/render-helpers";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -11,6 +12,7 @@ interface HeatmapRendererProps {
   title?: string;
   minColor?: string;
   maxColor?: string;
+  tooltipTemplate?: string;
 }
 
 export default function HeatmapRenderer({
@@ -20,12 +22,21 @@ export default function HeatmapRenderer({
   title,
   minColor = "#f3e8ff",
   maxColor = "#7C3AED",
+  tooltipTemplate,
 }: HeatmapRendererProps) {
   const option = {
     tooltip: {
       position: "top" as const,
       formatter: (params: { value: number[] }) => {
         const [x, y, val] = params.value;
+        if (tooltipTemplate) {
+          return renderTemplate(tooltipTemplate, {
+            name: `${xLabels[x]} × ${yLabels[y]}`,
+            value: val,
+            x: xLabels[x],
+            y: yLabels[y],
+          });
+        }
         return `${xLabels[x]} x ${yLabels[y]}: <strong>${val}</strong>`;
       },
     },

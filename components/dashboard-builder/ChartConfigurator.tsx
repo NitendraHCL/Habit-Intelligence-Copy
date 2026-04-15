@@ -17,6 +17,8 @@ import Disclose from "./Disclose";
 import TokenChips from "./TokenChips";
 import ChartPreview from "./ChartPreview";
 import DataPreview from "./DataPreview";
+import InfoHint from "./InfoHint";
+import { FIELD_HELP } from "./field-help";
 import {
   getPresetsForType,
   getDefaultOpenSections,
@@ -466,7 +468,7 @@ function DataTab({
         />
       </Field>
 
-      <Field label="Data Source">
+      <Field label="Data Source" infoKey="data.dataSource">
         <select
           value={chart.dataSource?.table ?? ""}
           onChange={(e) =>
@@ -499,7 +501,7 @@ function DataTab({
 
       <ComputedColumnsEditor chart={chart} onChange={onChange} />
 
-      <Field label="Metric">
+      <Field label="Metric" infoKey="data.metric">
         <MetricInput
           value={chart.transform?.metric ?? "count"}
           options={metricOptions}
@@ -519,7 +521,7 @@ function DataTab({
         metricOptions={metricOptions}
       />
 
-      <Field label="Sort">
+      <Field label="Sort" infoKey="data.sort">
         <select
           value={chart.transform?.sort ?? ""}
           onChange={(e) =>
@@ -540,7 +542,7 @@ function DataTab({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Limit">
+        <Field label="Limit" infoKey="data.limit">
           <input
             type="number"
             value={chart.transform?.limit ?? ""}
@@ -558,7 +560,7 @@ function DataTab({
             min={1}
           />
         </Field>
-        <Field label="Others Label">
+        <Field label="Others Label" infoKey="data.groupRest">
           <input
             type="text"
             value={chart.transform?.groupRest ?? ""}
@@ -742,7 +744,7 @@ function MultiMetricBuilder({
   const minMetrics = chartType === "bubble" ? 3 : chartType === "scatter" ? 2 : 2;
 
   return (
-    <Field label={`Additional Metrics (${chartType} needs ${minMetrics}+)`}>
+    <Field label={`Additional Metrics (${chartType} needs ${minMetrics}+)`} infoKey="data.metrics">
       <p className="text-[10px] text-gray-400 mb-2">
         The primary metric above is always included. Add more series here.
       </p>
@@ -963,7 +965,7 @@ function ComputedColumnsEditor({
 
   if (computed.length === 0) {
     return (
-      <Field label="Computed Columns (CASE WHEN)">
+      <Field label="Computed Columns (CASE WHEN)" infoKey="data.computed">
         <button
           type="button"
           onClick={add}
@@ -980,7 +982,7 @@ function ComputedColumnsEditor({
   }
 
   return (
-    <Field label="Computed Columns (CASE WHEN)">
+    <Field label="Computed Columns (CASE WHEN)" infoKey="data.computed">
       <div className="space-y-2 min-w-0">
         {computed.map((c, i) => (
           <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1.5 min-w-0">
@@ -1183,14 +1185,14 @@ function GroupByEditor({
 
   return (
     <>
-      <Field label="Group By">{renderSelect(0)}</Field>
+      <Field label="Group By" infoKey="data.groupBy">{renderSelect(0)}</Field>
       {groupBys[0] && (
-        <Field label="Secondary Group By (sunburst ring 2 / heatmap Y)">
+        <Field label="Secondary Group By (sunburst ring 2 / heatmap Y)" infoKey="data.groupBy.secondary">
           {renderSelect(1)}
         </Field>
       )}
       {groupBys[0] && groupBys[1] && (
-        <Field label="Tertiary Group By (sunburst ring 3)">
+        <Field label="Tertiary Group By (sunburst ring 3)" infoKey="data.groupBy.tertiary">
           {renderSelect(2)}
         </Field>
       )}
@@ -1256,7 +1258,7 @@ function WhereBuilder({
   }
 
   return (
-    <Field label="Filters (WHERE)">
+    <Field label="Filters (WHERE)" infoKey="data.where">
       <div className="space-y-2">
         {entries.map(([col, condition]) => (
           <div key={col} className="flex items-center gap-2">
@@ -1399,7 +1401,7 @@ function StyleTab({
       )}
 
       {/* Basics — always visible */}
-      <Field label="Height (px)">
+      <Field label="Height (px)" infoKey="style.height">
         <input
           type="number"
           value={viz.height ?? 350}
@@ -1449,7 +1451,7 @@ function StyleTab({
         </label>
       </div>
 
-      <Field label="Orientation">
+      <Field label="Orientation" infoKey="style.orientation">
         <select
           value={(viz.orientation as string) ?? "vertical"}
           onChange={(e) => updateViz({ orientation: e.target.value })}
@@ -1460,7 +1462,7 @@ function StyleTab({
         </select>
       </Field>
 
-      <Field label="Value Format">
+      <Field label="Value Format" infoKey="style.format">
         <select
           value={(viz.format as string) ?? "number"}
           onChange={(e) => updateViz({ format: e.target.value })}
@@ -1473,7 +1475,7 @@ function StyleTab({
         </select>
       </Field>
 
-      <Field label="Colors (comma-separated hex)">
+      <Field label="Colors (comma-separated hex)" infoKey="style.colors">
         <input
           type="text"
           value={
@@ -1732,7 +1734,7 @@ function ColorOverridesEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpda
   }
 
   return (
-    <Field label="Label → Color Overrides">
+    <Field label="Label → Color Overrides" infoKey="style.colorOverrides">
       <div className="space-y-1.5">
         {entries.map(([key, value], i) => (
           <div key={i} className="flex items-center gap-2">
@@ -1806,7 +1808,7 @@ const SUBLABEL_TOKENS = [
 function TooltipTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
   const value = (viz.tooltipTemplate as string) ?? "";
   return (
-    <Field label="Tooltip Template">
+    <Field label="Tooltip Template" infoKey="style.tooltipTemplate">
       <TokenChips
         value={value}
         onChange={(v) => updateViz({ tooltipTemplate: v || undefined })}
@@ -1826,7 +1828,7 @@ function TooltipTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpd
 function InsightTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
   const value = (viz.insightTemplate as string) ?? "";
   return (
-    <Field label="Insight Template (auto-generated text below the chart)">
+    <Field label="Insight Template (auto-generated text below the chart)" infoKey="style.insightTemplate">
       <TokenChips
         value={value}
         onChange={(v) =>
@@ -1883,7 +1885,7 @@ function ViewTogglesEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater
   }
 
   return (
-    <Field label="View Toggles (button group above chart)">
+    <Field label="View Toggles (button group above chart)" infoKey="style.toggles">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-gray-600">Layout:</span>
@@ -2041,7 +2043,7 @@ function ColorByColumnEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdat
   }
 
   return (
-    <Field label="Color By Column (categorical palette routing)">
+    <Field label="Color By Column (categorical palette routing)" infoKey="style.colorByColumn">
       <input
         type="text"
         value={cbc.column ?? ""}
@@ -2114,7 +2116,7 @@ function RankPaletteEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater
   const enabled = !!rp.gradient;
 
   return (
-    <Field label="Rank Palette (per-bar dark→light)">
+    <Field label="Rank Palette (per-bar dark→light)" infoKey="style.rankPalette">
       <div className="space-y-1.5">
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -2174,7 +2176,7 @@ function StatCardStyleEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdat
   }
 
   return (
-    <Field label="Stat Card Style">
+    <Field label="Stat Card Style" infoKey="style.statCard">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="w-20 text-[11px] text-gray-600">Background</span>
@@ -2623,7 +2625,7 @@ function VisualMapEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }
 function TopInsightTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
   const value = (viz.topInsightTemplate as string) ?? "";
   return (
-    <Field label="Top Insight Template (rendered above the chart)">
+    <Field label="Top Insight Template (rendered above the chart)" infoKey="style.topInsightTemplate">
       <TokenChips
         value={value}
         onChange={(v) => updateViz({ topInsightTemplate: v || undefined })}
@@ -2959,7 +2961,7 @@ function DrillThroughEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdate
 function NarrativeTemplateEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater }) {
   const value = (viz.narrativeTemplate as string) ?? "";
   return (
-    <Field label="Narrative Markdown / Template">
+    <Field label="Narrative Markdown / Template" infoKey="style.narrative">
       <textarea
         value={value}
         onChange={(e) => updateViz({ narrativeTemplate: e.target.value || undefined })}
@@ -2990,7 +2992,7 @@ function BehaviorTab({
 }) {
   return (
     <>
-      <Field label="Link Group">
+      <Field label="Link Group" infoKey="behavior.linkGroup">
         <input
           type="text"
           value={chart.linkGroup ?? ""}
@@ -3000,7 +3002,7 @@ function BehaviorTab({
         />
       </Field>
 
-      <Field label="Emit Filter on Click">
+      <Field label="Emit Filter on Click" infoKey="behavior.emitFilter">
         <select
           value={chart.emitFilter?.column ?? ""}
           onChange={(e) =>
@@ -3022,7 +3024,7 @@ function BehaviorTab({
         </select>
       </Field>
 
-      <Field label="Receive Filters From">
+      <Field label="Receive Filters From" infoKey="behavior.receiveFilter">
         <input
           type="text"
           value={(chart.receiveFilter ?? []).join(", ")}
@@ -3140,15 +3142,24 @@ function Field({
   label,
   children,
   compact,
+  infoKey,
 }: {
   label: string;
   children: React.ReactNode;
   compact?: boolean;
+  /** Key into FIELD_HELP — when provided, renders an (i) icon with detail popover. */
+  infoKey?: string;
 }) {
+  const help = infoKey ? FIELD_HELP[infoKey] : undefined;
   return (
     <div className={compact ? "" : "space-y-1.5"}>
-      <label className={`block font-medium text-gray-700 ${compact ? "text-[10px]" : "text-xs"}`}>
-        {label}
+      <label
+        className={`flex items-center gap-1.5 font-medium text-gray-700 ${
+          compact ? "text-[10px]" : "text-xs"
+        }`}
+      >
+        <span>{label}</span>
+        {help && <InfoHint help={help} />}
       </label>
       {children}
     </div>

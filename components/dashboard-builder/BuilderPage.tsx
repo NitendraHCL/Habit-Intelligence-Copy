@@ -436,7 +436,7 @@ export default function BuilderPage({
               <button
                 type="button"
                 onClick={() => setShowSmartPicker(true)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold hover:from-indigo-700 hover:to-violet-700 transition-all shadow-sm"
               >
                 <Sparkles className="size-4" />
                 Smart Suggest — let data decide

@@ -22,6 +22,7 @@ import {
   getPresetsForType,
   getDefaultOpenSections,
 } from "./visualization-presets";
+import { CHART_USE_CASES } from "./chart-use-cases";
 
 interface ChartConfiguratorProps {
   chart: Partial<ChartDefinition>;
@@ -257,6 +258,26 @@ export default function ChartConfigurator({
         <p className="text-xs text-gray-500 mt-0.5">
           {preset?.description ?? "Select a chart type first"}
         </p>
+        {chart.type && CHART_USE_CASES[chart.type] && (
+          <div className="mt-2 rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 space-y-1">
+            <p className="text-[11.5px] font-semibold text-indigo-900">
+              Best use case
+            </p>
+            <p className="text-[11.5px] text-indigo-800 leading-snug">
+              {CHART_USE_CASES[chart.type].bestFor}
+            </p>
+            <p className="text-[11px] text-indigo-700/80 leading-snug">
+              <span className="font-semibold">Example:</span>{" "}
+              {CHART_USE_CASES[chart.type].example}
+            </p>
+            {CHART_USE_CASES[chart.type].tip && (
+              <p className="text-[10.5px] text-indigo-600/70 leading-snug">
+                <span className="font-semibold">Tip:</span>{" "}
+                {CHART_USE_CASES[chart.type].tip}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

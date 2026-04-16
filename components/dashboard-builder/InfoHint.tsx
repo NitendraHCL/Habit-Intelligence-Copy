@@ -128,16 +128,18 @@ export default function InfoHint({ help }: InfoHintProps) {
 
   return (
     <>
-      <button
+      <span
         ref={triggerRef}
-        type="button"
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen((o) => !o); }}
         title={help.summary}
-        className="inline-flex items-center justify-center size-4 text-gray-400 hover:text-indigo-600 transition-colors"
+        className="inline-flex items-center justify-center size-4 text-gray-400 hover:text-indigo-600 transition-colors cursor-pointer"
         aria-label="More info"
       >
         <Info className="size-3.5" />
-      </button>
+      </span>
       {popover}
     </>
   );

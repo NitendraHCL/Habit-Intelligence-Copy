@@ -8,8 +8,16 @@ export type ChartTypeId =
   // Layout / non-data
   | "narrative"
   | "tile_grid"
+  | "metric_card_grid"
   // Comparison
   | "bar"
+  | "lollipop"
+  | "dumbbell"
+  | "diverging_bar"
+  | "marimekko"
+  | "tornado"
+  | "variance"
+  | "ribbon"
   | "stacked_bar"
   | "grouped_bar"
   | "horizontal_bar"
@@ -19,6 +27,11 @@ export type ChartTypeId =
   // Trends
   | "line"
   | "step_line"
+  | "slope"
+  | "bump"
+  | "sparkline"
+  | "sparkline_kpi"
+  | "small_multiples"
   | "area"
   | "stacked_area"
   | "stacked_area_100"
@@ -40,6 +53,8 @@ export type ChartTypeId =
   | "heatmap"
   | "calendar_heatmap"
   | "histogram"
+  | "dot_plot"
+  | "correlation_matrix"
   // Relationship
   | "radar"
   | "sankey"
@@ -49,6 +64,8 @@ export type ChartTypeId =
   // Progress & KPIs
   | "gauge"
   | "ring_progress"
+  | "progress_ring"
+  | "radial_bar"
   | "liquid_fill"
   | "progress_bar"
   | "kpi"
@@ -57,10 +74,18 @@ export type ChartTypeId =
   | "tree"
   // Text
   | "word_cloud"
+  | "waffle"
+  | "infographic"
+  | "aster_plot"
   // Tabular
   | "data_table"
   | "metric_table"
   | "comparison_card"
+  | "timeline"
+  | "gantt"
+  | "matrix"
+  | "table_heatmap"
+  | "map"
   // Polar
   | "polar_bar"
   | "polar_line"

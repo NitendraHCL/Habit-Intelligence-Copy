@@ -793,6 +793,103 @@ function MultiMetricBuilder({
   );
 }
 
+const PRESET_PALETTES = [
+  { label: "Indigo/Teal", colors: ["#4f46e5", "#0d9488", "#a78bfa", "#6366f1", "#14b8a6", "#818cf8"] },
+  { label: "Warm", colors: ["#ef4444", "#f59e0b", "#f97316", "#eab308", "#ec4899", "#d946ef"] },
+  { label: "Cool", colors: ["#3b82f6", "#06b6d4", "#8b5cf6", "#0ea5e9", "#6366f1", "#14b8a6"] },
+  { label: "Earth", colors: ["#92400e", "#78350f", "#854d0e", "#065f46", "#1e3a5f", "#7c2d12"] },
+  { label: "Pastel", colors: ["#c4b5fd", "#a5f3fc", "#fde68a", "#fbcfe8", "#bfdbfe", "#bbf7d0"] },
+];
+
+function ColorPaletteEditor({
+  colors,
+  onChange,
+}: {
+  colors: string[];
+  onChange: (colors: string[]) => void;
+}) {
+  function setColor(idx: number, hex: string) {
+    onChange(colors.map((c, i) => (i === idx ? hex : c)));
+  }
+  function addColor() {
+    onChange([...colors, "#4f46e5"]);
+  }
+  function removeColor(idx: number) {
+    onChange(colors.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Preset palette quick-picks */}
+      <div className="flex flex-wrap gap-1.5">
+        {PRESET_PALETTES.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => onChange([...p.colors])}
+            title={p.label}
+            className="flex items-center gap-px rounded-md border border-gray-200 px-1 py-1 hover:border-indigo-300 transition-colors"
+          >
+            {p.colors.slice(0, 5).map((c, i) => (
+              <span
+                key={i}
+                className="size-3 rounded-sm"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <span className="text-[9px] text-gray-500 ml-1">{p.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Per-swatch color pickers */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {colors.map((c, i) => (
+          <div key={i} className="relative group">
+            <input
+              type="color"
+              value={c}
+              onChange={(e) => setColor(i, e.target.value)}
+              className="h-8 w-8 rounded-md border border-gray-200 cursor-pointer p-0.5"
+              title={c}
+            />
+            <button
+              type="button"
+              onClick={() => removeColor(i)}
+              className="absolute -top-1.5 -right-1.5 size-3.5 rounded-full bg-gray-200 text-gray-600 text-[9px] leading-none hidden group-hover:flex items-center justify-center hover:bg-red-200 hover:text-red-700"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addColor}
+          className="h-8 w-8 rounded-md border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-indigo-400 hover:text-indigo-500 text-sm"
+          title="Add color"
+        >
+          +
+        </button>
+      </div>
+
+      {/* Comma-separated text input fallback */}
+      <input
+        type="text"
+        value={colors.join(", ")}
+        onChange={(e) => {
+          const parsed = e.target.value
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          onChange(parsed);
+        }}
+        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono text-gray-600"
+        placeholder="#4f46e5, #0d9488, #f59e0b"
+      />
+    </div>
+  );
+}
+
 function getGroupByValue(chart: Partial<ChartDefinition>): string {
   const gb = chart.transform?.groupBy;
   if (!gb) return "";
@@ -1479,21 +1576,12 @@ function StyleTab({
         </select>
       </Field>
 
-      <Field label="Colors (comma-separated hex)" infoKey="style.colors">
-        <input
-          type="text"
-          value={
-            Array.isArray(viz.colors) ? (viz.colors as string[]).join(", ") : ""
+      <Field label="Colors" infoKey="style.colors">
+        <ColorPaletteEditor
+          colors={Array.isArray(viz.colors) ? (viz.colors as string[]) : []}
+          onChange={(colors) =>
+            updateViz({ colors: colors.length > 0 ? colors : "default" })
           }
-          onChange={(e) => {
-            const colors = e.target.value
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-            updateViz({ colors: colors.length > 0 ? colors : "default" });
-          }}
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-          placeholder="#4f46e5, #0d9488, #f59e0b"
         />
       </Field>
 

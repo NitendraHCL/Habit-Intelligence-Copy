@@ -23,6 +23,7 @@ import {
   getDefaultOpenSections,
 } from "./visualization-presets";
 import { CHART_USE_CASES } from "./chart-use-cases";
+import ChartSuggestor from "./ChartSuggestor";
 
 interface ChartConfiguratorProps {
   chart: Partial<ChartDefinition>;
@@ -299,13 +300,29 @@ export default function ChartConfigurator({
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {activeTab === "data" && (
-          <DataTab
-            chart={chart}
-            onChange={onChange}
-            dataSources={dataSources}
-            groupableCols={groupableCols}
-            aggregatableCols={aggregatableCols}
-          />
+          <>
+            <DataTab
+              chart={chart}
+              onChange={onChange}
+              dataSources={dataSources}
+              groupableCols={groupableCols}
+              aggregatableCols={aggregatableCols}
+            />
+            <ChartSuggestor
+              chart={chart}
+              clientId={activeClientId ?? ""}
+              onSelectType={(type) =>
+                onChange({
+                  ...chart,
+                  type,
+                  visualization: {
+                    ...(chart.visualization ?? {}),
+                    ...(getPreset(type)?.defaults ?? {}),
+                  },
+                })
+              }
+            />
+          </>
         )}
         {activeTab === "style" && (
           <StyleTab chart={chart} onChange={onChange} clientId={activeClientId ?? ""} />

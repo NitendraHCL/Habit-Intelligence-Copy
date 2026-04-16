@@ -24,7 +24,9 @@ import { CSS } from "@dnd-kit/utilities";
 import ChartPalette from "./ChartPalette";
 import ChartConfigurator from "./ChartConfigurator";
 import DataSourceRegistryProvider from "./DataSourceRegistryProvider";
+import SmartChartPicker from "./SmartChartPicker";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { getPreset } from "@/lib/config/chart-presets";
 import type {
   ChartDefinition,
   ChartPreset,
@@ -34,6 +36,7 @@ import type {
 } from "@/lib/dashboard/types";
 import {
   Plus,
+  Sparkles,
   Trash2,
   Eye,
   Save,
@@ -95,6 +98,7 @@ export default function BuilderPage({
   }, []);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [editingChart, setEditingChart] = useState<Partial<ChartDefinition> | null>(null);
+  const [showSmartPicker, setShowSmartPicker] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(!dashboardId);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -402,13 +406,53 @@ export default function BuilderPage({
             chart={editingChart}
             onChange={setEditingChart}
             onSave={handleSaveChart}
-            onCancel={() => setEditingChart(null)}
+            onCancel={() => { setEditingChart(null); setShowSmartPicker(false); }}
+          />
+        ) : showSmartPicker ? (
+          <SmartChartPicker
+            clientId={clientId}
+            onSelect={(type, dataConfig) => {
+              const id = `chart-${Date.now()}`;
+              const preset = getPreset(type);
+              setEditingChart({
+                id,
+                type,
+                title: "",
+                dataSource: { table: dataConfig.table },
+                transform: {
+                  metric: dataConfig.metric,
+                  ...(dataConfig.groupBy ? { groupBy: dataConfig.groupBy } : {}),
+                },
+                visualization: { ...(preset?.defaults ?? {}) },
+              });
+              setShowSmartPicker(false);
+            }}
+            onCancel={() => setShowSmartPicker(false)}
           />
         ) : (
-          <ChartPalette
-            onSelect={handleSelectPreset}
-            selectedId={selectedChartId ?? undefined}
-          />
+          <div className="flex flex-col h-full">
+            {/* Smart Suggest button at top */}
+            <div className="px-3 pt-3 pb-1">
+              <button
+                type="button"
+                onClick={() => setShowSmartPicker(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
+              >
+                <Sparkles className="size-4" />
+                Smart Suggest — let data decide
+              </button>
+              <p className="text-[10px] text-gray-500 text-center mt-1">
+                Pick your data first, see the best chart options
+              </p>
+            </div>
+            <div className="border-b border-gray-200 mx-3 mb-1" />
+            <div className="flex-1 overflow-hidden">
+              <ChartPalette
+                onSelect={handleSelectPreset}
+                selectedId={selectedChartId ?? undefined}
+              />
+            </div>
+          </div>
         )}
       </div>
 

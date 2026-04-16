@@ -58,6 +58,7 @@ export default function DataPreview({ chart, clientId, onPickValue }: DataPrevie
       cancelled = true;
       clearTimeout(handle);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- queryKey stringifies dataSource+transform; raw objects change identity each render
   }, [queryKey, clientId, ready]);
 
   if (!ready) {

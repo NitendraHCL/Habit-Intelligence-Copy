@@ -113,28 +113,8 @@ function getGroupKeys(chart: ChartDefinition): string[] {
   });
 }
 
-/** Linearly interpolate between two hex colors. t in [0,1]. */
-function interpolateHex(from: string, to: string, t: number): string {
-  const parse = (h: string): [number, number, number] => {
-    const s = h.replace("#", "");
-    return [
-      parseInt(s.slice(0, 2), 16),
-      parseInt(s.slice(2, 4), 16),
-      parseInt(s.slice(4, 6), 16),
-    ];
-  };
-  const [r1, g1, b1] = parse(from);
-  const [r2, g2, b2] = parse(to);
-  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
-  const toHex = (v: number) => v.toString(16).padStart(2, "0");
-  return `#${toHex(lerp(r1, r2))}${toHex(lerp(g1, g2))}${toHex(lerp(b1, b2))}`;
-}
 
-/** Build a gradient palette of N steps from a [from, to] tuple. */
-function buildGradient(from: string, to: string, n: number): string[] {
-  if (n <= 1) return [from];
-  return Array.from({ length: n }, (_, i) => interpolateHex(from, to, i / (n - 1)));
-}
+
 
 function getMetricKeys(chart: ChartDefinition): string[] {
   if (chart.transform.metrics?.length) {
@@ -523,7 +503,8 @@ function transformSunburst(
     for (const row of data) {
       const path = groupKeys.map((k) => String(row[k] ?? ""));
       const value = Number(row[metricKey] ?? 0);
-      // Walk into nested maps
+      // Walk into nested maps — recursive Map nesting is inherently untyped
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let level: any = root;
       for (let i = 0; i < path.length - 1; i++) {
         const key = path[i];
@@ -534,12 +515,13 @@ function transformSunburst(
       level.set(leafKey, (Number(level.get(leafKey)) || 0) + value);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive nested Map
     function mapToNodes(level: Map<string, any>): SunNode[] {
       return Array.from(level.entries()).map(([name, child]) => {
         if (typeof child === "number") {
           return applyColor(name, { name, value: child });
         }
-        const children = mapToNodes(child as Map<string, any>);
+        const children = mapToNodes(child as Map<string, any>); // eslint-disable-line @typescript-eslint/no-explicit-any
         const value = children.reduce((s, c) => s + (c.value ?? 0), 0);
         return applyColor(name, { name, value, children });
       });

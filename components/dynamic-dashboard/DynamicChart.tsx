@@ -706,6 +706,7 @@ function KPICardPremium({
         if (prev > 0) setYoy(Math.round(((value - prev) / prev) * 100));
       })
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only refetches when date range or value changes; other deps are stable refs
   }, [filters?.dateFrom, filters?.dateTo, value]);
 
   // Threshold evaluation

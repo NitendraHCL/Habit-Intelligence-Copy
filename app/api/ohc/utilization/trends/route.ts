@@ -21,20 +21,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No client selected" }, { status: 400 });
     }
 
-    const conditions: string[] = [
-      `a.cug_code_mapped = $1`,
-      `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
-    ];
+    const conditions: string[] = [`a.cug_code_mapped = $1`];
     const params: unknown[] = [cugCode];
     let idx = 2;
 
     if (dateFrom) {
-      conditions.push(`a.slotstarttime >= $${idx}::date`);
+      conditions.push(`a.consult_date >= $${idx}::date`);
       params.push(dateFrom);
       idx++;
     }
     if (dateTo) {
-      conditions.push(`a.slotstarttime <= $${idx}::date`);
+      conditions.push(`a.consult_date <= $${idx}::date`);
       params.push(dateTo);
       idx++;
     }
@@ -58,17 +55,9 @@ export async function GET(request: NextRequest) {
       conditions.push(`(${gc.join(" OR ")})`);
     }
     if (ageGroups?.length) {
-      const ac = ageGroups.map((ag) => {
-        switch (ag) {
-          case "<20": return `a.age_years < 20`;
-          case "20-35": return `a.age_years BETWEEN 20 AND 35`;
-          case "36-40": return `a.age_years BETWEEN 36 AND 40`;
-          case "41-60": return `a.age_years BETWEEN 41 AND 60`;
-          case "61+": return `a.age_years > 60`;
-          default: return "FALSE";
-        }
-      });
-      conditions.push(`(${ac.join(" OR ")})`);
+      conditions.push(`a.age_group = ANY($${idx})`);
+      params.push(ageGroups);
+      idx++;
     }
 
     const whereClause = conditions.join("\n      AND ");
@@ -77,16 +66,16 @@ export async function GET(request: NextRequest) {
     let periodFormat: string;
     switch (trendView) {
       case "weekly":
-        periodExpr = "DATE_TRUNC('week', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('week', a.slotstarttime), 'YYYY-"W"IW')`;
+        periodExpr = "DATE_TRUNC('week', a.consult_date)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('week', a.consult_date), 'YYYY-"W"IW')`;
         break;
       case "yearly":
-        periodExpr = "DATE_TRUNC('year', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('year', a.slotstarttime), 'YYYY')`;
+        periodExpr = "DATE_TRUNC('year', a.consult_date)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('year', a.consult_date), 'YYYY')`;
         break;
       default:
-        periodExpr = "DATE_TRUNC('month', a.slotstarttime)";
-        periodFormat = `TO_CHAR(DATE_TRUNC('month', a.slotstarttime), 'YYYY-MM')`;
+        periodExpr = "DATE_TRUNC('month', a.consult_date)";
+        periodFormat = `TO_CHAR(DATE_TRUNC('month', a.consult_date), 'YYYY-MM')`;
         break;
     }
 
@@ -97,9 +86,9 @@ export async function GET(request: NextRequest) {
     }>(
       `SELECT
         ${periodFormat} AS period,
-        COUNT(*) AS total_consults,
-        COUNT(DISTINCT a.uhid) AS unique_patients
-      FROM aggregated_table.agg_appointment a
+        SUM(a.consult_count) AS total_consults,
+        SUM(a.unique_patients) AS unique_patients
+      FROM aggregated_table.agg_kpi a
       WHERE ${whereClause}
       GROUP BY ${periodExpr}
       ORDER BY ${periodExpr}`,

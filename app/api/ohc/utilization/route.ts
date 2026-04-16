@@ -8,7 +8,7 @@ function yoyChange(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-const BASE_TABLE = "aggregated_table.agg_appointment";
+const BASE_TABLE = "aggregated_table.agg_kpi";
 
 function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -18,24 +18,21 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
 
-  const conditions: string[] = [
-    `a.cug_code_mapped = $1`,
-    `a.stage IN ('Completed', 'Prescription Sent', 'Re Open')`,
-  ];
+  const conditions: string[] = [`a.cug_code_mapped = $1`];
   const prevConditions: string[] = [...conditions];
   const params: unknown[] = [cugCode];
   let idx = 2;
   const hasDateRange = !!(dateFrom && dateTo);
 
   if (dateFrom) {
-    conditions.push(`a.slotstarttime >= $${idx}::date`);
-    prevConditions.push(`a.slotstarttime >= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.consult_date >= $${idx}::date`);
+    prevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`a.slotstarttime <= $${idx}::date`);
-    prevConditions.push(`a.slotstarttime <= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.consult_date <= $${idx}::date`);
+    prevConditions.push(`a.consult_date <= ($${idx}::date - interval '1 year')`);
     params.push(dateTo);
     idx++;
   }
@@ -65,19 +62,11 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     prevConditions.push(cond);
   }
   if (ageGroups?.length) {
-    const ac = ageGroups.map((ag) => {
-      switch (ag) {
-        case "<20": return `a.age_years < 20`;
-        case "20-35": return `a.age_years BETWEEN 20 AND 35`;
-        case "36-40": return `a.age_years BETWEEN 36 AND 40`;
-        case "41-60": return `a.age_years BETWEEN 41 AND 60`;
-        case "61+": return `a.age_years > 60`;
-        default: return "FALSE";
-      }
-    });
-    const cond = `(${ac.join(" OR ")})`;
+    const cond = `a.age_group = ANY($${idx})`;
     conditions.push(cond);
     prevConditions.push(cond);
+    params.push(ageGroups);
+    idx++;
   }
 
   return {
@@ -106,22 +95,14 @@ async function handler(request: NextRequest) {
       try { return await fn(); } catch (e) { console.error("Query failed:", e); return []; }
     }
 
-    // Aliased versions for repeat-patients subquery
-    const currentWhere2 = q.currentWhere.replace(/\ba\./g, "a2.");
-    const prevWhere2 = q.prevWhere.replace(/\ba\./g, "a2.");
-
     // ── BATCH 1: KPIs ──
     const kpiRows = await safeQuery(() => dwQuery<{
       total_consults: string; unique_patients: string; repeat_patients: string; location_count: string;
     }>(
       `SELECT
-        COUNT(*) AS total_consults,
-        COUNT(DISTINCT a.uhid) AS unique_patients,
-        (SELECT COUNT(*) FROM (
-          SELECT a2.uhid FROM ${BASE_TABLE} a2
-          WHERE ${currentWhere2}
-          GROUP BY a2.uhid HAVING COUNT(*) >= 2
-        ) rp) AS repeat_patients,
+        SUM(a.consult_count) AS total_consults,
+        SUM(a.unique_patients) AS unique_patients,
+        SUM(a.repeat_patients) AS repeat_patients,
         COUNT(DISTINCT a.facility_name) AS location_count
       FROM ${BASE_TABLE} a
       WHERE ${q.currentWhere}`,
@@ -138,14 +119,14 @@ async function handler(request: NextRequest) {
     // ── BATCH 2: Specialty treemap + Location x Specialty (2 concurrent) ──
     const [specRows, locSpecRows] = await Promise.all([
       safeQuery(() => dwQuery<{ name: string; value: string }>(
-        `SELECT a.speciality_name AS name, COUNT(*) AS value
+        `SELECT a.speciality_name AS name, SUM(a.consult_count) AS value
         FROM ${BASE_TABLE} a
         WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL
         GROUP BY a.speciality_name ORDER BY value DESC`,
         q.params
       )),
       safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
-        `SELECT a.facility_name AS location, a.speciality_name AS specialty, COUNT(*) AS total_consults
+        `SELECT a.facility_name AS location, a.speciality_name AS specialty, SUM(a.consult_count) AS total_consults
         FROM ${BASE_TABLE} a
         WHERE ${q.currentWhere} AND a.facility_name IS NOT NULL AND a.speciality_name IS NOT NULL
         GROUP BY a.facility_name, a.speciality_name ORDER BY total_consults DESC`,
@@ -157,31 +138,27 @@ async function handler(request: NextRequest) {
     const [demoRows, peakRows] = await Promise.all([
       safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_patients: string }>(
         `SELECT
-          CASE
-            WHEN a.age_years < 20 THEN '<20'
-            WHEN a.age_years BETWEEN 20 AND 35 THEN '20-35'
-            WHEN a.age_years BETWEEN 36 AND 40 THEN '36-40'
-            WHEN a.age_years BETWEEN 41 AND 60 THEN '41-60'
-            WHEN a.age_years > 60 THEN '61+'
-            ELSE NULL
-          END AS age_group,
+          a.age_group,
           CASE
             WHEN LOWER(TRIM(a.patient_gender)) IN ('male', 'm') THEN 'M'
             WHEN LOWER(TRIM(a.patient_gender)) IN ('female', 'f') THEN 'F'
             ELSE 'O'
           END AS gender,
-          COUNT(*) AS total_consults,
-          COUNT(DISTINCT a.uhid) AS unique_patients
+          SUM(a.consult_count) AS total_consults,
+          SUM(a.unique_patients) AS unique_patients
         FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.age_years IS NOT NULL
-        GROUP BY age_group, gender ORDER BY age_group, gender`,
+        WHERE ${q.currentWhere} AND a.age_group IS NOT NULL
+        GROUP BY a.age_group, gender ORDER BY a.age_group, gender`,
         q.params
       )),
       safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
-        `SELECT EXTRACT(DOW FROM a.slotstarttime) AS day_of_week, EXTRACT(HOUR FROM a.slotstarttime) AS hour_of_day, COUNT(*) AS total_consults
+        `SELECT
+          EXTRACT(DOW FROM a.consult_date) AS day_of_week,
+          a.consult_hour AS hour_of_day,
+          SUM(a.consult_count) AS total_consults
         FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.slotstarttime IS NOT NULL
-        GROUP BY day_of_week, hour_of_day ORDER BY day_of_week, hour_of_day`,
+        WHERE ${q.currentWhere} AND a.consult_date IS NOT NULL
+        GROUP BY day_of_week, a.consult_hour ORDER BY day_of_week, a.consult_hour`,
         q.params
       )),
     ]);
@@ -192,12 +169,10 @@ async function handler(request: NextRequest) {
     let yoyRepeat: number | null = null;
     if (q.hasDateRange) {
       const prevRows = await safeQuery(() => dwQuery<{ total_consults: string; unique_patients: string; repeat_patients: string }>(
-        `SELECT COUNT(*) AS total_consults, COUNT(DISTINCT a.uhid) AS unique_patients,
-          (SELECT COUNT(*) FROM (
-            SELECT a2.uhid FROM ${BASE_TABLE} a2
-            WHERE ${prevWhere2}
-            GROUP BY a2.uhid HAVING COUNT(*) >= 2
-          ) rp) AS repeat_patients
+        `SELECT
+          SUM(a.consult_count) AS total_consults,
+          SUM(a.unique_patients) AS unique_patients,
+          SUM(a.repeat_patients) AS repeat_patients
         FROM ${BASE_TABLE} a WHERE ${q.prevWhere}`,
         q.params
       ));

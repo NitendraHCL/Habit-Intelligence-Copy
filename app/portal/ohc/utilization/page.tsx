@@ -61,7 +61,6 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
-  Cell,
 } from "recharts";
 import { format } from "date-fns";
 import { ResetFilter } from "@/components/ui/reset-filter";
@@ -172,27 +171,6 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
   return (
     <div className={`p-6 sm:p-7 ${className}`} style={{ backgroundColor: T.warmBg, borderRadius: 24 }}>
       {children}
-    </div>
-  );
-}
-
-// ─── Stat Card ───
-function StatCard({ label, value, color, sub, badge }: {
-  label: string; value: string | number; color: string; sub?: string; badge?: { text: string; color: string };
-}) {
-  return (
-    <div
-      className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-1"
-      style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
-    >
-      <p className="text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>{label}</p>
-      <p className="text-[38px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color }}>{value}</p>
-      {sub && <p className="text-[12px] leading-relaxed" style={{ color: T.textSecondary }}>{sub}</p>}
-      {badge && (
-        <span className="inline-flex items-center self-start mt-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold" style={{ backgroundColor: badge.color + "18", color: badge.color }}>
-          {badge.text}
-        </span>
-      )}
     </div>
   );
 }

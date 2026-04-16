@@ -9,7 +9,6 @@ import {
   Download,
   Mail,
   ClipboardList,
-  AlertTriangle,
   AlertCircle,
   ShieldAlert,
   Users,
@@ -136,45 +135,6 @@ function ComingSoonBadge() {
       <Clock size={11} />
       Coming Soon
     </span>
-  );
-}
-
-// ─── Alert Example Row ───
-function AlertExampleRow({ severity, title, description, dataRef, email }: {
-  severity: "critical" | "warning" | "info";
-  title: string; description: string; dataRef: string; email: boolean;
-}) {
-  const severityConfig = {
-    critical: { color: T.coral, bg: T.coral + "0D", icon: ShieldAlert, label: "Critical" },
-    warning: { color: T.amber, bg: T.amber + "0D", icon: AlertCircle, label: "Warning" },
-    info: { color: "#4f46e5", bg: "#4f46e50D", icon: Info, label: "Info" },
-  };
-  const cfg = severityConfig[severity];
-  const Icon = cfg.icon;
-
-  return (
-    <div className="flex items-start gap-3 py-3.5" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-      <div className="rounded-lg p-2 shrink-0 mt-0.5" style={{ backgroundColor: cfg.bg }}>
-        <Icon size={16} style={{ color: cfg.color }} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{title}</span>
-          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ backgroundColor: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-        </div>
-        <p className="text-[12px] leading-relaxed" style={{ color: T.textSecondary }}>{description}</p>
-        <div className="flex items-center gap-3 mt-1.5">
-          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F5F6FA", color: T.textMuted }}>
-            Source: {dataRef}
-          </span>
-          {email && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: T.teal }}>
-              <Mail size={10} /> Email sent
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 

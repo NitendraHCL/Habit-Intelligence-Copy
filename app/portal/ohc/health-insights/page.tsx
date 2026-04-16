@@ -34,7 +34,6 @@ import {
 import {
   AreaChart,
   Area,
-  LineChart,
   Line,
   BarChart,
   Bar,
@@ -350,7 +349,6 @@ export default function HealthInsightsPage() {
   const [demoTab, setDemoTab] = useState<"age" | "gender" | "location">("age");
   const [trendView, setTrendView] = useState<"yearly" | "monthly">("yearly");
   const [conditionType, setConditionType] = useState<"all" | "chronic" | "acute">("all");
-  const [comboTab, setComboTab] = useState<"gender" | "age" | "location">("gender");
   const [vitalType, setVitalType] = useState<"BMI" | "Systolic BP" | "Diastolic BP" | "SpO2">("BMI");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
@@ -462,7 +460,6 @@ export default function HealthInsightsPage() {
 
   // Chronic / Acute data
   const ca = d?.chronicAcute || {};
-  const seasonal = d?.seasonalData || {};
   const categoryTreemap = d?.categoryTreemap || [];
 
   // Trends

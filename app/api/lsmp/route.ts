@@ -1,8 +1,8 @@
 // TODO: Replace with dwQuery() using fact_kx / habit_intelligence schemas
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { withCache } from "@/lib/cache/middleware";
 
-async function handler(_req: NextRequest) {
+async function handler() {
   return NextResponse.json({
     kpis: {
       totalEnrollments: { value: 0, trend: 0, trendLabel: "vs Last Year" },

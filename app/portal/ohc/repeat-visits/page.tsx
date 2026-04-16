@@ -56,7 +56,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
   Line,
 } from "recharts";
 import { format } from "date-fns";
@@ -131,15 +130,6 @@ function CVCard({
         </div>
       )}
       <div className="px-6 pb-5">{children}</div>
-    </div>
-  );
-}
-
-// ─── Warm Section ───
-function WarmSection({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`p-5 sm:p-6 ${className}`} style={{ backgroundColor: T.warmBg, borderRadius: 24 }}>
-      {children}
     </div>
   );
 }

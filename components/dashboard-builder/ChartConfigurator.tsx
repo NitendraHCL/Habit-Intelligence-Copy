@@ -998,7 +998,7 @@ function MetricInput({
           </div>
           <p className="text-[11px] text-gray-500">
             Emits SUM(col) restricted to the selected period window using the
-            data source's default date column.
+            data source&apos;s default date column.
           </p>
         </>
       )}
@@ -2376,7 +2376,7 @@ function TabsFromColumnEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpda
                 checked={cfg.showAll !== false}
                 onChange={(e) => update({ showAll: e.target.checked })}
               />
-              Show "All" tab
+              Show &quot;All&quot; tab
             </label>
             <input
               type="text"
@@ -2488,8 +2488,8 @@ function ColorByValueRangeEditor({ viz, updateViz }: { viz: Viz; updateViz: VizU
         + Add bucket
       </button>
       <p className="text-[11px] text-gray-500">
-        Leave <code>from</code> blank for "lowest open" or <code>to</code> blank
-        for "highest open".
+        Leave <code>from</code> blank for &quot;lowest open&quot; or <code>to</code> blank
+        for &quot;highest open&quot;.
       </p>
     </div>
   );

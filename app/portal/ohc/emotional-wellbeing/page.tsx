@@ -77,15 +77,6 @@ function getImpressionColor(index: number): string {
   return IMPRESSION_PALETTE[index % IMPRESSION_PALETTE.length];
 }
 
-const IMPRESSION_COLORS: Record<string, string> = {
-  "Very Positive": "#0d9488",
-  "Somewhat Positive": "#14b8a6",
-  "Neutral": "#818cf8",
-  "Mixed": "#a78bfa",
-  "Somewhat Negative": "#c4b5fd",
-  "Very Negative": "#a1a1aa",
-};
-
 const SCALE_COLORS = ["#4f46e5", "#6366f1", "#818cf8", "#a78bfa", "#c4b5fd"];
 
 function formatNum(n: number): string {

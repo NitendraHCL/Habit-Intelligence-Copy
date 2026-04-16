@@ -3,15 +3,10 @@
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import {
-  Users,
   Activity,
-  UserCheck,
-  Layers,
   ArrowRight,
   Stethoscope,
-  Brain,
   Smartphone,
-  UsersRound,
   ClipboardCheck,
   Heart,
   Shield,
@@ -21,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from "recharts";
 import { T as t } from "@/lib/ui/theme";
 

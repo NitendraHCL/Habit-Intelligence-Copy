@@ -10,7 +10,7 @@ import type { DashboardConfig } from "@/lib/types/dashboard-config";
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth();
+    await requireAuth();
 
     const { searchParams } = request.nextUrl;
     const clientId = searchParams.get("clientId");

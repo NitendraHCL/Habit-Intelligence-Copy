@@ -17,12 +17,6 @@ import {
   ChevronDown,
   ChevronUp,
   MessageSquare,
-  Stethoscope,
-  Heart,
-  Smartphone,
-  Activity,
-  Users,
-  ClipboardCheck,
 } from "lucide-react";
 import {
   Tooltip,
@@ -34,13 +28,6 @@ import { T } from "@/lib/ui/theme";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
-
-function formatNum(n: number): string {
-  if (!n && n !== 0) return "0";
-  if (n >= 100000) return `${(n / 100000).toFixed(2)}L`;
-  if (n >= 1000) return n.toLocaleString("en-IN");
-  return String(n);
-}
 
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {

@@ -169,15 +169,6 @@ function StatCard({ label, value, color, sub, trend, tooltipText }: {
   );
 }
 
-// ─── Insight Box ───
-function InsightBox({ text }: { text: string }) {
-  return (
-    <div className="rounded-[14px] px-4 py-3 text-[12px] leading-relaxed mt-3" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
-      {text}
-    </div>
-  );
-}
-
 // ─── Filter Options (defaults — overridden by /api/filters) ───
 const PLAN_OPTIONS = ["Prime Health", "Supreme Health", "Calorie Fit Care", "Pro Health", "Others"];
 

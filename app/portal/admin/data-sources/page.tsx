@@ -215,10 +215,9 @@ function DataSourceForm({
   }
 
   function removeCol(key: string) {
-    setColumns((c) => {
-      const { [key]: _, ...rest } = c;
-      return rest;
-    });
+    setColumns((c) =>
+      Object.fromEntries(Object.entries(c).filter(([k]) => k !== key))
+    );
   }
 
   async function importFromWarehouse() {

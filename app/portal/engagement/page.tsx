@@ -41,7 +41,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -195,7 +194,7 @@ function ActiveFilterChips({
 }
 
 // ─── InsightBox ───
-function InsightBox({ text, color = T.amber }: { text: string; color?: string }) {
+function InsightBox({ text }: { text: string; color?: string }) {
   return (
     <div className="rounded-[14px] px-4 py-3 mt-4 text-[12px] leading-relaxed" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
       {text}

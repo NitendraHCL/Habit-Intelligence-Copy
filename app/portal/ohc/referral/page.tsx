@@ -33,8 +33,6 @@ import {
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -216,13 +214,6 @@ function ActiveFilterChips({
 }
 
 // ─── Filter Options (defaults — overridden by /api/filters) ───
-
-const BAR_SPEC_COLORS: Record<string, string> = {
-  Cardiology: CHART_PALETTE[0], Endocrinology: CHART_PALETTE[1], Physiotherapy: CHART_PALETTE[2],
-  "Internal Medicine": CHART_PALETTE[3], Dietary: CHART_PALETTE[4], Orthopaedics: CHART_PALETTE[5],
-  Dermatology: CHART_PALETTE[6], Neurology: CHART_PALETTE[7], Psychiatry: CHART_PALETTE[8],
-  Ophthalmology: CHART_PALETTE[9], Dental: CHART_PALETTE_EXTENDED[10], Gastroenterology: CHART_PALETTE_EXTENDED[11],
-};
 
 // ─── Main Page ───
 export default function ReferralAnalyticsPage() {

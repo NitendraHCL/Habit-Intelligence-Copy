@@ -47,7 +47,7 @@ export function withCache(
     let res: NextResponse | Response;
     try {
       res = await handler(req);
-    } catch (err) {
+    } catch {
       // Never cache errors
       return NextResponse.json(
         { error: "Internal server error" },

@@ -34,7 +34,6 @@ import {
 import {
   LineChart,
   Line,
-  BarChart,
   Bar,
   RadarChart,
   Radar,
@@ -47,13 +46,11 @@ import {
   ScatterChart,
   Scatter,
   ComposedChart,
-  Area,
   XAxis,
   YAxis,
   ZAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  Legend,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
@@ -90,8 +87,6 @@ const DEMO_COLORS: Record<string, string> = {
   "Online / WC": "#4f46e5",
   "In-Clinic": "#0d9488",
 };
-
-const GAUGE_COLORS = ["#4f46e5", "#6366f1", "#818cf8", "#a78bfa", "#c4b5fd"];
 
 function formatNum(n: number): string {
   if (!n && n !== 0) return "0";
@@ -232,7 +227,7 @@ function ActiveFilterChips({
 }
 
 // ─── Insight Box ───
-function InsightBox({ text, color = T.amber }: { text: string; color?: string }) {
+function InsightBox({ text }: { text: string; color?: string }) {
   return (
     <div className="rounded-[14px] px-4 py-3 mt-4 text-[12px] leading-relaxed" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
       {text}
@@ -240,48 +235,7 @@ function InsightBox({ text, color = T.amber }: { text: string; color?: string })
   );
 }
 
-// ─── Mini Gauge SVG ───
-function MiniGauge({ value, color, label }: { value: number; color: string; label?: string }) {
-  const r = 28;
-  const cx = 35;
-  const cy = 35;
-  const circumference = Math.PI * r;
-  const pct = Math.min(value / Math.max(value, 1), 1);
-  const dashOffset = circumference * (1 - pct);
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width="70" height="42" viewBox="0 0 70 42">
-        <path
-          d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
-          fill="none"
-          stroke="#E5E7EB"
-          strokeWidth="6"
-          strokeLinecap="round"
-        />
-        <path
-          d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
-          fill="none"
-          stroke={color}
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-        />
-      </svg>
-      <span className="text-[14px] font-bold" style={{ color: T.textPrimary }}>{formatNum(value)}</span>
-      {label && <span className="text-[10px]" style={{ color: T.textMuted }}>{label}</span>}
-    </div>
-  );
-}
-
 // No fallback data — all data comes from API
-
-// ─── Month constants ───
-const MONTH_ORDER: Record<string, number> = {
-  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
-};
 
 const QUARTER_MAP: Record<string, string> = {
   Jan: "Q1", Feb: "Q1", Mar: "Q1", Apr: "Q2", May: "Q2", Jun: "Q2",

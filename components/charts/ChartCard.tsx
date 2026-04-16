@@ -16,8 +16,6 @@ import {
   Maximize2,
   Minimize2,
   Lightbulb,
-  ChevronDown,
-  ChevronUp,
   GripVertical,
   Sparkles,
 } from "lucide-react";

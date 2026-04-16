@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import DynamicChart from "./DynamicChart";
-import { WarmSection, AccentBar } from "./CVCardDynamic";
+import { AccentBar } from "./CVCardDynamic";
 import type {
   SectionDefinition,
   ChartDefinition,

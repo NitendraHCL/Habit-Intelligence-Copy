@@ -9,8 +9,6 @@ import {
   Download,
   Mail,
   ClipboardList,
-  AlertCircle,
-  ShieldAlert,
   Users,
   Filter,
   Send,

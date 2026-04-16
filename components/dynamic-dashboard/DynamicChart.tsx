@@ -711,18 +711,14 @@ function KPICardPremium({
 
   // Threshold evaluation
   let accentColor = statCardStyle.accentColor ?? "#4f46e5";
-  let thresholdLabel = "";
   if (chart.thresholds?.length) {
     for (const t of chart.thresholds) {
       if (t.above !== undefined && value > t.above) {
         accentColor = t.color;
-        thresholdLabel = t.label;
       } else if (t.max !== undefined && t.min !== undefined && value >= t.min && value <= t.max) {
         accentColor = t.color;
-        thresholdLabel = t.label;
       } else if (t.max !== undefined && t.min === undefined && value <= t.max) {
         accentColor = t.color;
-        thresholdLabel = t.label;
       }
     }
   }

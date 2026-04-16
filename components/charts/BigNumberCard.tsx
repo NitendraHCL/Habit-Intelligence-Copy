@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { SEVERITY, SEVERITY_BG, type SeverityLevel } from "@/lib/design-tokens";
+import { SEVERITY, type SeverityLevel } from "@/lib/design-tokens";
 import { TrendingUp, TrendingDown, Minus, Sparkles } from "lucide-react";
 import { useAIPanel } from "@/lib/ai-panel-context";
 import {

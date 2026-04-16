@@ -1,6 +1,6 @@
 "use client";
 
-import { T, CHART_PALETTE, CHART_PALETTE_EXTENDED, HEATMAP_GRADIENT } from "@/lib/ui/theme";
+import { T, HEATMAP_GRADIENT } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";

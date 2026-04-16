@@ -318,9 +318,6 @@ export async function getPeakHours(filters: DashboardFilters) {
 // ── Generic Metric Query Router ──
 
 export async function queryMetric(metricKey: string, filters: DashboardFilters) {
-  // Route to the right query based on metric key prefix
-  const prefix = metricKey.split("_").slice(0, 2).join("_");
-
   switch (metricKey) {
     // KPI metrics
     case "ohc_total_consults":

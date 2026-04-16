@@ -9,8 +9,6 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
-  Bell,
-  Download,
   X,
 } from "lucide-react";
 
@@ -22,7 +20,6 @@ import { useWalkthrough } from "@/components/walkthrough/WalkthroughProvider";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useConfig } from "@/lib/contexts/config-context";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Avatar,
   AvatarFallback,

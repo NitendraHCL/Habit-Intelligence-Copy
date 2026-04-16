@@ -75,7 +75,6 @@ const defaultConfig: PageDefinition = {
 export default function BuilderPage({
   dashboardId,
   initialConfig,
-  initialTitle,
 }: BuilderPageProps) {
   const router = useRouter();
   const { activeClientId } = useAuth();
@@ -165,8 +164,9 @@ export default function BuilderPage({
   function handleDeleteChart(chartId: string) {
     setConfig((prev) => {
       const next = { ...prev };
-      const { [chartId]: _, ...remainingCharts } = next.charts;
-      next.charts = remainingCharts;
+      next.charts = Object.fromEntries(
+        Object.entries(next.charts).filter(([k]) => k !== chartId)
+      );
       next.sections = next.sections
         .map((s) => ({
           ...s,

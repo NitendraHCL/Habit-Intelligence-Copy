@@ -5,7 +5,6 @@ import {
   getAllDataSourceOptions,
   getGroupableColumns,
   getAggregatableColumns,
-  getFilterableColumns,
   getDataSource,
   getJoinableTablesFor,
   getMergedColumns,
@@ -149,7 +148,6 @@ export default function ChartConfigurator({
 
     // Suggest better chart types based on data shape
     const chartType = chart.type;
-    const metric = chart.transform?.metric ?? "count";
     const hasGroupBy = gb ? (Array.isArray(gb) ? gb.length > 0 : !!gb) : false;
 
     if (chartType && hasGroupBy) {
@@ -888,12 +886,6 @@ function ColorPaletteEditor({
       />
     </div>
   );
-}
-
-function getGroupByValue(chart: Partial<ChartDefinition>): string {
-  const gb = chart.transform?.groupBy;
-  if (!gb) return "";
-  return Array.isArray(gb) ? gb[0] : gb;
 }
 
 /**

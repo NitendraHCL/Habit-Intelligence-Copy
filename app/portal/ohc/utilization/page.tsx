@@ -1261,8 +1261,6 @@ export default function OHCUtilizationPage() {
                         const pct = item && total > 0 ? Math.round((item.value / total) * 100) : 0;
                         const count = item ? formatNum(item.value) : "0";
                         const idx = donutData.findIndex((d: any) => d.name === name);
-                        const color = name === "Others" ? "#d1d5db" : TREEMAP_COLORS[idx % TREEMAP_COLORS.length];
-                        const barWidth = Math.max(4, pct);
                         return `{dot|●}  {name|${name}}\n{bar${idx}|${"█".repeat(1)}}  {val|${count}}  {pct|${pct}%}`;
                       },
                       textStyle: {

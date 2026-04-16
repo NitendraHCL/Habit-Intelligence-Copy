@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
 import DashboardSection from "./DashboardSection";

@@ -29,7 +29,6 @@ export default function ChartPalette({ onSelect, selectedId }: ChartPaletteProps
   const [activeCategory, setActiveCategory] = useState<ChartCategory>("comparison");
 
   const presets = getPresetsByCategory(activeCategory);
-  const activeCat = chartCategories.find((c) => c.id === activeCategory);
 
   return (
     <div className="flex flex-col h-full">

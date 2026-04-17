@@ -28,7 +28,11 @@ import { T } from "@/lib/ui/theme";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
-import PageToolbar from "@/components/shared/PageToolbar";
+import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
+import { RotateCcw } from "lucide-react";
+import type { PageConfig } from "@/lib/types/dashboard-config";
 
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
@@ -234,6 +238,20 @@ const inProgressCount = actionItems.filter((i) => i.status === "in_progress").le
 
 // ─── Main Page ───
 export default function ActionPlanPage() {
+  const { user } = useAuth();
+  const { isChartVisible: globalVisible } = useConfig();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
+  const isPreview = previewConfig !== null;
+  const isChartVisible = (chartId: string) => {
+    if (isPreview && previewConfig?.charts) {
+      const cc = previewConfig.charts[chartId];
+      return cc ? cc.visible !== false : true;
+    }
+    return globalVisible("/portal/action-plan", chartId);
+  };
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [filterPriority, setFilterPriority] = useState<string>("all");
 
   const filteredItems = filterPriority === "all"
@@ -255,23 +273,45 @@ export default function ActionPlanPage() {
         ]}
       />
 
-      <div className="flex items-center justify-end mb-4">
-        <PageToolbar
-          pageSlug="/portal/action-plan"
-          pageTitle="Action Plan"
-          charts={[
-            { id: "executiveSummary", label: "Action Items Summary" },
-            { id: "kpiCards", label: "KPI Cards" },
-            { id: "aiInsights", label: "AI Insights" },
-            { id: "dataAlerts", label: "Data Alerts" },
-            { id: "actionItems", label: "Action Items List" },
-            { id: "recommendations", label: "Recommendations" },
-          ]}
-        />
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => { setIsRefreshing(true); await new Promise(() => window.location.reload()); setIsRefreshing(false); }}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
+        {isSuperAdmin && (
+          <ConfigurePanel
+            pageSlug="/portal/action-plan"
+            pageTitle="Action Plan"
+            charts={[
+              { id: "executiveSummary", label: "Action Items Summary" },
+              { id: "kpiCards", label: "KPI Cards" },
+              { id: "aiInsights", label: "AI Insights" },
+              { id: "dataAlerts", label: "Data Alerts" },
+              { id: "actionItems", label: "Action Items List" },
+              { id: "recommendations", label: "Recommendations" },
+              { id: "kamSupport", label: "KAM Support & Feedback" },
+            ]}
+            onPreview={setPreviewConfig}
+            isPreview={isPreview}
+          />
+        )}
       </div>
 
+      {isPreview && (
+        <div className="px-4 py-2 rounded-xl text-sm font-medium text-center mb-4" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+          Preview Mode — changes not saved yet
+        </div>
+      )}
+
       {/* ── Executive Summary ── */}
-      <div
+      {isChartVisible("executiveSummary") && <div
         className="rounded-2xl p-6"
         style={{ background: "linear-gradient(135deg, #FFF8ED 0%, #FFFFF0 50%, #FFF7ED 100%)", border: "1px solid #FDE68A" }}
       >
@@ -301,24 +341,24 @@ export default function ActionPlanPage() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {isChartVisible("kpiCards") && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Critical" value={criticalCount} color={T.coral} sub="Annual Health Check gap & cardiovascular volume" icon={AlertTriangle} />
         <StatCard label="High Priority" value={highCount} color={T.amber} sub="Engagement, NPS & LSMP gaps" icon={Clock} />
         <StatCard label="In Progress" value={inProgressCount} color={"#4f46e5"} sub="Currently being addressed" icon={ArrowRight} />
         <StatCard label="Pending" value={pendingCount} color={"#6B4C3B"} sub="Awaiting initiation" icon={Circle} />
-      </div>
+      </div>}
 
       {/* ── AI Insights ── */}
-      <AIInsightPanel
+      {isChartVisible("aiInsights") && <AIInsightPanel
         title="AI Insights — Derived from Dashboard Data"
         insights={aiInsights}
-      />
+      />}
 
       {/* ── Data Alerts ── */}
-      <CVCard
+      {isChartVisible("dataAlerts") && <CVCard
         accentColor={T.coral}
         title="Data Alerts"
         subtitle="Metrics from dashboard pages that need attention"
@@ -343,10 +383,10 @@ export default function ActionPlanPage() {
             );
           })}
         </div>
-      </CVCard>
+      </CVCard>}
 
       {/* ── Action Items ── */}
-      <div>
+      {isChartVisible("actionItems") && <div>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-[16px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>Action Items</h2>
@@ -439,10 +479,10 @@ export default function ActionPlanPage() {
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* ── Data-Driven Recommendations ── */}
-      <WarmSection>
+      {isChartVisible("recommendations") && <WarmSection>
         <AccentBar color={"#6366f1"} />
         <h2 className="text-[16px] font-bold font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>
           Recommendations Based on Dashboard Data
@@ -471,10 +511,10 @@ export default function ActionPlanPage() {
             </CVCard>
           ))}
         </div>
-      </WarmSection>
+      </WarmSection>}
 
       {/* ── KAM Support & Feedback ── */}
-      <CVCard expandable={false}>
+      {isChartVisible("kamSupport") && <CVCard expandable={false}>
         <div className="flex items-center gap-4 py-2">
           <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#6366f1" + "15" }}>
             <MessageSquare size={18} style={{ color: "#6366f1" }} />
@@ -492,7 +532,7 @@ export default function ActionPlanPage() {
             Submit Feedback
           </Button>
         </div>
-      </CVCard>
+      </CVCard>}
     </div>
   );
 }

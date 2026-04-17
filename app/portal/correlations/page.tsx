@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
-import PageToolbar from "@/components/shared/PageToolbar";
+import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
+import { RotateCcw } from "lucide-react";
+import type { PageConfig } from "@/lib/types/dashboard-config";
 import {
   Info,
   Maximize2,
@@ -144,6 +148,19 @@ const fallbackData = {
 // ─── Main Page ───
 export default function CorrelationsPage() {
   const { data, isLoading, mutate } = useDashboardData("correlations");
+  const { user } = useAuth();
+  const { isChartVisible: globalVisible } = useConfig();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
+  const isPreview = previewConfig !== null;
+  const isChartVisible = (chartId: string) => {
+    if (isPreview && previewConfig?.charts) {
+      const cc = previewConfig.charts[chartId];
+      return cc ? cc.visible !== false : true;
+    }
+    return globalVisible("/portal/correlations", chartId);
+  };
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const d = data as any;
   const ohcToAhc = d?.ohcToAhc || fallbackData.ohcToAhc;
@@ -179,25 +196,45 @@ export default function CorrelationsPage() {
         ]}
       />
 
-      <div className="flex items-center justify-end mb-4">
-        <PageToolbar
-          pageSlug="/portal/correlations"
-          pageTitle="Correlations Dashboard"
-          charts={[
-            { id: "ohcToAhc", label: "OHC Utilization → AHC Uptake" },
-            { id: "ahcToOhc", label: "AHC Abnormalities → OHC Follow-ups" },
-            { id: "mentalPhysical", label: "Mental Health → Physical Health" },
-            { id: "appEngagement", label: "App Engagement → Health Outcomes" },
-          ]}
-          onRefresh={mutate}
-        />
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => { setIsRefreshing(true); await mutate(); setIsRefreshing(false); }}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
+        {isSuperAdmin && (
+          <ConfigurePanel
+            pageSlug="/portal/correlations"
+            pageTitle="Correlations"
+            charts={[
+              { id: "ohcToAhc", label: "OHC Utilization → AHC Uptake" },
+              { id: "ahcToOhc", label: "AHC Abnormalities → OHC Follow-ups" },
+              { id: "mentalPhysical", label: "Mental Health → Physical Health" },
+              { id: "appEngagement", label: "App Engagement → Health Outcomes" },
+            ]}
+            onPreview={setPreviewConfig}
+            isPreview={isPreview}
+          />
+        )}
       </div>
+
+      {isPreview && (
+        <div className="px-4 py-2 rounded-xl text-sm font-medium text-center mb-4" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+          Preview Mode — changes not saved yet
+        </div>
+      )}
 
       {/* ── 2x2 Grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
         {/* ── Card 1: OHC Utilization → AHC Uptake ── */}
-        <CVCard
+        {isChartVisible("ohcToAhc") && <CVCard
           accentColor={"#4f46e5"}
           title="OHC Utilization → Annual Health Check Uptake"
           subtitle="Percentage and count of employees actively using OHC services, and the AHC completion rate among those active users — showing how regular OHC engagement drives preventive health check participation"
@@ -212,10 +249,10 @@ export default function CorrelationsPage() {
           </div>
 
           <InsightBox text="Employees who visited OHC 3+ times are 25% more likely to complete their AHC." />
-        </CVCard>
+        </CVCard>}
 
         {/* ── Card 2: AHC Abnormalities → OHC Follow-ups ── */}
-        <CVCard
+        {isChartVisible("ahcToOhc") && <CVCard
           accentColor={T.coral}
           title="Annual Health Check Abnormalities → OHC Follow-ups"
           subtitle="Are employees with flagged health risks following up at the clinic?"
@@ -230,10 +267,10 @@ export default function CorrelationsPage() {
           </div>
 
           <InsightBox text="38% gap in follow-up care presents an opportunity for intervention." />
-        </CVCard>
+        </CVCard>}
 
         {/* ── Card 3: Mental Health → Physical Health ── */}
-        <CVCard
+        {isChartVisible("mentalPhysical") && <CVCard
           accentColor={"#6366f1"}
           title="Mental Health → Physical Health"
           subtitle="Correlation between mental and physical conditions"
@@ -258,10 +295,10 @@ export default function CorrelationsPage() {
             })}
           </div>
           <InsightBox text={`${mentalPhysical.length > 0 ? `The strongest correlation is between ${mentalPhysical[0].left} and ${mentalPhysical[0].right} (${mentalPhysical[0].value.toFixed(2)}). ` : ''}Addressing mental health conditions may reduce the burden of co-occurring physical conditions.`} />
-        </CVCard>
+        </CVCard>}
 
         {/* ── Card 4: App Engagement → Health Outcomes ── */}
-        <CVCard
+        {isChartVisible("appEngagement") && <CVCard
           accentColor={T.teal}
           title="App Engagement → Health Outcomes"
           subtitle="Impact of wellness app usage on health metrics"
@@ -276,7 +313,7 @@ export default function CorrelationsPage() {
             ))}
           </div>
           <InsightBox text="Active app users show measurable health improvements across multiple metrics. Promoting daily app usage and challenge participation can amplify wellness program ROI." />
-        </CVCard>
+        </CVCard>}
 
       </div>
     </div>

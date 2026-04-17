@@ -50,7 +50,10 @@ import { T } from "@/lib/ui/theme";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ResetFilter } from "@/components/ui/reset-filter";
-import PageToolbar from "@/components/shared/PageToolbar";
+import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import { useConfig } from "@/lib/contexts/config-context";
+import { RotateCcw } from "lucide-react";
+import type { PageConfig } from "@/lib/types/dashboard-config";
 
 const DONUT_COLORS = ["#4f46e5", "#0d9488", "#818cf8"];
 const COHORT_COLORS = ["#4f46e5", "#0d9488", "#818cf8", "#a78bfa", "#6366f1", "#14b8a6", "#c4b5fd"];
@@ -235,7 +238,9 @@ function KPIStatCard({ icon, label, value, subValue, trend, color }: {
 
 // ─── MAIN PAGE ───
 export default function EngagementPage() {
-  const { activeClientId } = useAuth();
+  const { user, activeClientId } = useAuth();
+  const { isChartVisible: globalVisible } = useConfig();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
   const [cohortTab, setCohortTab] = useState<"department" | "age" | "location">("department");
   const [trendMetric, setTrendMetric] = useState<"activeUsers" | "stepsAvg" | "challengeUsers" | "webinarUsers">("activeUsers");
   const [pageFilters, setPageFilters] = useState({
@@ -247,14 +252,16 @@ export default function EngagementPage() {
     departments: [] as string[], locations: [] as string[], ageGroups: [] as string[],
   });
 
-  const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
+  const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {
-    if (!previewConfig) return true;
-    const cc = previewConfig.charts[chartId];
-    if (!cc) return true;
-    return cc.visible;
+    if (isPreview && previewConfig?.charts) {
+      const cc = previewConfig.charts[chartId];
+      return cc ? cc.visible !== false : true;
+    }
+    return globalVisible("/portal/engagement", chartId);
   };
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch real filter options from API
   const [filterOptions, setFilterOptions] = useState({
@@ -358,23 +365,35 @@ export default function EngagementPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
-        <PageToolbar
-          pageSlug="/portal/engagement"
-          pageTitle="Habit App Engagement"
-          charts={[
-            { id: "engagementKpis", label: "KPI Summary Cards" },
-            { id: "adoptionFunnel", label: "Adoption Funnel" },
-            { id: "platformUsage", label: "Platform Usage" },
-            { id: "stepsActivity", label: "Activity Engagement - Steps" },
-            { id: "challengeEngagement", label: "Challenge Engagement" },
-            { id: "webinarEngagement", label: "Webinar Engagement" },
-            { id: "engagementTrends", label: "Engagement Trends" },
-            { id: "cohortAnalysis", label: "Engagement Cohort Analysis" },
-          ]}
-          onRefresh={mutate}
-          onPreview={setPreviewConfig}
-          isPreview={isPreview}
-        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => { setIsRefreshing(true); await mutate(); setIsRefreshing(false); }}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
+        {isSuperAdmin && (
+          <ConfigurePanel
+            pageSlug="/portal/engagement"
+            pageTitle="Employee Engagement"
+            charts={[
+              { id: "engagementKpis", label: "KPI Summary Cards" },
+              { id: "adoptionFunnel", label: "Adoption Funnel" },
+              { id: "platformUsage", label: "Platform Usage" },
+              { id: "stepsActivity", label: "Activity Engagement - Steps" },
+              { id: "challengeEngagement", label: "Challenge Engagement" },
+              { id: "webinarEngagement", label: "Webinar Engagement" },
+              { id: "engagementTrends", label: "Engagement Trends" },
+              { id: "cohortAnalysis", label: "Engagement Cohort Analysis" },
+            ]}
+            onPreview={setPreviewConfig}
+            isPreview={isPreview}
+          />
+        )}
         <Button
           onClick={handleApply}
           disabled={isLoading}
@@ -393,6 +412,12 @@ export default function EngagementPage() {
       </div>
       {hasActiveFilters && (
         <ActiveFilterChips filters={appliedFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
+      )}
+
+      {isPreview && (
+        <div className="px-4 py-2 rounded-xl text-sm font-medium text-center mb-4" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+          Preview Mode — changes not saved yet
+        </div>
       )}
 
       <PageGlanceBox

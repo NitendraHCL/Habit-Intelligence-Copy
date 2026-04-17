@@ -1,7 +1,13 @@
 "use client";
 
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
-import PageToolbar from "@/components/shared/PageToolbar";
+import { useState } from "react";
+import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
+import { RotateCcw } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import type { PageConfig } from "@/lib/types/dashboard-config";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import {
   Activity,
@@ -72,6 +78,19 @@ interface OverviewData {
 
 export default function HomePage() {
   const { data, isLoading, mutate } = useDashboardData<OverviewData>("overview");
+  const { user } = useAuth();
+  const { isChartVisible: globalVisible } = useConfig();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
+  const isPreview = previewConfig !== null;
+  const isChartVisible = (chartId: string) => {
+    if (isPreview && previewConfig?.charts) {
+      const cc = previewConfig.charts[chartId];
+      return cc ? cc.visible !== false : true;
+    }
+    return globalVisible("/portal/home", chartId);
+  };
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   if (isLoading) return (
     <div className="animate-fade-in space-y-5">
@@ -109,23 +128,43 @@ export default function HomePage() {
       />
       </div>
 
-      <div className="flex items-center justify-end mb-4">
-        <PageToolbar
-          pageSlug="/portal/home"
-          pageTitle="Habit Services Overview"
-          charts={[
-            { id: "programGlance", label: "Program at a Glance" },
-            { id: "executiveSummary", label: "Executive Summary KPIs" },
-            { id: "serviceCards", label: "Our Services" },
-            { id: "riskStratification", label: "Risk Stratification" },
-            { id: "corporateBenchmarking", label: "Corporate Benchmarking" },
-          ]}
-          onRefresh={mutate}
-        />
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => { setIsRefreshing(true); await mutate(); setIsRefreshing(false); }}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
+        {isSuperAdmin && (
+          <ConfigurePanel
+            pageSlug="/portal/home"
+            pageTitle="Habit Services Overview"
+            charts={[
+              { id: "programGlance", label: "Program at a Glance" },
+              { id: "executiveSummary", label: "Executive Summary KPIs" },
+              { id: "serviceCards", label: "Our Services" },
+              { id: "riskStratification", label: "Risk Stratification" },
+              { id: "corporateBenchmarking", label: "Corporate Benchmarking" },
+            ]}
+            onPreview={setPreviewConfig}
+            isPreview={isPreview}
+          />
+        )}
       </div>
 
+      {isPreview && (
+        <div className="px-4 py-2 rounded-xl text-sm font-medium text-center mb-4" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+          Preview Mode — changes not saved yet
+        </div>
+      )}
+
       {/* ━━━ Section 1: Program at a Glance (WarmSection) ━━━ */}
-      <WarmSection title="Program at a Glance">
+      {isChartVisible("programGlance") && <WarmSection title="Program at a Glance">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
           {/* Left — Key stats card */}
           <div className="md:col-span-4" style={cardStyle}>
@@ -268,10 +307,10 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-      </WarmSection>
+      </WarmSection>}
 
       {/* ━━━ Section 2: Executive Summary (Stat Cards) ━━━ */}
-      <div data-walkthrough="kpi-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {isChartVisible("executiveSummary") && <div data-walkthrough="kpi-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Registered Employees"
           value={fmt(kpis.totalEmployees)}
@@ -308,10 +347,10 @@ export default function HomePage() {
               : undefined
           }
         />
-      </div>
+      </div>}
 
       {/* ━━━ Section 3: Our Services ━━━ */}
-      <div data-walkthrough="service-cards">
+      {isChartVisible("serviceCards") && <div data-walkthrough="service-cards">
         <SectionHeader
           barColor={"#6366f1"}
           title="Our Services"
@@ -422,10 +461,10 @@ export default function HomePage() {
             })}
           </div>
         </WarmSection>
-      </div>
+      </div>}
 
       {/* ━━━ Coming Soon: Risk Stratification & Corporate Benchmarking ━━━ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {(isChartVisible("riskStratification") || isChartVisible("corporateBenchmarking")) && <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <ComingSoonCard
           icon={Shield}
           iconColor="#dc2626"
@@ -485,7 +524,7 @@ export default function HomePage() {
             </div>
           </div>
         </ComingSoonCard>
-      </div>
+      </div>}
 
       {/* ━━━ Section 4: Insight Box ━━━ */}
       <div

@@ -360,13 +360,17 @@ export default function OHCUtilizationPage() {
   );
 
   // Stage trends from separate lightweight API (renders instantly, doesn't wait for 719K rows)
-  const stageTrendUrl = activeClientId ? `/api/ohc/stage-trends?clientId=${activeClientId}&trendView=${trendView}` : null;
-  const { data: stageTrendData } = useSWR<{ trends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] }>(
-    stageTrendUrl,
+  // Visit trends fetched from /api/ohc/utilization (agg_kpi table) which
+  // returns charts.visitTrends as [{period, completed, cancelled, noShow, uniquePatients}].
+  const utilizationUrl = activeClientId
+    ? `/api/ohc/utilization?clientId=${activeClientId}&dateFrom=${format(appliedDateRange.from, "yyyy-MM-dd")}&dateTo=${format(appliedDateRange.to, "yyyy-MM-dd")}`
+    : null;
+  const { data: utilizationData } = useSWR<{ charts: { visitTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] } }>(
+    utilizationUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
     { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
   );
-  const allStageTrends = stageTrendData?.trends || [];
+  const allStageTrends = utilizationData?.charts?.visitTrends ?? [];
   const visitTrends = useMemo(() => {
     const dateFrom = format(appliedDateRange.from, "yyyy-MM");
     const dateTo = format(appliedDateRange.to, "yyyy-MM");

@@ -1477,6 +1477,7 @@ function StyleTab({
     colorByValueRange: !!viz.colorByValueRange,
     background: !!(viz.background as { column?: string } | undefined)?.column,
     valueSlider: !!(viz.valueSlider as { enabled?: boolean } | undefined)?.enabled,
+    dualAxis: !!viz.dualAxis,
     seriesStyles: !!viz.seriesStyles && Object.keys(viz.seriesStyles as object).length > 0,
     visualMap: !!viz.visualMap,
     topInsightTemplate: !!viz.topInsightTemplate,
@@ -1740,6 +1741,15 @@ function StyleTab({
           configured={isConfigured.valueSlider}
         >
           <ValueSliderEditor viz={viz} updateViz={updateViz} />
+        </Disclose>
+
+        <Disclose
+          title="Dual Y-Axis"
+          caption="Enable a second Y-axis on the right side. Pick which metrics use it."
+          defaultOpen={isConfigured.dualAxis}
+          configured={isConfigured.dualAxis}
+        >
+          <DualAxisEditor viz={viz} updateViz={updateViz} chart={chart} />
         </Disclose>
 
         <Disclose
@@ -2603,6 +2613,62 @@ function ValueSliderEditor({ viz, updateViz }: { viz: Viz; updateViz: VizUpdater
             placeholder="auto"
             className="w-20 px-2 py-1 border border-gray-200 rounded text-xs"
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DualAxisEditor({
+  viz,
+  updateViz,
+  chart,
+}: {
+  viz: Viz;
+  updateViz: VizUpdater;
+  chart: Partial<ChartDefinition>;
+}) {
+  const enabled = viz.dualAxis === true;
+  const rightKeys = new Set<string>((viz.rightAxisKeys as string[]) ?? []);
+  const metricKeys = chart.transform?.metrics?.length
+    ? chart.transform.metrics.map((m) => ({ key: m.key, label: m.label }))
+    : [{ key: "value", label: chart.title ?? "value" }];
+
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) =>
+            updateViz({
+              dualAxis: e.target.checked || undefined,
+              rightAxisKeys: e.target.checked ? (viz.rightAxisKeys ?? []) : undefined,
+            })
+          }
+        />
+        Enable dual Y-axis (left + right)
+      </label>
+      {enabled && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-gray-600">
+            Which metrics use the <strong>right</strong> Y-axis?
+          </p>
+          {metricKeys.map((m) => (
+            <label key={m.key} className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={rightKeys.has(m.key)}
+                onChange={(e) => {
+                  const next = new Set(rightKeys);
+                  if (e.target.checked) next.add(m.key);
+                  else next.delete(m.key);
+                  updateViz({ rightAxisKeys: Array.from(next) });
+                }}
+              />
+              {m.label} → {rightKeys.has(m.key) ? "Right axis" : "Left axis"}
+            </label>
+          ))}
         </div>
       )}
     </div>

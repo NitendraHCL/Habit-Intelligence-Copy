@@ -187,7 +187,10 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
     return s && (s.filled || (s.type && s.type !== "line"));
   });
 
-  if (hasMixedStyles) {
+  const dualAxis = viz.dualAxis === true;
+  const rightAxisKeys = new Set<string>((viz.rightAxisKeys as string[]) ?? []);
+
+  if (hasMixedStyles || dualAxis) {
     const series = metricKeys.map((key, i) => {
       const s = seriesStyles[key] ?? {};
       const color = s.color ?? colors[i % colors.length];
@@ -198,6 +201,7 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
         color,
         dashed: s.dashed,
         filled: s.filled,
+        yAxisId: dualAxis && rightAxisKeys.has(key) ? "right" : "left",
       };
     });
     return {
@@ -208,6 +212,7 @@ function transformLine(chart: ChartDefinition, data: Row[]): TransformedData {
         series,
         showGrid: viz.showGrid ?? true,
         showLegend: viz.showLegend ?? metricKeys.length > 1,
+        dualAxis,
         tooltipTemplate: viz.tooltipTemplate,
       },
     };

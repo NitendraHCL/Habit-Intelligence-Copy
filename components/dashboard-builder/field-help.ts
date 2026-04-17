@@ -453,6 +453,15 @@ export const FIELD_HELP: Record<string, FieldHelp> = {
   },
 
   // ─────────────────────────── STYLE CHECKBOXES ──────────────────
+  "style.dualAxis": {
+    summary: "Second Y-axis on the right side for multi-metric charts.",
+    description:
+      "When two metrics have very different scales (e.g. count in thousands + rate in %), put one on the left axis and the other on the right so both are readable.",
+    example: {
+      title: "Volume (left) + Rate (right)",
+      body: "Left axis: sum:consult_count (0–50,000)\nRight axis: formula:sum(repeat)/sum(total)*100 (0–100%)",
+    },
+  },
   "style.checkbox.showLegend": {
     summary: "Show the series legend (one row per metric / color).",
     description:

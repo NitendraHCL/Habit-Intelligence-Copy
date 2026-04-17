@@ -412,6 +412,15 @@ export default function DynamicChart({
           >
             <ChevronLeft className="size-3" /> Back
           </button>
+          {drillPath.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setDrillPath([])}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-medium"
+            >
+              Reset to top
+            </button>
+          )}
           <span className="font-medium">Drill path:</span>
           <span className="text-gray-500">
             {drillPath.map((s) => `${s.column} = ${s.value}`).join(" → ")}

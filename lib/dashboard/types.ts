@@ -489,6 +489,10 @@ export interface VisualizationConfig {
   valueSlider?: ValueSlider;
   /** Per-series style overrides keyed by metric key. */
   seriesStyles?: Record<string, SeriesStyle>;
+  /** Enable a second Y-axis on the right side for multi-metric charts. */
+  dualAxis?: boolean;
+  /** Which metric keys use the right Y-axis (all others use left). */
+  rightAxisKeys?: string[];
   /** First-class visualMap config (ECharts heatmap/scatter). */
   visualMap?: VisualMapConfig;
   /** G3: insight slot rendered ABOVE the chart body (in addition to the bottom one). */

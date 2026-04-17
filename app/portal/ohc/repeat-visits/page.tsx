@@ -33,6 +33,7 @@ import {
   Star,
   Download,
   Bell,
+  RotateCcw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -292,7 +293,7 @@ export default function RepeatVisitsPage() {
 
   // Fetch raw appointment data (shared with utilization page via SWR cache)
   const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading } = useSWR<{ rows: RawAppointment[] }>(
+  const { data: rawData, isLoading, mutate, isValidating: isSWRValidating } = useSWR<{ rows: RawAppointment[] }>(
     rawUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
     { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
@@ -439,6 +440,14 @@ export default function RepeatVisitsPage() {
             <Bell size={15} />
             <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
           </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
+                <RotateCcw className={`size-4 text-gray-600${isSWRValidating ? " animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh data</TooltipContent>
+          </Tooltip>
           <ConfigurePanel
             pageSlug="/portal/ohc/repeat-visits"
             pageTitle="Repeat Visits"

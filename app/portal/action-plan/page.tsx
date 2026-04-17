@@ -28,6 +28,7 @@ import { T } from "@/lib/ui/theme";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
+import PageToolbar from "@/components/shared/PageToolbar";
 
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
@@ -253,6 +254,21 @@ export default function ActionPlanPage() {
           { label: "Medium", value: String(mediumCount) },
         ]}
       />
+
+      <div className="flex items-center justify-end mb-4">
+        <PageToolbar
+          pageSlug="/portal/action-plan"
+          pageTitle="Action Plan"
+          charts={[
+            { id: "executiveSummary", label: "Action Items Summary" },
+            { id: "kpiCards", label: "KPI Cards" },
+            { id: "aiInsights", label: "AI Insights" },
+            { id: "dataAlerts", label: "Data Alerts" },
+            { id: "actionItems", label: "Action Items List" },
+            { id: "recommendations", label: "Recommendations" },
+          ]}
+        />
+      </div>
 
       {/* ── Executive Summary ── */}
       <div

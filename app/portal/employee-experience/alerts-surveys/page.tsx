@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -210,6 +211,14 @@ export default function AlertsSurveysPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <RotateCcw className="size-4 text-gray-600" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
         <ConfigurePanel
           pageSlug="/portal/employee-experience/alerts-surveys"
           pageTitle="Alerts & Surveys"

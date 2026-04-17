@@ -53,12 +53,12 @@ export function useDashboardData<T = Record<string, unknown>>(
     ? `/api/${endpoint}?${params.toString()}`
     : null;
 
-  const { data, error, isLoading, isValidating } = useSWR<T>(url, fetcher, {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(url, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 60000, // 1 min
     keepPreviousData: true,
   });
 
-  return { data, error, isLoading, isValidating };
+  return { data, error, isLoading, isValidating, mutate };
 }

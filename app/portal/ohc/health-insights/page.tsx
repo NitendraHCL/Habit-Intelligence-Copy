@@ -22,6 +22,7 @@ import {
   CalendarDays,
   Bell,
   Download,
+  RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -417,7 +418,7 @@ export default function HealthInsightsPage() {
     return `/api/ohc/health-insights?${p.toString()}`;
   }, [selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange]);
 
-  const { data: raw, isLoading, isValidating } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
+  const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
   });
   const d = raw as any;
@@ -573,6 +574,14 @@ export default function HealthInsightsPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <RotateCcw className={`size-4 text-gray-600${isValidating ? " animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
         <ConfigurePanel
           pageSlug="/portal/ohc/health-insights"
           pageTitle="Health Insights"

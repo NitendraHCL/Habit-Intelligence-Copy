@@ -25,6 +25,7 @@ import {
   TrendingDown,
   Download,
   Bell,
+  RotateCcw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -317,7 +318,7 @@ export default function NPSPage() {
     return p;
   }, [appliedDateRange, appliedFilters]);
 
-  const { data, isLoading, isValidating } = useDashboardData("nps", extraParams);
+  const { data, isLoading, isValidating, mutate } = useDashboardData("nps", extraParams);
 
   const d = data as any;
   const kpis = d?.kpis || {};
@@ -499,6 +500,14 @@ export default function NPSPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <RotateCcw className={`size-4 text-gray-600${isValidating ? " animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
         <ConfigurePanel
           pageSlug="/portal/employee-experience/nps"
           pageTitle="Net Promoter Score"

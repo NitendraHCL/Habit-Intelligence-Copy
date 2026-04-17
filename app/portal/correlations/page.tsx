@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import PageToolbar from "@/components/shared/PageToolbar";
 import {
   Info,
   Maximize2,
@@ -142,7 +143,7 @@ const fallbackData = {
 
 // ─── Main Page ───
 export default function CorrelationsPage() {
-  const { data, isLoading } = useDashboardData("correlations");
+  const { data, isLoading, mutate } = useDashboardData("correlations");
 
   const d = data as any;
   const ohcToAhc = d?.ohcToAhc || fallbackData.ohcToAhc;
@@ -177,6 +178,20 @@ export default function CorrelationsPage() {
           { label: "Insight Type", value: "Cross-Service" },
         ]}
       />
+
+      <div className="flex items-center justify-end mb-4">
+        <PageToolbar
+          pageSlug="/portal/correlations"
+          pageTitle="Correlations Dashboard"
+          charts={[
+            { id: "ohcToAhc", label: "OHC Utilization → AHC Uptake" },
+            { id: "ahcToOhc", label: "AHC Abnormalities → OHC Follow-ups" },
+            { id: "mentalPhysical", label: "Mental Health → Physical Health" },
+            { id: "appEngagement", label: "App Engagement → Health Outcomes" },
+          ]}
+          onRefresh={mutate}
+        />
+      </div>
 
       {/* ── 2x2 Grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

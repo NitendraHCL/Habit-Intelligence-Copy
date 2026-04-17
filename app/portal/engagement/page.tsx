@@ -50,7 +50,7 @@ import { T } from "@/lib/ui/theme";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ResetFilter } from "@/components/ui/reset-filter";
-import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import PageToolbar from "@/components/shared/PageToolbar";
 
 const DONUT_COLORS = ["#4f46e5", "#0d9488", "#818cf8"];
 const COHORT_COLORS = ["#4f46e5", "#0d9488", "#818cf8", "#a78bfa", "#6366f1", "#14b8a6", "#c4b5fd"];
@@ -291,7 +291,7 @@ export default function EngagementPage() {
     return `/api/engagement?${p.toString()}`;
   }, [appliedFilters]);
 
-  const { data: raw, isLoading } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
+  const { data: raw, isLoading, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
   });
   const d = raw as any;
@@ -358,7 +358,7 @@ export default function EngagementPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
-        <ConfigurePanel
+        <PageToolbar
           pageSlug="/portal/engagement"
           pageTitle="Habit App Engagement"
           charts={[
@@ -371,7 +371,7 @@ export default function EngagementPage() {
             { id: "engagementTrends", label: "Engagement Trends" },
             { id: "cohortAnalysis", label: "Engagement Cohort Analysis" },
           ]}
-          filters={["location"]}
+          onRefresh={mutate}
           onPreview={setPreviewConfig}
           isPreview={isPreview}
         />

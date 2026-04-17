@@ -1,6 +1,7 @@
 "use client";
 
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import PageToolbar from "@/components/shared/PageToolbar";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import {
   Activity,
@@ -70,7 +71,7 @@ interface OverviewData {
 /* ════════════════════════════════════════════════════════════════════ */
 
 export default function HomePage() {
-  const { data, isLoading } = useDashboardData<OverviewData>("overview");
+  const { data, isLoading, mutate } = useDashboardData<OverviewData>("overview");
 
   if (isLoading) return (
     <div className="animate-fade-in space-y-5">
@@ -106,6 +107,21 @@ export default function HomePage() {
           { label: "Platform", value: "Habit Intelligence" },
         ]}
       />
+      </div>
+
+      <div className="flex items-center justify-end mb-4">
+        <PageToolbar
+          pageSlug="/portal/home"
+          pageTitle="Habit Services Overview"
+          charts={[
+            { id: "programGlance", label: "Program at a Glance" },
+            { id: "executiveSummary", label: "Executive Summary KPIs" },
+            { id: "serviceCards", label: "Our Services" },
+            { id: "riskStratification", label: "Risk Stratification" },
+            { id: "corporateBenchmarking", label: "Corporate Benchmarking" },
+          ]}
+          onRefresh={mutate}
+        />
       </div>
 
       {/* ━━━ Section 1: Program at a Glance (WarmSection) ━━━ */}

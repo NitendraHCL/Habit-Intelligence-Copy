@@ -26,6 +26,7 @@ import {
   X,
   Download,
   Bell,
+  RotateCcw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -342,7 +343,7 @@ export default function LSMPPage() {
     return p;
   }, [appliedDateRange, appliedFilters]);
 
-  const { data, isLoading, isValidating } = useDashboardData<LsmpData>("lsmp", extraParams);
+  const { data, isLoading, isValidating, mutate } = useDashboardData<LsmpData>("lsmp", extraParams);
 
   const handleRemoveChip = (key: string, value: string) => {
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
@@ -451,6 +452,14 @@ export default function LSMPPage() {
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>
         </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <RotateCcw className={`size-4 text-gray-600${isValidating ? " animate-spin" : ""}`} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data</TooltipContent>
+        </Tooltip>
         <ConfigurePanel
           pageSlug="/portal/employee-experience/lsmp"
           pageTitle="Care Plan Dashboard"

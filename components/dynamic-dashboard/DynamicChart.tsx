@@ -41,6 +41,7 @@ const GenericEChartsRenderer = dynamic(() => import("@/components/charts/rendere
 const TableRenderer = dynamic(() => import("@/components/charts/renderers/TableRenderer"));
 const TileGridRenderer = dynamic(() => import("@/components/charts/renderers/TileGridRenderer"));
 const NarrativeRenderer = dynamic(() => import("@/components/charts/renderers/NarrativeRenderer"));
+const CategoricalBubbleRenderer = dynamic(() => import("@/components/charts/renderers/CategoricalBubbleRenderer"));
 
 const fetcher = async (url: string, body: QueryRequest) => {
   const res = await fetch(url, {
@@ -501,6 +502,8 @@ function ChartRenderer({
       return <TileGridRenderer {...(props as any)} />;
     case "narrative":
       return <NarrativeRenderer {...(props as any)} />;
+    case "categorical_bubble":
+      return <CategoricalBubbleRenderer {...(props as any)} />;
     case "kpi":
       return null; // KPIs handled by KPICardPremium before ChartRenderer
     case "html":

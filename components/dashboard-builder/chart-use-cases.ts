@@ -249,6 +249,11 @@ export const CHART_USE_CASES: Record<string, ChartUseCase> = {
     bestFor: "Pairwise correlation between multiple numeric metrics.",
     example: "How correlated are NPS, Visit Count, Age, and Referral Count?",
   },
+  categorical_bubble: {
+    bestFor: "Bubble grid with categorical X + Y axes — size and color encode two metrics (e.g. location × age, sized by volume, colored by gender split).",
+    example: "Group By: [facility_name, age_group], Metric 1: sum:consult_count (size), Metric 2: formula for % female (color). Add Auto Tabs by speciality_name. Background: vertical_bands.",
+    tip: "Use Color By Value Range for gender-split coloring. Enable vertical band background for alternating column shading.",
+  },
   dot_plot: {
     bestFor: "Individual data points on an axis — distribution without binning.",
     example: "Patient visit frequency: each dot = one patient, X = visit count.",

@@ -59,11 +59,42 @@ export function transformForChart(
       return transformHTML(chart, data);
     case "tile_grid":
       return transformTileGrid(chart, data);
+    case "categorical_bubble":
+      return transformCategoricalBubble(chart, data);
     case "narrative":
       return transformNarrative(chart, data);
     default:
       return { renderer: "table", props: { data } };
   }
+}
+
+function transformCategoricalBubble(
+  chart: ChartDefinition,
+  data: Row[]
+): TransformedData {
+  const groupKeys = getGroupKeys(chart);
+  const metricKeys = getMetricKeys(chart);
+  const viz = chart.visualization ?? {};
+
+  // Expect 2 groupBys (X + Y categories) and 1-3 metrics (size required, color optional)
+  const xKey = groupKeys[0] ?? "x";
+  const yKey = groupKeys[1] ?? groupKeys[0] ?? "y";
+  const sizeKey = metricKeys[0] ?? "value";
+  const colorKey = metricKeys[1]; // optional — for gender-split coloring
+
+  return {
+    renderer: "categorical_bubble",
+    props: {
+      data,
+      xKey,
+      yKey,
+      sizeKey,
+      colorKey,
+      colorByValueRange: viz.colorByValueRange,
+      background: viz.background,
+      tooltipTemplate: viz.tooltipTemplate,
+    },
+  };
 }
 
 function transformTileGrid(chart: ChartDefinition, data: Row[]): TransformedData {

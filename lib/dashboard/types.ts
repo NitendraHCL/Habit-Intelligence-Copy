@@ -54,6 +54,7 @@ export type ChartTypeId =
   | "calendar_heatmap"
   | "histogram"
   | "dot_plot"
+  | "categorical_bubble"
   | "correlation_matrix"
   // Relationship
   | "radar"
@@ -113,7 +114,8 @@ export type RendererType =
   | "kpi"
   | "html"
   | "narrative"
-  | "tile_grid";
+  | "tile_grid"
+  | "categorical_bubble";
 
 // ---------------------------------------------------------------------------
 // Chart Preset — maps a ChartTypeId to its renderer + default config
@@ -334,11 +336,13 @@ export interface ColorByValueRange {
 
 /** Background overlay rendered behind a bubble/scatter chart. */
 export interface BackgroundOverlay {
-  /** Currently only horizontal_bar (capacity-style overlay). */
-  type: "horizontal_bar";
-  /** Column whose value drives the bar width per row. */
-  column: string;
+  /** horizontal_bar = capacity bars per row; vertical_bands = alternating column shading. */
+  type: "horizontal_bar" | "vertical_bands";
+  /** Column whose value drives the bar width (horizontal_bar only). */
+  column?: string;
   color?: string;
+  /** Second color for alternating bands (vertical_bands only). */
+  altColor?: string;
   opacity?: number;
 }
 

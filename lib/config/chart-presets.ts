@@ -455,6 +455,16 @@ export const chartPresets: ChartPreset[] = [
     requiredFields: { metrics: true },
   },
   {
+    id: "categorical_bubble",
+    label: "Categorical Bubble Grid",
+    description: "Bubble grid with categorical X + Y axes — size and color encode two metrics",
+    category: "distribution",
+    renderer: "echarts",
+    icon: "CircleDot",
+    defaults: { echartsType: "scatter" },
+    requiredFields: { groupBy: true, metrics: true },
+  },
+  {
     id: "dot_plot",
     label: "Dot Plot / Strip",
     description: "Individual data points on axis — distribution without binning",

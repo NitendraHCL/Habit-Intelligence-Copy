@@ -17,6 +17,7 @@ const FunnelRenderer = dynamic(() => import("@/components/charts/renderers/Funne
 const RadarChartRenderer = dynamic(() => import("@/components/charts/renderers/RadarChartRenderer"));
 const ComposedChartRenderer = dynamic(() => import("@/components/charts/renderers/ComposedChartRenderer"));
 const GenericEChartsRenderer = dynamic(() => import("@/components/charts/renderers/GenericEChartsRenderer"));
+const CategoricalBubbleRenderer = dynamic(() => import("@/components/charts/renderers/CategoricalBubbleRenderer"));
 
 interface ChartPreviewProps {
   chart: Partial<ChartDefinition>;
@@ -172,6 +173,8 @@ function RendererSwitch({ renderer, props }: { renderer: string; props: any }) {
       return <GenericEChartsRenderer {...props} />;
     case "table":
       return <TableRenderer {...props} />;
+    case "categorical_bubble":
+      return <CategoricalBubbleRenderer {...props} />;
     default:
       return (
         <div className="text-xs text-gray-400 flex items-center justify-center h-full">

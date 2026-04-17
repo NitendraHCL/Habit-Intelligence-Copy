@@ -545,7 +545,7 @@ export default function LSMPPage() {
       </div>}
 
       {/* Row 1: Care Plan Distribution + Age Group + Gender */}
-      {(isChartVisible("carePlanDistribution") || isChartVisible("ageGroupDistribution") || isChartVisible("genderDistribution")) && <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Care Plan Distribution - Horizontal Bar */}
         {isChartVisible("carePlanDistribution") && <CVCard
           className="lg:col-span-5"
@@ -618,10 +618,10 @@ export default function LSMPPage() {
             </ResponsiveContainer>
           </div>
         </CVCard>}
-      </div>}
+      </div>
 
       {/* Row 2: Patient Improvement Status + Compliance & Location */}
-      {(isChartVisible("improvementStatus") || isChartVisible("complianceLocation")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Improvement Status - Horizontal Bar */}
         {isChartVisible("improvementStatus") && <CVCard
           accentColor={T.teal}
@@ -687,10 +687,10 @@ export default function LSMPPage() {
             </div>
           </div>
         </CVCard>}
-      </div>}
+      </div>
 
       {/* Row 3: Care Plan Trends + Improvement vs Duration */}
-      {(isChartVisible("carePlanTrends") || isChartVisible("improvementVsDuration")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Care Plan Trends - Multi-line Chart */}
         {isChartVisible("carePlanTrends") && <CVCard
           accentColor={"#4f46e5"}
@@ -747,7 +747,7 @@ export default function LSMPPage() {
             </div>
           </div>
         </CVCard>}
-      </div>}
+      </div>
 
       {/* Row 4: Compliance Trigger Pattern Analysis - Table */}
       {isChartVisible("complianceTrigger") && <CVCard

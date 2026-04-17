@@ -559,7 +559,7 @@ export default function NPSPage() {
       />
 
       {/* ── Row 1: NPS Score + Trends ── */}
-      {(isChartVisible("npsScore") || isChartVisible("npsTrends")) && <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* NPS Score Card */}
         {isChartVisible("npsScore") && <CVCard className="lg:col-span-4" expandable={false} tooltipText="Overall NPS score calculated as % Promoters minus % Detractors. Scores above 50 are considered excellent, 30-50 good, and below 30 need attention.">
           <div className="flex flex-col items-center text-center pt-1">
@@ -720,10 +720,10 @@ export default function NPSPage() {
             <InsightBox text={`Overall NPS is ${overallNPS} based on ${formatNum(totalResponses)} responses. ${promotersPct}% are promoters, ${passivesPct}% passives, and ${detractorsPct}% detractors. ${avgNPS > 50 ? 'The score indicates excellent patient satisfaction.' : avgNPS > 30 ? 'The score is good but there is room for improvement.' : 'Focus on reducing detractor percentage to improve NPS.'}`} />
           </div>
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ── Row 2: Service Category + Specialty + Condition ── */}
-      {(isChartVisible("npsServiceCategory") || isChartVisible("npsSpecialty") || isChartVisible("npsLocation")) && <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* NPS by Service Category - Radar */}
         {isChartVisible("npsServiceCategory") && <CVCard
           title="NPS by Service Category"
@@ -814,7 +814,7 @@ export default function NPSPage() {
           </div>
           <InsightBox text="Location-wise NPS distribution helps identify regional variations in patient satisfaction. Focus improvement efforts on locations with lower scores relative to response volume." />
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ── Row 3: NPS Submissions Breakdown by Location ── */}
       {isChartVisible("npsSubmissions") && <CVCard
@@ -897,7 +897,7 @@ export default function NPSPage() {
       </CVCard>}
 
       {/* ── Row 4: NPS by User Visits + Feedback Word Cloud (50:50) ── */}
-      {(isChartVisible("npsVisitFrequency") || isChartVisible("feedbackWordCloud")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {isChartVisible("npsVisitFrequency") && <CVCard
         title="NPS by Visit Frequency"
         subtitle="How does satisfaction change as employees visit the OHC more often?"
@@ -1044,7 +1044,7 @@ export default function NPSPage() {
           <InsightBox text={`${topPositive ? `"${topPositive.word}" is the most mentioned positive theme (${topPositive.count} mentions).` : ''} ${topConcern ? `"${topConcern.word}" is the top area of concern (${topConcern.count} mentions). Consider targeted interventions to address this feedback.` : ''}`} />
         </div>
       </CVCard>}
-      </div>}
+      </div>
     </div>
   );
 }

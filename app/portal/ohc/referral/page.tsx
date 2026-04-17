@@ -405,7 +405,9 @@ export default function ReferralAnalyticsPage() {
           pageSlug="/portal/ohc/referral"
           pageTitle="Referral Analytics"
           charts={[
-            { id: "referralKpis", label: "Referral v/s Consumption KPIs" },
+            { id: "totalReferrals", label: "Total Referrals KPI" },
+            { id: "availableInClinic", label: "Available In-Clinic KPI" },
+            { id: "inClinicConversions", label: "In-Clinic Conversions KPI" },
             { id: "referralTrends", label: "Referral Trends" },
             { id: "specialtyConversion", label: "Referral Availability & Conversion by Specialty" },
             { id: "referralMatrix", label: "Referral Matrix: Who Refers to Whom?" },
@@ -450,7 +452,7 @@ export default function ReferralAnalyticsPage() {
       />
 
       {/* ── KPIs: Referral v/s Consumption ── */}
-      {(isChartVisible("referralKpis") || isChartVisible("referralTrends")) && <WarmSection>
+      <WarmSection>
         <AccentBar color={"#4f46e5"} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Referral v/s Consumption</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Summary of referral volumes, in-clinic availability and conversion rates</p>
@@ -458,16 +460,16 @@ export default function ReferralAnalyticsPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
 
           {/* Card 1 — Total Referrals (baseline) */}
-          <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          {isChartVisible("totalReferrals") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
             <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Referrals</p>
             <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalReferrals || 0)}</p>
             <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
               All specialist referrals issued — this is the <span className="font-semibold" style={{ color: T.textPrimary }}>baseline (100%)</span> from which the cards below are calculated.
             </p>
-          </div>
+          </div>}
 
           {/* Card 2 — In-Clinic Available */}
-          <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          {isChartVisible("availableInClinic") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
             <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Referred to an In-Clinic Specialty</p>
             <div className="flex items-baseline gap-2">
               <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.availableInClinicCount || 0)}</p>
@@ -478,10 +480,10 @@ export default function ReferralAnalyticsPage() {
             <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
               Out of {formatNum(kpis?.totalReferrals || 0)} referrals, <span className="font-semibold" style={{ color: T.textPrimary }}>{kpis?.availableInClinicPct || 0}%</span> were referred to a specialty that is available within the OHC facility.
             </p>
-          </div>
+          </div>}
 
           {/* Card 3 — In-Clinic Conversions */}
-          <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          {isChartVisible("inClinicConversions") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
             <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>In-Clinic Conversions</p>
             <div className="flex items-baseline gap-2">
               <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.teal }}>{formatNum(kpis?.convertedCount || 0)}</p>
@@ -492,7 +494,7 @@ export default function ReferralAnalyticsPage() {
             <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
               Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.availableInClinicCount || 0)}</span> in-clinic-available referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were actually consulted in-clinic.
             </p>
-          </div>
+          </div>}
 
         </div>
 
@@ -540,7 +542,7 @@ export default function ReferralAnalyticsPage() {
           </div>
           </div>
         </CVCard>}
-      </WarmSection>}
+      </WarmSection>
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
       {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="Referral Availability & Conversion by Specialty" subtitle="Which specialties are available in-clinic vs. external, and their conversion rates" tooltipText="Table listing each referred specialty with availability status, referral count, conversion progress bar, and in-clinic consult counts. Filter between all, available, or external specialties."

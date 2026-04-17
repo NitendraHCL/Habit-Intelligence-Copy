@@ -146,7 +146,11 @@ export default function HomePage() {
             pageTitle="Habit Services Overview"
             charts={[
               { id: "programGlance", label: "Program at a Glance" },
-              { id: "executiveSummary", label: "Executive Summary KPIs" },
+              { id: "registeredEmployees", label: "Registered Employees" },
+              { id: "servicesAvailed", label: "Services Availed" },
+              { id: "activeEmployees", label: "Active Employees" },
+              { id: "serviceCategories", label: "Service Categories" },
+              { id: "multiServiceUsers", label: "Multi-Service Users" },
               { id: "serviceCards", label: "Our Services" },
               { id: "riskStratification", label: "Risk Stratification" },
               { id: "corporateBenchmarking", label: "Corporate Benchmarking" },
@@ -310,33 +314,33 @@ export default function HomePage() {
       </WarmSection>}
 
       {/* ━━━ Section 2: Executive Summary (Stat Cards) ━━━ */}
-      {isChartVisible("executiveSummary") && <div data-walkthrough="kpi-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard
+      <div data-walkthrough="kpi-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {isChartVisible("registeredEmployees") && <StatCard
           label="Registered Employees"
           value={fmt(kpis.totalEmployees)}
           color={"#4f46e5"}
           sub={`${kpis.serviceCategories} service categories`}
-        />
-        <StatCard
+        />}
+        {isChartVisible("servicesAvailed") && <StatCard
           label="Services Availed"
           value={fmt(kpis.totalServicesAvailed)}
           color={"#6366f1"}
           sub="Consultations, check-ups, enrolments, etc."
-        />
-        <StatCard
+        />}
+        {isChartVisible("activeEmployees") && <StatCard
           label="Active Employees"
           value={fmt(kpis.activeEmployees)}
           color={t.teal}
           sub={`${pctActive}% of registered`}
           badge={{ label: `${pctActive}% active`, color: t.teal }}
-        />
-        <StatCard
+        />}
+        {isChartVisible("serviceCategories") && <StatCard
           label="Service Categories"
           value={String(kpis.serviceCategories)}
           color={"#4f46e5"}
           sub="OHC, Annual Health Checks, Engagement, App"
-        />
-        <StatCard
+        />}
+        {isChartVisible("multiServiceUsers") && <StatCard
           label="Multi-Service Users"
           value={fmt(kpis.multiCategoryUsers)}
           color={t.amber}
@@ -346,8 +350,8 @@ export default function HomePage() {
               ? { label: "Strong adoption", color: t.teal }
               : undefined
           }
-        />
-      </div>}
+        />}
+      </div>
 
       {/* ━━━ Section 3: Our Services ━━━ */}
       {isChartVisible("serviceCards") && <div data-walkthrough="service-cards">
@@ -464,8 +468,8 @@ export default function HomePage() {
       </div>}
 
       {/* ━━━ Coming Soon: Risk Stratification & Corporate Benchmarking ━━━ */}
-      {(isChartVisible("riskStratification") || isChartVisible("corporateBenchmarking")) && <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <ComingSoonCard
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {isChartVisible("riskStratification") && <ComingSoonCard
           icon={Shield}
           iconColor="#dc2626"
           iconBg="#fef2f2"
@@ -494,8 +498,8 @@ export default function HomePage() {
               ))}
             </div>
           </div>
-        </ComingSoonCard>
-        <ComingSoonCard
+        </ComingSoonCard>}
+        {isChartVisible("corporateBenchmarking") && <ComingSoonCard
           icon={BarChart3}
           iconColor="#7c3aed"
           iconBg="#f5f3ff"
@@ -523,8 +527,8 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </ComingSoonCard>
-      </div>}
+        </ComingSoonCard>}
+      </div>
 
       {/* ━━━ Section 4: Insight Box ━━━ */}
       <div

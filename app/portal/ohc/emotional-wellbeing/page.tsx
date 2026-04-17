@@ -551,7 +551,7 @@ export default function EmotionalWellbeingPage() {
         ))}
       </div>}
 
-      {(isChartVisible("ewbDemographics") || isChartVisible("ewbTrends")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
         {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Demographic distribution of patients" tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
@@ -776,12 +776,12 @@ export default function EmotionalWellbeingPage() {
           </div>
           <InsightBox text="Compare total consults against unique patients to gauge repeat visit rates. A widening gap between the two lines suggests more patients are returning for follow-up sessions, which may indicate ongoing mental health needs or effective engagement." />
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 2: Critical Risk + Substance Use  */}
       {/* ══════════════════════════════════════════ */}
-      {(isChartVisible("criticalRisk") || isChartVisible("substanceUse")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
           chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
           comments={[{ id: "kam-ew-2", author: "HCL KAM", text: "All critical risk cases were flagged and escalated within 24 hours per the emergency protocol. The 3 self-harm attempt cases in Q3 2024 were traced to work-related stress in the night shift operations team at Chennai. Immediate interventions included shift rotation adjustments, peer support groups, and dedicated EAP counselor deployment. Zero incidents reported since Oct 2024.", date: "Feb 2025", isKAM: true }]}>
@@ -852,12 +852,12 @@ export default function EmotionalWellbeingPage() {
           </div>
           <InsightBox text="Substance use prevalence is a key risk factor for emotional wellbeing. If this percentage is trending upward, consider introducing substance abuse awareness workshops and confidential counselling services." />
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 3: Sleep + Habits (Lavender)      */}
       {/* ══════════════════════════════════════════ */}
-      {(isChartVisible("sleepQuality") || isChartVisible("sleepDuration")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sleep Quality */}
         {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Sleep Quality Analysis" tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
           <div className="overflow-x-auto">
@@ -896,9 +896,9 @@ export default function EmotionalWellbeingPage() {
           </div>
           <InsightBox text="Employees sleeping less than 7 hours are at higher risk for burnout and reduced cognitive function. If a significant proportion falls in the 'Less than 7 hrs' bucket, consider flexible scheduling or workload reviews." />
         </CVCard>}
-      </div>}
+      </div>
 
-      {(isChartVisible("alcoholHabit") || isChartVisible("smokingHabit")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
         {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Alcohol Habit Analysis" tooltipText="Donut chart showing the distribution of alcohol consumption habits (e.g., Never, Occasional, Regular). Larger slices for frequent use categories may indicate a need for alcohol awareness programs." chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Alcohol Habit Analysis">
           <div className="overflow-x-auto">
@@ -937,7 +937,7 @@ export default function EmotionalWellbeingPage() {
           </div>
           <InsightBox text="Smoking is a modifiable lifestyle factor that impacts both physical and emotional health. A high count of daily or frequent smokers warrants targeted smoking cessation support and nicotine replacement therapy programs." />
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 4: Visit Pattern + Impressions    */}
@@ -1008,7 +1008,7 @@ export default function EmotionalWellbeingPage() {
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 5: Scales                         */}
       {/* ══════════════════════════════════════════ */}
-      {(isChartVisible("anxietyScale") || isChartVisible("selfEsteemScale")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
           <InsightBox text="Focus on the Moderate and Severe segments. If combined they exceed 20%, consider scaling up access to anxiety management workshops, cognitive behavioral therapy resources, and stress reduction programs." />
@@ -1017,7 +1017,7 @@ export default function EmotionalWellbeingPage() {
           <StackedPercentBar data={selfEsteemScale} colors={["#4f46e5", "#0d9488"]} />
           <InsightBox text="Low self-esteem often underlies both anxiety and depression. A dominant Low segment suggests employees may benefit from mentorship programs, positive feedback culture initiatives, and confidence-building workshops." />
         </CVCard>}
-      </div>}
+      </div>
       {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
         <InsightBox text="Pay close attention to the Moderately Severe and Severe segments. Even small percentages here represent individuals who may need immediate professional support. Ensure follow-up protocols are in place for these cases." />

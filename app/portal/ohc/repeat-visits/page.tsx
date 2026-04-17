@@ -596,7 +596,7 @@ export default function RepeatVisitsPage() {
         </CVCard>}
 
         {/* ── Demographics Row ── */}
-        {(isChartVisible("ageGroups") || isChartVisible("genderSplit") || isChartVisible("locationDistribution")) && <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Age Groups - Radar */}
           {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age Groups" tooltipText="Radar chart showing how repeat patients are distributed across age brackets. Wider coverage toward an age group indicates a higher concentration of repeat visitors in that segment." subtitle="Distribution of repeat patients by age range" chartData={ageData} chartTitle="Age Groups" chartDescription="Distribution of repeat patients by age range">
             <div style={{ height: 260 }}>
@@ -663,10 +663,10 @@ export default function RepeatVisitsPage() {
               <InsightBox text={`${formatNum(locationTotal)} repeat patients spread across ${locationData.length} locations. Review which locations have disproportionately high repeat volumes to allocate resources and investigate root causes.`} />
             </div>
           </CVCard>}
-        </div>}
+        </div>
 
         {/* ── Repeat Visit Frequency + Specialty Treemap ── */}
-        {(isChartVisible("repeatVisitFrequency") || isChartVisible("specialtyTreemap")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Repeat Visit Frequency */}
           {isChartVisible("repeatVisitFrequency") && <CVCard accentColor={"#4f46e5"} title="Repeat Visit Frequency"
             tooltipText="Stacked bar chart showing the number of repeat patients grouped by visit count buckets. Bars are split into same-specialty and different-specialty visits to reveal whether patients return for the same condition or seek care across specialties."
@@ -774,10 +774,10 @@ export default function RepeatVisitsPage() {
               <InsightBox text={`Specialty treemap for ${treemapYear || "the selected year"} shows which departments drive the most repeat visits. Larger tiles indicate specialties with higher repeat patient volumes — consider prioritizing continuity-of-care programs for these areas.`} />
             </div>
           </CVCard>}
-        </div>}
+        </div>
 
         {/* ── Condition Transition Flow + Visit Frequency NPS ── */}
-        {(isChartVisible("conditionTransitionFlow") || isChartVisible("visitFrequencyNps")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Condition Transition Flow */}
           {isChartVisible("conditionTransitionFlow") && <CVCard accentColor={T.teal} title="Condition Transition Flow"
             tooltipText="Horizontal bar chart showing patient transitions between condition types across visits. Each bar represents a transition path (e.g., Chronic to Chronic) with patient count and average NPS score. Helps identify whether conditions are persisting or evolving."
@@ -837,7 +837,7 @@ export default function RepeatVisitsPage() {
               <InsightBox text="Compare NPS response rates and average satisfaction across visit frequency buckets. An upward NPS trend with higher visit counts suggests that frequent visitors are more engaged and satisfied, while a decline may signal care fatigue or unresolved issues." />
             </div>
           </CVCard>}
-        </div>}
+        </div>
 
         {/* ── Recurring Conditions Table ── */}
         {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance"

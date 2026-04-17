@@ -474,7 +474,7 @@ export default function EngagementPage() {
       </div>}
 
       {/* ══════════ SECTION 2: Adoption Funnel + Platform Usage ══════════ */}
-      {(isChartVisible("adoptionFunnel") || isChartVisible("platformUsage")) && <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Adoption Funnel - 2/3 width */}
         {isChartVisible("adoptionFunnel") && <div className="lg:col-span-2">
           <CVCard
@@ -570,7 +570,7 @@ export default function EngagementPage() {
             ))}
           </div>
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ══════════ SECTION 3: Activity - Steps ══════════ */}
       {isChartVisible("stepsActivity") && <CVCard
@@ -635,7 +635,7 @@ export default function EngagementPage() {
       </CVCard>}
 
       {/* ══════════ SECTION 4 & 5: Challenge + Webinar (side by side) ══════════ */}
-      {(isChartVisible("challengeEngagement") || isChartVisible("webinarEngagement")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Challenge Engagement */}
         {isChartVisible("challengeEngagement") && <CVCard
           accentColor={T.amber}
@@ -721,7 +721,7 @@ export default function EngagementPage() {
           </div>
           <InsightBox text="Webinar attendance grew 69% YoY with consistently high ratings (4.3+). September and December sessions saw peak engagement." color={"#4f46e5"} />
         </CVCard>}
-      </div>}
+      </div>
 
       {/* ══════════ SECTION 6: Engagement Trends ══════════ */}
       {isChartVisible("engagementTrends") && <CVCard

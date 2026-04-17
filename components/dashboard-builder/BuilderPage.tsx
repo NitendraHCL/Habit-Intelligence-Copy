@@ -25,6 +25,7 @@ import ChartPalette from "./ChartPalette";
 import ChartConfigurator from "./ChartConfigurator";
 import DataSourceRegistryProvider from "./DataSourceRegistryProvider";
 import SmartChartPicker from "./SmartChartPicker";
+import IconPicker from "./IconPicker";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { getPreset } from "@/lib/config/chart-presets";
 import type {
@@ -554,6 +555,15 @@ export default function BuilderPage({
                     <option key={g} value={g}>{g}</option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">
+                  Sidebar Icon
+                </label>
+                <IconPicker
+                  value={config.icon}
+                  onChange={(icon) => setConfig((p) => ({ ...p, icon }))}
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-600">

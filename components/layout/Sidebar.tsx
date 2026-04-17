@@ -16,6 +16,7 @@ import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { navigation, type NavItem } from "@/lib/config/navigation";
 import { BarChart3 } from "lucide-react";
+import { getIconByName as resolveIcon } from "@/components/dashboard-builder/IconPicker";
 import { useWalkthrough } from "@/components/walkthrough/WalkthroughProvider";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useConfig } from "@/lib/contexts/config-context";
@@ -340,10 +341,11 @@ export function Sidebar() {
     for (const d of published) {
       const group = ((d as Record<string, unknown>).navGroup as string ?? "Custom").toLowerCase();
       if (!byGroup.has(group)) byGroup.set(group, []);
+      const iconName = ((d as Record<string, unknown>).config as Record<string, unknown>)?.icon as string | undefined;
       byGroup.get(group)!.push({
         label: (d as Record<string, unknown>).title as string,
         href: (d as Record<string, unknown>).slug as string,
-        icon: BarChart3,
+        icon: iconName ? resolveIcon(iconName) : BarChart3,
       });
     }
 

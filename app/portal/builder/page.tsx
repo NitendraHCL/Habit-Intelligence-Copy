@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { useAuth } from "@/lib/contexts/auth-context";
+import BuilderGuide from "@/components/dashboard-builder/BuilderGuide";
 import {
   Plus,
+  BookOpen,
   BarChart3,
   Calendar,
   Trash2,
@@ -25,6 +28,7 @@ export default function BuilderListPage() {
   );
 
   const dashboards = data?.dashboards ?? [];
+  const [showGuide, setShowGuide] = useState(false);
 
   async function handleDelete(id: string) {
     await fetch(`/api/admin/dashboards/${id}`, { method: "DELETE" });
@@ -58,13 +62,22 @@ export default function BuilderListPage() {
             {client?.cugName ?? "your clients"}
           </p>
         </div>
-        <button
-          onClick={() => router.push("/portal/builder/new")}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700"
-        >
-          <Plus size={16} />
-          New Dashboard
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowGuide(true)}
+            className="flex items-center gap-2 px-4 py-2.5 border border-indigo-200 text-indigo-700 text-sm font-medium rounded-xl hover:bg-indigo-50"
+          >
+            <BookOpen size={16} />
+            Builder Guide
+          </button>
+          <button
+            onClick={() => router.push("/portal/builder/new")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700"
+          >
+            <Plus size={16} />
+            New Dashboard
+          </button>
+        </div>
       </div>
 
       {dashboards.length === 0 ? (
@@ -153,6 +166,7 @@ export default function BuilderListPage() {
           ))}
         </div>
       )}
+      {showGuide && <BuilderGuide onClose={() => setShowGuide(false)} />}
     </div>
   );
 }

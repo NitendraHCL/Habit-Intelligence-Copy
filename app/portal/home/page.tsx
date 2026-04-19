@@ -1,6 +1,7 @@
 "use client";
 
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useState } from "react";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -77,6 +78,7 @@ interface OverviewData {
 /* ════════════════════════════════════════════════════════════════════ */
 
 export default function HomePage() {
+  usePageAccess("/portal/home");
   const { data, isLoading, mutate } = useDashboardData<OverviewData>("overview");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();

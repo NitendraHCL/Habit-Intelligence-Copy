@@ -49,6 +49,15 @@ export async function GET() {
       });
     }
 
+    // For CLIENT_ADMIN / CLIENT_VIEWER, add their own client to the list
+    if (["CLIENT_ADMIN", "CLIENT_VIEWER"].includes(user.role) && clientInfo) {
+      assignedClients = [{
+        id: clientInfo.id,
+        cugName: clientInfo.cugName,
+        cugCode: clientInfo.cugCode ?? null,
+      }];
+    }
+
     return NextResponse.json({
       user,
       client: clientInfo,

@@ -642,7 +642,7 @@ export default function NPSPage() {
           title="NPS Trends Over Time"
           subtitle="Tracks changes in patient satisfaction across months."
           tooltipText="Line chart tracking NPS score changes over time. Larger dots highlight significant shifts (5+ points). Green dots indicate improvement, red dots indicate decline. The dashed line shows the average NPS."
-          comments={[{ id: "kam-nps-trends", author: "HCL KAM", text: "The NPS dip in March 2024 (dropped to 42 from 58) coincided with extended wait times at Hyderabad and Pune clinics during the annual health check-up season. After deploying additional staff and staggered scheduling in Q2, NPS recovered to 62 by June. The December peak (NPS 71) reflects positive feedback from the flu vaccination drive and wellness week programs.", date: "Jan 2025", isKAM: true }]}
+
           chartData={trendData}
           chartDescription="Tracks changes in patient satisfaction across months."
         >
@@ -731,7 +731,7 @@ export default function NPSPage() {
           title="NPS by Service Category"
           accentColor={"#4f46e5"}
           tooltipText="Radar chart comparing NPS scores across different service categories. Larger area coverage indicates higher satisfaction. Identify which services lead or lag in patient satisfaction."
-          comments={[{ id: "kam-nps-service-category", author: "HCL KAM", text: "General Medicine consistently leads NPS (72) due to shorter wait times and higher doctor availability. Dental services score lowest (38) — root cause analysis shows long appointment gaps and limited specialist availability at 3 of 5 locations. A visiting dental specialist model has been proposed for Q2 2025 to address this gap.", date: "Feb 2025", isKAM: true }]}
+
           chartData={byServiceCategory}
           chartDescription="Radar chart comparing NPS scores across different service categories."
         >
@@ -766,7 +766,7 @@ export default function NPSPage() {
           tooltipText="Treemap showing NPS scores by medical specialty. Tile size represents response volume, colors represent different specialties. Hover to see exact NPS score and response count."
           chartData={bySpecialty}
           chartDescription="Treemap of average NPS scores by medical specialty — tile size represents response volume, so larger tiles provide more statistically reliable scores. Hover any tile to see exact NPS and response count."
-          comments={[{ id: "kam-nps-specialty", author: "HCL KAM", text: "Dermatology (NPS 65, 60 responses) and Cardiology (NPS 68, 80 responses) are the two lowest-scoring specialties and both show a common root cause: long wait times between referral and appointment. Average gap is 12 days for Dermatology vs 4 days for General Medicine (NPS 78). A visiting specialist model piloted at Bangalore in Dec 2024 reduced wait time to 6 days and preliminary NPS for that site improved to 73 in Jan 2025.", date: "Mar 2025", isKAM: true }]}
+
         >
           <div style={{ height: 300 }}>
             <ReactECharts option={treemapOption} style={{ height: "100%", width: "100%" }} />
@@ -905,7 +905,7 @@ export default function NPSPage() {
         subtitle="How does satisfaction change as employees visit the OHC more often?"
         accentColor={"#4f46e5"}
         tooltipText="Bar chart showing total NPS feedback volume per visit-frequency bucket with a line overlay showing NPS score. Employees are grouped by how many times they visited the OHC — e.g. '3 Visits' means employees who had exactly 3 NPS-rated consultations. Rising NPS with more visits suggests continuity of care drives satisfaction."
-        comments={[{ id: "kam-nps-user-visits", author: "HCL KAM", text: "Employees with 4+ visits per year show 18 points higher NPS than single-visit users, indicating that relationship continuity drives satisfaction. However, the 2-3 visit segment shows a concerning dip — these are typically employees with unresolved issues returning for follow-ups. Streamlining the follow-up process and assigning dedicated care coordinators could improve this segment's NPS by 10-15 points.", date: "Feb 2025", isKAM: true }]}
+
         chartData={byVisitFrequency}
         chartTitle="NPS by Visit Frequency"
         chartDescription="Bar chart showing NPS feedback volume and NPS % by employee visit frequency. Helps assess whether repeat visits improve or worsen satisfaction."
@@ -967,7 +967,7 @@ export default function NPSPage() {
         tooltipText="Visual representation of the most frequent words from open-ended patient feedback. Larger words appear more often. Green words indicate positive sentiment, red indicates areas for improvement."
         chartData={wordCloud}
         chartDescription="Word cloud built from open-ended patient feedback — word size reflects mention frequency. Green words represent positive themes (e.g. 'helpful', 'professional'), red words flag areas needing attention (e.g. 'wait', 'slow')."
-        comments={[{ id: "kam-nps-wordcloud", author: "HCL KAM", text: "'Wait time' and 'appointment delay' are the two most mentioned negative themes, appearing in 34% of critical feedback verbatims across all specialties. 'Doctor helpful' and 'staff friendly' are the top positive themes (42% of promoter verbatims). This signals that clinical quality is not the issue — operational efficiency (scheduling, queue management) is the primary satisfaction driver. A queue management system pilot is being evaluated for the three highest-volume OHC locations.", date: "Feb 2025", isKAM: true }]}
+
       >
         {/* Word cloud — ECharts wordCloud with spiral placement */}
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "#FAFBFD", height: 420 }}>

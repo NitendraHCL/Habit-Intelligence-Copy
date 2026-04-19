@@ -736,7 +736,7 @@ export default function EmotionalWellbeingPage() {
         {/* Consult Trends */}
         {isChartVisible("ewbTrends") && <CVCard accentColor={T.teal} title="Consult Trends" subtitle="View of total and unique consults" tooltipText="Line chart tracking total consults and unique patients over time. Toggle between yearly and monthly views. The gap between total and unique lines reveals repeat visit frequency (employees who availed the service at least twice in the selected date range) — a wider gap means more patients are returning for multiple sessions, which may indicate ongoing mental health needs."
           chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults"
-          comments={[{ id: "kam-ew-1", author: "HCL KAM", text: "Emotional wellbeing consults rose 42% between Q1 and Q3 2024, driven by increased awareness campaigns and the launch of anonymous counseling services. The gap between total and unique consults widened from Q2, indicating more employees are returning for follow-up sessions — a positive sign of treatment adherence. Recommend expanding counselor availability at Pune and Hyderabad where wait times exceed 5 days.", date: "Jan 2025", isKAM: true }]}
+
           rightHeader={
             <div className="inline-flex items-center gap-1">
               <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
@@ -786,7 +786,7 @@ export default function EmotionalWellbeingPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
           chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
-          comments={[{ id: "kam-ew-2", author: "HCL KAM", text: "All critical risk cases were flagged and escalated within 24 hours per the emergency protocol. The 3 self-harm attempt cases in Q3 2024 were traced to work-related stress in the night shift operations team at Chennai. Immediate interventions included shift rotation adjustments, peer support groups, and dedicated EAP counselor deployment. Zero incidents reported since Oct 2024.", date: "Feb 2025", isKAM: true }]}>
+>
           {totalEwbAssessed > 0 && (
             <p className="text-[11.5px] mb-4 mt-1" style={{ color: T.textSecondary }}>
               Out of <strong style={{ color: T.textPrimary }}>{formatNum(totalEwbAssessed)}</strong> emotional wellbeing assessments conducted

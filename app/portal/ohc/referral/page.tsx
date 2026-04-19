@@ -548,7 +548,7 @@ export default function ReferralAnalyticsPage() {
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
       {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="Referral Availability & Conversion by Specialty" subtitle="Which specialties are available in-clinic vs. external, and their conversion rates" tooltipText="Table listing each referred specialty with availability status, referral count, conversion progress bar, and in-clinic consult counts. Filter between all, available, or external specialties."
-        comments={[{ id: "kam-ref-1", author: "HCL KAM", text: "Dermatology and Ophthalmology referrals show 0% in-clinic conversion since these specialties are entirely external. Cost analysis shows that bringing a visiting Dermatologist twice a week would serve 78% of referral demand and save ~18% on external referral costs. A pilot visiting specialist program is planned for Bangalore and Chennai from Q2 2025.", date: "Jan 2025", isKAM: true }]}
+
         chartData={filteredSpecDetails} chartTitle="Referral Availability & Conversion by Specialty" chartDescription="Which specialties are available in-clinic vs. external, and their conversion rates">
         <div className="flex items-center justify-end gap-2 mb-3">
           <div className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5" style={{ backgroundColor: T.borderLight }}>
@@ -823,7 +823,7 @@ export default function ReferralAnalyticsPage() {
           chartData={charts?.locationBySpecialty}
           chartTitle="Referral Volume by Specialty & Clinic Availability"
           chartDescription="Stacked bar chart showing per-location referral counts broken down by specialty. Purple-toned bars = in-clinic specialties; warm-toned bars = external-only. Helps identify referral leakage and expansion opportunities."
-          comments={[{ id: "kam-locspec-1", author: "HCL KAM", text: "Pune leads in total referral volume, driven largely by Physiotherapy and Orthopaedics. External-only specialties like Psychiatry and Radiology present expansion opportunities — adding even part-time on-site coverage at high-volume locations could improve conversion rates by 15-20%.", date: "Feb 2025", isKAM: true }]}
+
         >
           {(() => {
             const locations = (charts?.locationBySpecialty || []).map((d: any) => d.location);

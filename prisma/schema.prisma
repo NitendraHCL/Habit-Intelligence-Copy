@@ -26,6 +26,7 @@ model User {
   sessions            Session[]
   clientAssignments   UserClientAssignment[]
   annotations         DashboardAnnotation[]
+  chartComments       ChartComment[]
 
   @@map("users")
 }
@@ -84,6 +85,7 @@ model Client {
   userAssignments      UserClientAssignment[]
   dashboardAnnotations DashboardAnnotation[]
   dashboardDefinitions DashboardDefinition[]
+  chartComments        ChartComment[]
 
   @@map("clients")
 }
@@ -120,6 +122,31 @@ model DashboardAnnotation {
   author User   @relation(fields: [authorId], references: [id])
 
   @@map("dashboard_annotations")
+}
+
+/// Chart-anchored comments. Each comment is pinned to a specific data point
+/// on a chart (anchor JSON stores xValue, seriesName, etc.). Supports
+/// threaded replies via parentId.
+model ChartComment {
+  id        String   @id @default(uuid())
+  chartId   String   @map("chart_id")
+  pageSlug  String   @map("page_slug")
+  clientId  String   @map("client_id")
+  userId    String   @map("user_id")
+  text      String
+  /// Position anchor: { xValue?, seriesName?, yValue?, segmentName?, cellX?, cellY?, chartType? }
+  anchor    Json
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  client  Client         @relation(fields: [clientId], references: [id])
+  user    User           @relation(fields: [userId], references: [id])
+  parent  ChartComment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies ChartComment[] @relation("CommentThread")
+
+  @@index([chartId, clientId])
+  @@index([pageSlug, clientId])
+  @@map("chart_comments")
 }
 
 // ── No-Code Dashboard Builder ──

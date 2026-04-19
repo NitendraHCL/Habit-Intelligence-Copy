@@ -630,7 +630,7 @@ export default function LSMPPage() {
           title="Patient Improvement Status"
           subtitle="Displays outcome categories for patients in care plans."
           tooltipText="Horizontal bar chart showing patient counts by improvement status — Improvement, Eligible for Exit, Intermediate, Completed, and No Improvement. Sorted by count to highlight the most common outcomes. Use this to assess program effectiveness and identify cohorts needing additional support."
-          comments={[{ id: "kam-lsmp-1", author: "HCL KAM", text: "The 'No Improvement' cohort (primarily Calorie Fit plan) has been analyzed — 72% of these patients had less than 2 dietitian consultations in their first 3 months, indicating low engagement rather than program ineffectiveness. A mandatory bi-weekly check-in protocol was introduced in Oct 2024, and early data shows a 15% shift from 'No Improvement' to 'Partial Improvement' within 8 weeks.", date: "Jan 2025", isKAM: true }]}
+
           chartData={data.improvementStatus}
           chartDescription="Patient outcome distribution across care plans — shows how many enrolled employees fall into Improvement, Eligible for Exit, Intermediate, Completed, and No Improvement categories, enabling program effectiveness assessment."
         >
@@ -701,7 +701,7 @@ export default function LSMPPage() {
           tooltipText="Multi-line chart tracking monthly enrollment trends for each care plan type (Prime Health, Supreme Health, Calorie Fit, Pro Health). Dots mark data points. Use this to identify seasonal patterns, growth trajectories, and plan popularity over time."
           chartData={data.carePlanTrends}
           chartDescription="Monthly enrollment trends for each LSMP care plan type over time — reveals which plans are growing, seasonal enrollment patterns, and which plan type needs intervention to sustain participation."
-          comments={[{ id: "kam-lsmp-2", author: "HCL KAM", text: "Prime Health enrollment grew 28% between Q1 and Q3 2024, driven by targeted referrals from OHC doctors for cardiovascular and metabolic cases. Supreme Health saw a plateau in Q2 due to awareness gaps — the Q3 launch of a focused communication campaign restored momentum. Calorie Fit remains the most volatile plan; individual dietitian-led outreach has proven more effective than mass campaigns for this cohort.", date: "Feb 2025", isKAM: true }]}
+
         >
           <div className="overflow-x-auto">
             <div style={{ height: 300, minWidth: Math.max(500, ((data.carePlanTrends as any[])?.length || 12) * 50) }}>
@@ -759,7 +759,7 @@ export default function LSMPPage() {
         tooltipText="Color-coded table showing compliance percentages across demographic segments and facilities. Green (80%+) = high, Blue (70-79%) = medium, Purple (<70%) = low."
         chartData={data.complianceTriggerPattern}
         chartDescription="Heat-map table showing care plan compliance rates across age group, gender, and facility dimensions — green cells (80%+) indicate high compliance, while purple cells (<70%) flag specific demographic-facility combinations that need targeted intervention."
-        comments={[{ id: "kam-lsmp-3", author: "HCL KAM", text: "Compliance rates drop sharply in the 18-25 female cohort at Bangalore and Chennai facilities — both below 62%. Investigation shows this group has the highest mid-plan drop-out rate, primarily citing scheduling conflicts and lack of perceived progress. A dedicated 'Young Wellness' coordinator program was proposed for Q1 2025 to provide flexible appointment slots and monthly progress nudges for this cohort.", date: "Mar 2025", isKAM: true }]}
+
       >
         <div className="overflow-x-auto mt-3">
           <table className="w-full border-collapse">

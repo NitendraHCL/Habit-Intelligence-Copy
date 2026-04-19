@@ -580,7 +580,7 @@ export default function EngagementPage() {
         title="Activity Engagement - Steps"
         subtitle="Daily step count trends and threshold achievement rates"
         tooltipText="Bar chart showing monthly average steps with line overlays for the percentage of users crossing 5K and 10K step thresholds. Quick stats above show current threshold achievement rates."
-        comments={[{ id: "kam-steps-activity", author: "HCL KAM", text: "The step count surge in September (avg 9,200 steps/day vs 7,400 baseline) was driven by the 'Walk-a-thon' corporate challenge with team leaderboards. Participation was 3x higher when managers actively joined. The drop in November correlates with Diwali holidays and reduced app check-ins. Recommend launching a winter fitness challenge in Jan-Feb to sustain momentum.", date: "Jan 2025", isKAM: true }]}
+
         chartData={stepsData}
         chartTitle="Activity Engagement - Steps"
         chartDescription="Daily step count trends and threshold achievement rates"
@@ -647,7 +647,7 @@ export default function EngagementPage() {
           chartData={challengeData}
           chartTitle="Challenge Engagement"
           chartDescription="Wellness challenge participation and completion trends"
-          comments={[{ id: "kam-eng-challenge", author: "HCL KAM", text: "Team-based challenges consistently outperform individual ones by 2.3x in both participation and completion. The 'Steps Leaderboard' challenge in September 2024 was the single highest-performing campaign, achieving 58% participation (vs the 36% average) — driven by manager-level involvement and visible leaderboard updates in common areas. Recommend building Q2 2025 campaigns around team formats with manager sponsorship as a mandatory component.", date: "Feb 2025", isKAM: true }]}
+
         >
           <div className="grid grid-cols-3 gap-3 mb-4 mt-2">
             <div className="rounded-xl p-3" style={{ backgroundColor: T.amber + "10" }}>
@@ -690,7 +690,7 @@ export default function EngagementPage() {
           chartData={webinarData}
           chartTitle="Webinar Engagement"
           chartDescription="Health webinar attendance and satisfaction trends"
-          comments={[{ id: "kam-eng-webinar", author: "HCL KAM", text: "The average webinar attendance rate of 20.1% masks a wide variance — Mental Health and Stress Management topics achieve 38% attendance while Nutrition and Sleep topics average only 14%. Post-webinar survey data shows 82% of attendees take at least one recommended action within 2 weeks, indicating high quality-of-impact despite lower volume. Recommend shifting to bi-monthly high-attendance-topic webinars rather than monthly mixed-topic formats.", date: "Jan 2025", isKAM: true }]}
+
         >
           <div className="grid grid-cols-3 gap-3 mb-4 mt-2">
             <div className="rounded-xl p-3" style={{ backgroundColor: "#4f46e5" + "10" }}>
@@ -731,7 +731,7 @@ export default function EngagementPage() {
         title="Engagement Trends"
         subtitle="Multi-metric engagement tracking over time"
         tooltipText="Line chart showing a single engagement metric over time. Use the toggle buttons to switch between Active Users, Avg Steps, Challenges, and Webinars. Identify seasonal patterns and growth trends."
-        comments={[{ id: "kam-engagement-trends", author: "HCL KAM", text: "The consistent upward trend in active users is attributed to the gamification features launched in Q2 2024 (badges, streaks, leaderboards). The December spike across all metrics aligns with the 'Year-End Wellness Sprint' campaign. However, engagement dips in Feb-Mar suggest post-New Year fatigue — recommend sustaining interest through monthly themed challenges tied to health awareness days (Heart Health Month, etc.).", date: "Feb 2025", isKAM: true }]}
+
         chartData={engagementTrends}
         chartTitle="Engagement Trends"
         chartDescription="Multi-metric engagement tracking over time"

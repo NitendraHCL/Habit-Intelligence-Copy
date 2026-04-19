@@ -543,7 +543,7 @@ export default function RepeatVisitsPage() {
           tooltipText="Displays the proportion of repeat patients (employees who availed any OHC service at least twice in the selected date range) categorized as chronic (long-term, recurring conditions) versus acute (short-term, one-off conditions). Use the toggle buttons to filter the entire dashboard by condition type."
           subtitle="Shows condition category breakdown among repeat patients. Click to filter entire dashboard by chronic or acute cases."
           chartData={charts?.chronicVsAcute} chartTitle="Chronic vs. Acute" chartDescription="Condition category breakdown among repeat patients"
-          comments={[{ id: "kam-rv-1", author: "HCL KAM", text: "The chronic repeat patient pool grew 18% in 2024, primarily driven by Hypertension and Type 2 Diabetes cases in the 36-50 age group. This aligns with the sedentary work profile across IT campuses. We've initiated a 'Chronic Care Connect' program in Q4 2024 that pairs patients with dedicated health coaches — early results show 22% improvement in medication adherence and a 12% reduction in unplanned visits.", date: "Feb 2025", isKAM: true }]}>
+>
           <div className="mt-3 flex flex-wrap items-center gap-2 mb-5">
             {(["all", "chronic", "acute"] as const).map((v) => (
               <button
@@ -846,7 +846,7 @@ export default function RepeatVisitsPage() {
           tooltipText="Table listing the most common recurring conditions among repeat patients, split by chronic and acute categories. Each row shows patient count, NPS response count with response rate bar, and average NPS score color-coded by satisfaction level (green >= 70, yellow >= 50, red < 50)."
           subtitle="Analysis of patients with recurring diagnoses in major categories. Shows patient volume and satisfaction scores."
           chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Recurring conditions with patient volume and satisfaction scores"
-          comments={[{ id: "kam-rv-2", author: "HCL KAM", text: "Lower Back Pain has the highest repeat volume but an NPS of only 44, indicating patient dissatisfaction with treatment outcomes. Investigation revealed that 60% of these patients only receive symptomatic relief (painkillers) without root cause treatment. A structured physiotherapy referral pathway has been implemented from Jan 2025 — patients with 3+ visits for the same musculoskeletal complaint now auto-receive a physiotherapy consultation request.", date: "Feb 2025", isKAM: true }]}
+
           expandable={false}>
           <div className="flex gap-2 mt-3 mb-5">
             {(["chronic", "acute"] as const).map((t) => (

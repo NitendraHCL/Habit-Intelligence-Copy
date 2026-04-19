@@ -698,7 +698,7 @@ export default function HealthInsightsPage() {
             expandable={false}
             chartData={{ chronicCount, acuteCount, totalPatients, chronicPct, acutePct }}
             chartDescription="Split between chronic (long-term) and acute (short-term) conditions"
-            comments={[{ id: "kam-hi-4", author: "HCL KAM", text: "The chronic-to-acute ratio has shifted from 38:62 in 2023 to 44:56 in 2024 — a 6-point increase in chronic disease burden in just one year. Hypertension, Type 2 Diabetes, and Chronic Back Pain account for 71% of the chronic pool. This trend correlates directly with the aging workforce profile and sedentary work patterns at IT campuses. LSMP enrollment among confirmed chronic patients stands at only 52%, leaving nearly half without a structured management plan.", date: "Jan 2025", isKAM: true }]}
+
           >
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               {([["all", "All Repeaters"], ["chronic", "Chronic Only"], ["acute", "Acute Only"]] as const).map(([val, label]) => (
@@ -1066,7 +1066,7 @@ export default function HealthInsightsPage() {
         title="Year on Year Trends"
         subtitle="Tracks how prevalence of key conditions changes over time."
         tooltipText="Line chart tracking how the selected condition's consultation volume changes over time. Toggle between yearly and monthly views."
-        comments={[{ id: "kam-hi-1", author: "HCL KAM", text: "The sharp rise in Musculoskeletal conditions (up 34% YoY) correlates with the post-COVID return-to-office phase and prolonged desk work. Ergonomic assessments conducted at Bangalore and Chennai offices in Q3 2024 identified that 68% of workstations were non-compliant. Corrective measures are underway with expected completion by March 2025.", date: "Jan 2025", isKAM: true }]}
+
         chartData={trendData}
         chartDescription="Condition consultation volume trends over time"
         headerRight={
@@ -1181,7 +1181,7 @@ export default function HealthInsightsPage() {
           title="Severe Diseases Combination and Gender"
           subtitle="Frequently co-occurring chronic conditions that effect significant portion of population. Useful for bundled care planning & referrals"
           tooltipText="Displays the most common disease co-occurrences among patients. Each bar shows how frequently two conditions appear together."
-          comments={[{ id: "kam-hi-2", author: "HCL KAM", text: "The Hypertension-Diabetes co-occurrence (seen in 12% of patients aged 45+) is significantly higher at the Noida location, likely due to the older workforce demographic. A targeted chronic disease management program was launched in Nov 2024 covering diet counseling, medication adherence tracking, and quarterly specialist reviews. Early results show 8% improvement in controlled BP readings.", date: "Feb 2025", isKAM: true }]}
+
           chartData={combos}
           chartDescription="Disease co-occurrence frequency with gender breakdown"
           headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
@@ -1264,7 +1264,7 @@ export default function HealthInsightsPage() {
           subtitle="Updates for selected ICD diagnosis/cohort."
           chartData={vitalsData}
           chartDescription="Vital sign distribution showing below/within/above normal ranges over time"
-          comments={[{ id: "kam-hi-3", author: "HCL KAM", text: "BMI data shows 34% of the workforce in the overweight/obese range (above normal), with the highest concentration in the 36-50 age group at IT campuses in Bangalore and Hyderabad. Blood pressure readings reflect a similar pattern — 28% above normal, predominantly in the same demographic. The Calorie Fit LSMP was specifically designed for this cohort; however, only 18% of employees with abnormal BMI are currently enrolled. Targeted OHC-to-LSMP referral campaigns are being activated in Q2 2025.", date: "Feb 2025", isKAM: true }]}
+
           headerRight={
             <div className="flex items-center gap-2">
               <select value={vitalType} onChange={(e) => setVitalType(e.target.value as any)}

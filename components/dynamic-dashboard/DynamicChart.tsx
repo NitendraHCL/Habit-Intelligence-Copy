@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import useSWR from "swr";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -318,6 +318,22 @@ export default function DynamicChart({
     );
   }
 
+  // Comment anchor picking: when active, the next chart click is captured as an anchor
+  const [anchorClickHandler, setAnchorClickHandler] = useState<((params: Record<string, unknown>) => void) | null>(null);
+
+  const handleChartClickForAnchor = useCallback((handler: ((params: Record<string, unknown>) => void) | null) => {
+    setAnchorClickHandler(() => handler);
+  }, []);
+
+  // Combined click handler: anchor picking takes priority, then drill-through/drill-down/cross-filter
+  const combinedClickHandler = useCallback((params: Record<string, unknown>) => {
+    if (anchorClickHandler) {
+      anchorClickHandler(params);
+      return;
+    }
+    handleClick(params);
+  }, [anchorClickHandler, handleClick]);
+
   return (
     <CVCardDynamic
       title={chart.title}
@@ -331,6 +347,9 @@ export default function DynamicChart({
       insightText={autoInsight ?? undefined}
       topInsightText={topInsight ?? undefined}
       belowContent={summaryStrip}
+      chartId={chart.id}
+      pageSlug={`/portal/dynamic/${chart.id}`}
+      onChartClickForAnchor={handleChartClickForAnchor}
     >
       {isLoading && !error && (
         <div className="flex items-center justify-center" style={{ height: chart.visualization?.height ?? 350 }}>
@@ -432,11 +451,7 @@ export default function DynamicChart({
         <div style={{ height: chart.visualization?.height ?? 350 }}>
           <ChartRenderer
             transformed={transformed}
-            onChartClick={
-              chart.emitFilter || drillDown?.levels?.length || drillThrough
-                ? handleClick
-                : undefined
-            }
+            onChartClick={combinedClickHandler}
           />
         </div>
       )}
@@ -460,25 +475,62 @@ function ChartRenderer({
 }) {
   const { renderer, props } = transformed;
 
+  // For ECharts renderers, wire click events natively
+  // For Recharts, BarChart already has onClick; others use the wrapper div below
+  const echartsEvents = onChartClick
+    ? { click: (p: unknown) => onChartClick(p as Record<string, unknown>) }
+    : undefined;
+
+  // Wrapper for Recharts charts — captures clicks via Recharts' onClick prop
+  // or via the container div for charts that don't support onClick natively
+  const wrapRecharts = (el: React.ReactNode) => {
+    if (!onChartClick) return el;
+    return (
+      <div
+        onClick={(e) => {
+          // Try to extract Recharts active label from the nearest tooltip state
+          // Fallback: capture approximate position
+          const rect = e.currentTarget.getBoundingClientRect();
+          const xPct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+          const data = (props as { data?: Record<string, unknown>[] }).data;
+          if (data && data.length > 0) {
+            const xKey = (props as { xKey?: string }).xKey ?? Object.keys(data[0])[0];
+            const idx = Math.min(Math.floor((xPct / 100) * data.length), data.length - 1);
+            const row = data[idx];
+            if (row) {
+              onChartClick({ name: String(row[xKey] ?? ""), ...row });
+              return;
+            }
+          }
+          onChartClick({ name: `position ${xPct}%` });
+        }}
+        className="cursor-crosshair"
+        style={{ width: "100%", height: "100%" }}
+      >
+        {el}
+      </div>
+    );
+  };
+
   switch (renderer) {
     case "bar":
       return <BarChartRenderer {...(props as any)} onClick={onChartClick} />;
     case "line":
-      return <LineChartRenderer {...(props as any)} />;
+      return wrapRecharts(<LineChartRenderer {...(props as any)} />);
     case "area":
-      return <AreaChartRenderer {...(props as any)} />;
+      return wrapRecharts(<AreaChartRenderer {...(props as any)} />);
     case "pie":
-      return <PieChartRenderer {...(props as any)} />;
+      return wrapRecharts(<PieChartRenderer {...(props as any)} />);
     case "radar":
-      return <RadarChartRenderer {...(props as any)} />;
+      return wrapRecharts(<RadarChartRenderer {...(props as any)} />);
     case "scatter":
-      return <ScatterChartRenderer {...(props as any)} />;
+      return wrapRecharts(<ScatterChartRenderer {...(props as any)} />);
     case "bubble":
-      return <BubbleChartRenderer {...(props as any)} />;
+      return wrapRecharts(<BubbleChartRenderer {...(props as any)} />);
     case "composed":
-      return <ComposedChartRenderer {...(props as any)} />;
+      return wrapRecharts(<ComposedChartRenderer {...(props as any)} />);
     case "funnel":
-      return <FunnelRenderer {...(props as any)} />;
+      return wrapRecharts(<FunnelRenderer {...(props as any)} />);
     case "heatmap":
       return <HeatmapRenderer {...(props as any)} />;
     case "treemap":
@@ -489,11 +541,7 @@ function ChartRenderer({
       return (
         <GenericEChartsRenderer
           {...(props as any)}
-          onEvents={
-            onChartClick
-              ? { click: (p: unknown) => onChartClick(p as Record<string, unknown>) }
-              : undefined
-          }
+          onEvents={echartsEvents}
         />
       );
     case "table":

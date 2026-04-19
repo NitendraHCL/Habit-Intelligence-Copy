@@ -120,15 +120,16 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── Card (Critical Values style) ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription, dataPoints,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
-  chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  chartData?: unknown; chartTitle?: string; chartDescription?: string; dataPoints?: string[];
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div
+      data-chart-card
       className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px ${expanded ? "col-span-full" : ""} ${className}`}
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
@@ -150,7 +151,7 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/utilization" />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/utilization" dataPoints={dataPoints} />}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
@@ -162,7 +163,7 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5">{children}</div>
+      <div data-chart-body className="px-6 pb-5">{children}</div>
     </div>
   );
 }
@@ -881,7 +882,7 @@ export default function OHCUtilizationPage() {
             </CVCard>
           ),
           visitTrends: (
-            <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle="Month-wise consultation trends" chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription="Trend lines">
+            <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle="Month-wise consultation trends" chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription="Trend lines" dataPoints={visitTrends.map((v: { period: string }) => v.period)}>
               <div style={{ height: 340 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
@@ -1171,7 +1172,7 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? "Shows month-wise total consultations to identify demand peaks, across selected year" : trendView === "weekly" ? "Highlights peak consultation windows across weeks and time slots for first time and repeat visitors" : "Year-over-year consultation volume comparison"} tooltipText="Line chart tracking total consultations and unique patients over time. Switch between monthly, weekly, and yearly views using the toggle. Monthly view identifies seasonal demand peaks; weekly view shows time-slot heatmaps for first-time vs repeat visitors; yearly view compares year-over-year growth." chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? "Shows month-wise total consultations to identify demand peaks, across selected year" : trendView === "weekly" ? "Highlights peak consultation windows across weeks and time slots for first time and repeat visitors" : "Year-over-year consultation volume comparison"} tooltipText="Line chart tracking total consultations and unique patients over time. Switch between monthly, weekly, and yearly views using the toggle. Monthly view identifies seasonal demand peaks; weekly view shows time-slot heatmaps for first-time vs repeat visitors; yearly view compares year-over-year growth." chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={visitTrends.map((v: { period: string }) => v.period)}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["weekly", "monthly", "yearly"] as const).map((v) => (

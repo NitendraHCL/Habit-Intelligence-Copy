@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Info, Maximize2, Minimize2, Sparkles } from "lucide-react";
+import { ChartComments, type CommentAnchor } from "@/components/ui/chart-comments";
 import {
   Tooltip,
   TooltipTrigger,
@@ -145,10 +146,14 @@ interface CVCardDynamicProps {
   chartTitle?: string;
   chartDescription?: string;
   insightText?: string;
-  /** G3: insight rendered ABOVE the chart body (in addition to the bottom one). */
   topInsightText?: string;
-  /** G8: sub-KPI strip rendered below the chart inside the same card. */
   belowContent?: React.ReactNode;
+  /** Chart ID for comments */
+  chartId?: string;
+  /** Page slug for comments */
+  pageSlug?: string;
+  /** Called when a chart click should be captured as a comment anchor during picking mode */
+  onChartClickForAnchor?: (handler: ((params: Record<string, unknown>) => void) | null) => void;
 }
 
 export default function CVCardDynamic({
@@ -166,11 +171,35 @@ export default function CVCardDynamic({
   insightText,
   topInsightText,
   belowContent,
+  chartId,
+  pageSlug,
+  onChartClickForAnchor,
 }: CVCardDynamicProps) {
   const [expanded, setExpanded] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const anchorCallbackRef = useRef<((anchor: CommentAnchor) => void) | null>(null);
+
+  const handleRequestAnchor = useCallback((callback: (anchor: CommentAnchor) => void) => {
+    anchorCallbackRef.current = callback;
+    setPicking(true);
+    // Tell DynamicChart to forward next click as an anchor
+    onChartClickForAnchor?.((params) => {
+      const anchor: CommentAnchor = {
+        xValue: params.name as string ?? params.activeLabel as string ?? undefined,
+        seriesName: params.seriesName as string ?? undefined,
+        yValue: typeof params.value === "number" ? params.value : undefined,
+        segmentName: params.name as string ?? undefined,
+      };
+      anchorCallbackRef.current?.(anchor);
+      anchorCallbackRef.current = null;
+      setPicking(false);
+      onChartClickForAnchor?.(null);
+    });
+  }, [onChartClickForAnchor]);
 
   return (
     <div
+      data-chart-card
       className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px ${
         expanded ? "col-span-full" : ""
       } ${className}`}
@@ -212,6 +241,13 @@ export default function CVCardDynamic({
                 )}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {chartId && pageSlug && (
+                  <ChartComments
+                    chartId={chartId}
+                    pageSlug={pageSlug}
+                    onRequestAnchor={onChartClickForAnchor ? handleRequestAnchor : undefined}
+                  />
+                )}
                 {!!chartData && (
                   <AskAIBtn
                     title={chartTitle || title || ""}
@@ -235,7 +271,21 @@ export default function CVCardDynamic({
           )}
         </div>
       )}
-      <div className={`px-6 pb-5 ${expanded ? "min-h-[500px]" : ""}`}>
+      <div data-chart-body className={`px-6 pb-5 ${expanded ? "min-h-[500px]" : ""} relative`}>
+        {picking && (
+          <div className="absolute inset-0 z-10 flex items-start justify-center pt-2 pointer-events-none">
+            <div className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-medium shadow-lg animate-pulse pointer-events-auto">
+              Click any data point on this chart to anchor your comment
+              <button
+                type="button"
+                onClick={() => { setPicking(false); anchorCallbackRef.current = null; onChartClickForAnchor?.(null); }}
+                className="ml-3 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {topInsightText && (
           <div
             className="rounded-[14px] px-4 py-3 mb-4 text-[12px] leading-[1.7] font-medium"

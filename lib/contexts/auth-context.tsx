@@ -50,6 +50,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clients[0]?.id ||
           null;
         setActiveClientIdState(defaultClientId);
+        // For KAM (no direct clientId): fetch the active client's data
+        // so enabledPages/hasCustomDashboards are available immediately.
+        if (!data.client && defaultClientId) {
+          fetch(`/api/admin/cug-management/client?id=${defaultClientId}`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((d) => { if (d?.client) setActiveClient(d.client); })
+            .catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));

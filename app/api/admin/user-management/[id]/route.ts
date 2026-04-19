@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { createHash } from "crypto";
-
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
-}
+import { hashPassword } from "@/lib/auth/session";
 
 // ── PUT /api/admin/user-management/:id — update user
 export async function PUT(
@@ -24,7 +20,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
-    if (password) updateData.passwordHash = hashPassword(password);
+    if (password) updateData.passwordHash = await hashPassword(password);
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (clientId !== undefined) updateData.clientId = clientId;

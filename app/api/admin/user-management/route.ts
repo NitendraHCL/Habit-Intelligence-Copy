@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { createHash } from "crypto";
-
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
-}
+import { hashPassword } from "@/lib/auth/session";
 
 // ── GET /api/admin/user-management?type=internal|external
 export async function GET(request: NextRequest) {
@@ -101,7 +97,7 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         email,
-        passwordHash: hashPassword(password),
+        passwordHash: await hashPassword(password),
         role: role as any,
         clientId: ["CLIENT_ADMIN", "CLIENT_VIEWER"].includes(role) ? clientId : null,
         isActive: true,

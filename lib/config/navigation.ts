@@ -111,6 +111,13 @@ export const navigation: NavItem[] = [
     requiredRole: "SUPER_ADMIN",
   },
   {
+    label: "User Management",
+    href: "/portal/admin/user-management",
+    icon: Users,
+    walkthroughId: "nav-user-management",
+    requiredRole: "SUPER_ADMIN",
+  },
+  {
     label: "Custom Dashboards",
     href: "/portal/custom",
     icon: BarChart3,

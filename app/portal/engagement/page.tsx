@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
   Maximize2,
@@ -74,11 +74,11 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 // ─── Card ───
 function CVCard({
   children, className = "", accentColor, title, subtitle, tooltipText, expandable = true,
-  headerRight, comments, chartData, chartTitle, chartDescription,
+  headerRight, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
-  headerRight?: React.ReactNode; comments?: ChartComment[];
+  headerRight?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -107,8 +107,8 @@ function CVCard({
               <div className="flex items-center gap-2 shrink-0 ml-2">
                 {headerRight}
                 <div className="flex items-center gap-1 shrink-0 ml-2">
-                  {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
-                  {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                  {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                  {chartId && <ChartComments chartId={chartId} pageSlug="/portal/engagement" />}
                   {expandable && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                       {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -484,6 +484,7 @@ export default function EngagementPage() {
             title="Adoption Funnel"
             subtitle="Employee journey from eligibility to active engagement"
             tooltipText="Horizontal funnel showing the drop-off at each stage from eligible employees to active engagement. Conversion percentages between stages help identify where users disengage."
+            chartId="adoptionFunnel"
             chartData={funnel}
             chartTitle="Adoption Funnel"
             chartDescription="Employee journey from eligibility to active engagement"
@@ -530,6 +531,7 @@ export default function EngagementPage() {
           title="Platform Usage"
           subtitle="How users access the Habit app"
           tooltipText="Donut chart showing the distribution of users by platform: Mobile only, Web only, or Both. Helps understand user preferences for app access channels."
+          chartId="platformUsage"
           chartData={platformUsage}
           chartTitle="Platform Usage"
           chartDescription="How users access the Habit app"
@@ -580,7 +582,7 @@ export default function EngagementPage() {
         title="Activity Engagement - Steps"
         subtitle="Daily step count trends and threshold achievement rates"
         tooltipText="Bar chart showing monthly average steps with line overlays for the percentage of users crossing 5K and 10K step thresholds. Quick stats above show current threshold achievement rates."
-
+        chartId="stepsActivity"
         chartData={stepsData}
         chartTitle="Activity Engagement - Steps"
         chartDescription="Daily step count trends and threshold achievement rates"
@@ -644,6 +646,7 @@ export default function EngagementPage() {
           title="Challenge Engagement"
           subtitle="Wellness challenge participation and completion trends"
           tooltipText="Bar chart showing monthly challenge participants with a line overlay for completion rate. Quick stats above summarize total challenges, participation rate, and completion rate."
+          chartId="challengeEngagement"
           chartData={challengeData}
           chartTitle="Challenge Engagement"
           chartDescription="Wellness challenge participation and completion trends"
@@ -687,6 +690,7 @@ export default function EngagementPage() {
           title="Webinar Engagement"
           subtitle="Health webinar attendance and satisfaction trends"
           tooltipText="Bar chart showing monthly webinar attendees with a line overlay for average rating. Quick stats above summarize total webinars, attendance rate, and average satisfaction rating."
+          chartId="webinarEngagement"
           chartData={webinarData}
           chartTitle="Webinar Engagement"
           chartDescription="Health webinar attendance and satisfaction trends"
@@ -731,7 +735,7 @@ export default function EngagementPage() {
         title="Engagement Trends"
         subtitle="Multi-metric engagement tracking over time"
         tooltipText="Line chart showing a single engagement metric over time. Use the toggle buttons to switch between Active Users, Avg Steps, Challenges, and Webinars. Identify seasonal patterns and growth trends."
-
+        chartId="engagementTrends"
         chartData={engagementTrends}
         chartTitle="Engagement Trends"
         chartDescription="Multi-metric engagement tracking over time"
@@ -793,6 +797,7 @@ export default function EngagementPage() {
         title="Engagement Cohort Analysis"
         subtitle="Compare engagement metrics across departments, age groups and locations"
         tooltipText="Table comparing key engagement metrics (active users, avg steps, challenge rate, webinar rate) across cohorts. Toggle between Department, Age Group, and Location views. Progress bars visualize participation rates."
+        chartId="cohortAnalysis"
         chartData={cohortItems}
         chartTitle="Engagement Cohort Analysis"
         chartDescription="Compare engagement metrics across departments, age groups and locations"

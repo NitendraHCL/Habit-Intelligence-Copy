@@ -15,7 +15,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
   Maximize2,
@@ -78,10 +78,10 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── Card ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, comments, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
-  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; comments?: ChartComment[];
+  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -108,8 +108,8 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/referral" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -501,7 +501,7 @@ export default function ReferralAnalyticsPage() {
         </div>
 
         {/* ── Referral Trends (Area Chart) ── */}
-        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Monthly referral volumes with in-clinic availability and conversions" expandable={false} tooltipText="Area chart showing monthly referral volumes split by total referrals, in-clinic available specialties, and actual conversions. Tracks referral pipeline health over time." chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volumes with in-clinic availability and conversions">
+        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Monthly referral volumes with in-clinic availability and conversions" expandable={false} tooltipText="Area chart showing monthly referral volumes split by total referrals, in-clinic available specialties, and actual conversions. Tracks referral pipeline health over time." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volumes with in-clinic availability and conversions">
           <div className="overflow-x-auto">
           <div style={{ height: 300, minWidth: Math.max(500, (charts?.referralTrends?.length || 0) * 60) }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -548,7 +548,7 @@ export default function ReferralAnalyticsPage() {
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
       {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="Referral Availability & Conversion by Specialty" subtitle="Which specialties are available in-clinic vs. external, and their conversion rates" tooltipText="Table listing each referred specialty with availability status, referral count, conversion progress bar, and in-clinic consult counts. Filter between all, available, or external specialties."
-
+        chartId="specialtyConversion"
         chartData={filteredSpecDetails} chartTitle="Referral Availability & Conversion by Specialty" chartDescription="Which specialties are available in-clinic vs. external, and their conversion rates">
         <div className="flex items-center justify-end gap-2 mb-3">
           <div className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5" style={{ backgroundColor: T.borderLight }}>
@@ -640,7 +640,7 @@ export default function ReferralAnalyticsPage() {
       </CVCard>}
 
       {/* ── Who Refers to Whom (Heatmap Matrix) ── */}
-      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="See which specialties refer patients to each other most frequently" tooltipText="Heatmap matrix showing referral flows between specialties. Rows represent referring specialties and columns show receiving specialties. Darker cells indicate higher referral volumes." chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="See which specialties refer patients to each other most frequently">
+      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="See which specialties refer patients to each other most frequently" tooltipText="Heatmap matrix showing referral flows between specialties. Rows represent referring specialties and columns show receiving specialties. Darker cells indicate higher referral volumes." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="See which specialties refer patients to each other most frequently">
         <div className="flex items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>Year:</span>
@@ -724,7 +724,7 @@ export default function ReferralAnalyticsPage() {
       {/* ── Demographics + Location Bar ── */}
       {(isChartVisible("referralDemographics") || isChartVisible("locationBySpecialty")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Referral Demographics (Sunburst) */}
-        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Gender distribution across age groups for specialty referrals" tooltipText="Sunburst chart showing gender distribution across age groups for specialty referrals. Inner ring shows male/female split, outer ring breaks down by age." chartData={demoData} chartTitle="Referral Demographics" chartDescription="Gender distribution across age groups for specialty referrals">
+        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Gender distribution across age groups for specialty referrals" tooltipText="Sunburst chart showing gender distribution across age groups for specialty referrals. Inner ring shows male/female split, outer ring breaks down by age." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Gender distribution across age groups for specialty referrals">
           <div style={{ height: 340 }}>
             <ReactECharts style={{ height: "100%", width: "100%" }} option={{
               tooltip: {
@@ -820,6 +820,7 @@ export default function ReferralAnalyticsPage() {
           title="Referral Volume by Specialty & Clinic Availability"
           subtitle="Per-Location Referral Counts: In-Clinic vs. Out-of-Clinic Specialties"
           tooltipText="Stacked bar chart showing referral volume per location. Each bar is stacked by specialty — purple-toned segments are specialties available in-clinic, warm-toned (brown/orange/gold) segments are external-only referrals. This helps identify which locations depend most on external providers and where in-clinic expansion could reduce referral leakage."
+          chartId="locationBySpecialty"
           chartData={charts?.locationBySpecialty}
           chartTitle="Referral Volume by Specialty & Clinic Availability"
           chartDescription="Stacked bar chart showing per-location referral counts broken down by specialty. Purple-toned bars = in-clinic specialties; warm-toned bars = external-only. Helps identify referral leakage and expansion opportunities."

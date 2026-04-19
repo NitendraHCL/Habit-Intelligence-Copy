@@ -20,7 +20,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
   Maximize2,
@@ -87,11 +87,11 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── CVCard ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, comments, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
-  rightHeader?: React.ReactNode; comments?: ChartComment[];
+  rightHeader?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -118,9 +118,9 @@ function CVCard({
                 {subtitle && <p className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {rightHeader}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/repeat-visits" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -539,7 +539,7 @@ export default function RepeatVisitsPage() {
           </div>}
 
         {/* ── Chronic vs Acute ── */}
-        {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic vs. Acute" expandable={false}
+        {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic vs. Acute" expandable={false} chartId="chronicVsAcute"
           tooltipText="Displays the proportion of repeat patients (employees who availed any OHC service at least twice in the selected date range) categorized as chronic (long-term, recurring conditions) versus acute (short-term, one-off conditions). Use the toggle buttons to filter the entire dashboard by condition type."
           subtitle="Shows condition category breakdown among repeat patients. Click to filter entire dashboard by chronic or acute cases."
           chartData={charts?.chronicVsAcute} chartTitle="Chronic vs. Acute" chartDescription="Condition category breakdown among repeat patients"
@@ -600,7 +600,7 @@ export default function RepeatVisitsPage() {
         {/* ── Demographics Row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Age Groups - Radar */}
-          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age Groups" tooltipText="Radar chart showing how repeat patients are distributed across age brackets. Wider coverage toward an age group indicates a higher concentration of repeat visitors in that segment." subtitle="Distribution of repeat patients by age range" chartData={ageData} chartTitle="Age Groups" chartDescription="Distribution of repeat patients by age range">
+          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age Groups" tooltipText="Radar chart showing how repeat patients are distributed across age brackets. Wider coverage toward an age group indicates a higher concentration of repeat visitors in that segment." subtitle="Distribution of repeat patients by age range" chartId="ageGroups" chartData={ageData} chartTitle="Age Groups" chartDescription="Distribution of repeat patients by age range">
             <div style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={ageData} cx="50%" cy="50%" outerRadius="70%">
@@ -619,7 +619,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Gender Split - Donut */}
-          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Donut chart displaying the gender-wise breakdown of repeat patients. Each segment shows the percentage share. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity">
+          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Donut chart displaying the gender-wise breakdown of repeat patients. Each segment shows the percentage share. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartId="genderSplit" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity">
             <div style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -643,7 +643,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Location Distribution - Pie */}
-          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Pie chart showing the geographic distribution of repeat patients across locations. Larger slices indicate locations with higher repeat visit volumes. Click a slice to filter the dashboard by that location." subtitle="Geographic spread of repeat patients" chartData={locationData} chartTitle="Location Distribution" chartDescription="Geographic spread of repeat patients">
+          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Pie chart showing the geographic distribution of repeat patients across locations. Larger slices indicate locations with higher repeat visit volumes. Click a slice to filter the dashboard by that location." subtitle="Geographic spread of repeat patients" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Geographic spread of repeat patients">
             <div style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -670,7 +670,7 @@ export default function RepeatVisitsPage() {
         {/* ── Repeat Visit Frequency + Specialty Treemap ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Repeat Visit Frequency */}
-          {isChartVisible("repeatVisitFrequency") && <CVCard accentColor={"#4f46e5"} title="Repeat Visit Frequency"
+          {isChartVisible("repeatVisitFrequency") && <CVCard accentColor={"#4f46e5"} title="Repeat Visit Frequency" chartId="repeatVisitFrequency"
             tooltipText="Stacked bar chart showing the number of repeat patients grouped by visit count buckets. Bars are split into same-specialty and different-specialty visits to reveal whether patients return for the same condition or seek care across specialties."
             subtitle="Shows how often repeat patients return for care for different or same specialty"
             chartData={charts?.repeatVisitFrequency} chartTitle="Repeat Visit Frequency" chartDescription="How often repeat patients return for care">
@@ -699,7 +699,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Specialty Treemap */}
-          {isChartVisible("specialtyTreemap") && <CVCard accentColor={"#6366f1"} title="Repeat Patients by Specialty"
+          {isChartVisible("specialtyTreemap") && <CVCard accentColor={"#6366f1"} title="Repeat Patients by Specialty" chartId="specialtyTreemap"
             tooltipText="Treemap visualization where each tile represents a medical specialty. Tile area is proportional to the number of repeat patients, and color intensity reflects frequency share. Use the year selector to compare across periods."
             subtitle="Highlight specialties for the most Repeat visits to pinpoint ongoing care needs and highlight resource allocations"
             chartData={charts?.specialtyTreemap?.[treemapYear]} chartTitle="Repeat Patients by Specialty" chartDescription="Specialty treemap showing repeat visit volumes"
@@ -781,7 +781,7 @@ export default function RepeatVisitsPage() {
         {/* ── Condition Transition Flow + Visit Frequency NPS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Condition Transition Flow */}
-          {isChartVisible("conditionTransitionFlow") && <CVCard accentColor={T.teal} title="Condition Transition Flow"
+          {isChartVisible("conditionTransitionFlow") && <CVCard accentColor={T.teal} title="Condition Transition Flow" chartId="conditionTransitionFlow"
             tooltipText="Horizontal bar chart showing patient transitions between condition types across visits. Each bar represents a transition path (e.g., Chronic to Chronic) with patient count and average NPS score. Helps identify whether conditions are persisting or evolving."
             subtitle="Track how repeat patients move across condition categories — chronic to chronic, acute to chronic, and acute to acute."
             chartData={charts?.conditionTransitions} chartTitle="Condition Transition Flow" chartDescription="Patient transitions between condition types across visits">
@@ -814,7 +814,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Visit Frequency & NPS Response */}
-          {isChartVisible("visitFrequencyNps") && <CVCard accentColor={T.amber} title="Visit Frequency & NPS Response Analysis"
+          {isChartVisible("visitFrequencyNps") && <CVCard accentColor={T.amber} title="Visit Frequency & NPS Response Analysis" chartId="visitFrequencyNps"
             tooltipText="Combined bar and line chart. Bars show total users and NPS response counts per visit frequency bucket (left axis). The line overlay tracks average NPS score (right axis, 0–100). Reveals whether more frequent visitors are more or less satisfied."
             subtitle="Shows total repeat visitors by frequency, NPS feedback, and average satisfaction scores."
             chartData={charts?.visitFrequencyNps} chartTitle="Visit Frequency & NPS Response Analysis" chartDescription="Repeat visitors by frequency, NPS feedback, and satisfaction scores">
@@ -842,7 +842,7 @@ export default function RepeatVisitsPage() {
         </div>
 
         {/* ── Recurring Conditions Table ── */}
-        {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance"
+        {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance" chartId="recurringConditions"
           tooltipText="Table listing the most common recurring conditions among repeat patients, split by chronic and acute categories. Each row shows patient count, NPS response count with response rate bar, and average NPS score color-coded by satisfaction level (green >= 70, yellow >= 50, red < 50)."
           subtitle="Analysis of patients with recurring diagnoses in major categories. Shows patient volume and satisfaction scores."
           chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Recurring conditions with patient volume and satisfaction scores"
@@ -907,7 +907,7 @@ export default function RepeatVisitsPage() {
         </CVCard>}
 
         {/* ── Key Repeat User Segments ── */}
-        {isChartVisible("repeatUserSegments") && <CVCard accentColor={"#6366f1"} title="Key Repeat User Segments"
+        {isChartVisible("repeatUserSegments") && <CVCard accentColor={"#6366f1"} title="Key Repeat User Segments" chartId="repeatUserSegments"
           tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows key metrics — patient count, average NPS, visits per year, NPS response rate — along with chronic vs. acute split and a mini donut chart for visual comparison."
           subtitle="Compare engagement patterns, satisfaction levels, and visit frequencies across repeat patient cohorts. Longer-tenured users show higher satisfaction and more consistent visit patterns."
           chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns and satisfaction across repeat patient cohorts"
@@ -994,7 +994,7 @@ export default function RepeatVisitsPage() {
         </CVCard>}
 
         {/* ── Same Cohort Progression ── */}
-        {isChartVisible("cohortProgression") && <CVCard accentColor="#6366f1" title="Same Cohort Progression"
+        {isChartVisible("cohortProgression") && <CVCard accentColor="#6366f1" title="Same Cohort Progression" chartId="cohortProgression"
           tooltipText="Two-panel view tracking the same patient cohort over time. Left panel: grouped bar chart showing how many patients reach different visit thresholds (3+, 4+, 5+, 6+) per year — use checkboxes to compare years. Right panel: Sankey flow diagram showing BMI category transitions across visits (Above Normal, In Range, Below Normal)."
           subtitle="Track how the same cohort of repeat patients progress over time — visit frequency distribution and vital trends."
           chartData={{ cohortFrequency: cohortData.combined, sankeyFlow: charts?.sankeyFlow }} chartTitle="Same Cohort Progression" chartDescription="Cohort progression over time — visit frequency and vital trends"

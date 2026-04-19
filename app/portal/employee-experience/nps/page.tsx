@@ -57,7 +57,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { format } from "date-fns";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { T } from "@/lib/ui/theme";
 import { ResetFilter } from "@/components/ui/reset-filter";
@@ -104,10 +104,10 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── Card ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, comments, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
-  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; comments?: ChartComment[];
+  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -134,8 +134,8 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/employee-experience/nps" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -563,7 +563,7 @@ export default function NPSPage() {
       {/* ── Row 1: NPS Score + Trends ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* NPS Score Card */}
-        {isChartVisible("npsScore") && <CVCard className="lg:col-span-4" expandable={false} tooltipText="Overall NPS score calculated as % Promoters minus % Detractors. Scores above 50 are considered excellent, 30-50 good, and below 30 need attention.">
+        {isChartVisible("npsScore") && <CVCard className="lg:col-span-4" expandable={false} chartId="npsScore" tooltipText="Overall NPS score calculated as % Promoters minus % Detractors. Scores above 50 are considered excellent, 30-50 good, and below 30 need attention.">
           <div className="flex flex-col items-center text-center pt-1">
             <h3 className="text-[14px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>
               Net Promoter Score (NPS)
@@ -642,7 +642,7 @@ export default function NPSPage() {
           title="NPS Trends Over Time"
           subtitle="Tracks changes in patient satisfaction across months."
           tooltipText="Line chart tracking NPS score changes over time. Larger dots highlight significant shifts (5+ points). Green dots indicate improvement, red dots indicate decline. The dashed line shows the average NPS."
-
+          chartId="npsTrends"
           chartData={trendData}
           chartDescription="Tracks changes in patient satisfaction across months."
         >
@@ -731,7 +731,7 @@ export default function NPSPage() {
           title="NPS by Service Category"
           accentColor={"#4f46e5"}
           tooltipText="Radar chart comparing NPS scores across different service categories. Larger area coverage indicates higher satisfaction. Identify which services lead or lag in patient satisfaction."
-
+          chartId="npsServiceCategory"
           chartData={byServiceCategory}
           chartDescription="Radar chart comparing NPS scores across different service categories."
         >
@@ -764,6 +764,7 @@ export default function NPSPage() {
           subtitle="Shows average NPS for consultations across medical specialties."
           accentColor={T.amber}
           tooltipText="Treemap showing NPS scores by medical specialty. Tile size represents response volume, colors represent different specialties. Hover to see exact NPS score and response count."
+          chartId="npsSpecialty"
           chartData={bySpecialty}
           chartDescription="Treemap of average NPS scores by medical specialty — tile size represents response volume, so larger tiles provide more statistically reliable scores. Hover any tile to see exact NPS and response count."
 
@@ -779,6 +780,7 @@ export default function NPSPage() {
           title="NPS by Location"
           accentColor={"#6366f1"}
           tooltipText="Donut chart showing NPS distribution across locations. Each segment represents a location with its response count and NPS score. Hover for details."
+          chartId="npsLocation"
           chartData={byDiagnosisCategory}
           chartDescription="Donut chart showing NPS distribution across locations."
         >
@@ -824,6 +826,7 @@ export default function NPSPage() {
         subtitle="Distribution of NPS responses across locations and feedback channels."
         accentColor={"#6366f1"}
         tooltipText="Scatter plot showing NPS submission volumes across locations, split by feedback channel (Online/WC vs In-Clinic). Bubble size indicates response volume. Summary cards below highlight top segments."
+        chartId="npsSubmissions"
         chartData={demographics}
         chartDescription="Distribution of NPS responses across locations and feedback channels."
       >
@@ -905,7 +908,7 @@ export default function NPSPage() {
         subtitle="How does satisfaction change as employees visit the OHC more often?"
         accentColor={"#4f46e5"}
         tooltipText="Bar chart showing total NPS feedback volume per visit-frequency bucket with a line overlay showing NPS score. Employees are grouped by how many times they visited the OHC — e.g. '3 Visits' means employees who had exactly 3 NPS-rated consultations. Rising NPS with more visits suggests continuity of care drives satisfaction."
-
+        chartId="npsVisitFrequency"
         chartData={byVisitFrequency}
         chartTitle="NPS by Visit Frequency"
         chartDescription="Bar chart showing NPS feedback volume and NPS % by employee visit frequency. Helps assess whether repeat visits improve or worsen satisfaction."
@@ -965,6 +968,7 @@ export default function NPSPage() {
         subtitle="Most frequent themes from open-ended feedback"
         accentColor={T.coral}
         tooltipText="Visual representation of the most frequent words from open-ended patient feedback. Larger words appear more often. Green words indicate positive sentiment, red indicates areas for improvement."
+        chartId="feedbackWordCloud"
         chartData={wordCloud}
         chartDescription="Word cloud built from open-ended patient feedback — word size reflects mention frequency. Green words represent positive themes (e.g. 'helpful', 'professional'), red words flag areas needing attention (e.g. 'wait', 'slow')."
 

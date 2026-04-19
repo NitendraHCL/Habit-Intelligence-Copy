@@ -61,7 +61,7 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { ResetFilter } from "@/components/ui/reset-filter";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
@@ -100,10 +100,10 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── Card ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, comments, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
-  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; rightHeader?: React.ReactNode; comments?: ChartComment[];
+  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; rightHeader?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -130,9 +130,9 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {rightHeader}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/emotional-wellbeing" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -555,7 +555,7 @@ export default function EmotionalWellbeingPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
-        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Demographic distribution of patients" tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
+        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Demographic distribution of patients" tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
             {(["age", "gender"] as const).map((tab) => (
               <button key={tab} onClick={() => setDemoTab(tab)}
@@ -735,7 +735,7 @@ export default function EmotionalWellbeingPage() {
 
         {/* Consult Trends */}
         {isChartVisible("ewbTrends") && <CVCard accentColor={T.teal} title="Consult Trends" subtitle="View of total and unique consults" tooltipText="Line chart tracking total consults and unique patients over time. Toggle between yearly and monthly views. The gap between total and unique lines reveals repeat visit frequency (employees who availed the service at least twice in the selected date range) — a wider gap means more patients are returning for multiple sessions, which may indicate ongoing mental health needs."
-          chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults"
+          chartId="ewbTrends" chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults"
 
           rightHeader={
             <div className="inline-flex items-center gap-1">
@@ -785,7 +785,7 @@ export default function EmotionalWellbeingPage() {
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
-          chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
+          chartId="criticalRisk" chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
 >
           {totalEwbAssessed > 0 && (
             <p className="text-[11.5px] mb-4 mt-1" style={{ color: T.textSecondary }}>
@@ -828,7 +828,7 @@ export default function EmotionalWellbeingPage() {
           <InsightBox text="Any non-zero count in suicidal thoughts, attempted self harm, or previous attempts demands immediate clinical attention. Track these numbers closely and ensure each flagged individual is connected with crisis support resources." />
         </CVCard>}
 
-        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the percentage of employees who completed an emotional wellbeing assessment and reported substance use (alcohol, tobacco, or other substances). The denominator is the total number of emotional wellbeing assessments conducted in the selected date range." chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
+        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the percentage of employees who completed an emotional wellbeing assessment and reported substance use (alcohol, tobacco, or other substances). The denominator is the total number of emotional wellbeing assessments conducted in the selected date range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
           <div className="flex items-center justify-center" style={{ height: 200 }}>
             <ReactECharts style={{ height: "100%", width: "100%" }} option={{
               series: [{
@@ -861,7 +861,7 @@ export default function EmotionalWellbeingPage() {
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sleep Quality */}
-        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Sleep Quality Analysis" tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
+        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Sleep Quality Analysis" tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(sleepQualitySorted.length * 70, 300), height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -880,7 +880,7 @@ export default function EmotionalWellbeingPage() {
         </CVCard>}
 
         {/* Sleep Duration */}
-        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="Sleep Duration Analysis" tooltipText="Donut chart displaying the proportion of patients by sleep duration buckets. Each slice represents a duration range. Larger slices for shorter sleep durations may signal sleep deprivation trends in the population." chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Sleep Duration Analysis">
+        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="Sleep Duration Analysis" tooltipText="Donut chart displaying the proportion of patients by sleep duration buckets. Each slice represents a duration range. Larger slices for shorter sleep durations may signal sleep deprivation trends in the population." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Sleep Duration Analysis">
           <div className="overflow-x-auto">
             <div style={{ minWidth: 300, height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -902,7 +902,7 @@ export default function EmotionalWellbeingPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
-        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Alcohol Habit Analysis" tooltipText="Donut chart showing the distribution of alcohol consumption habits (e.g., Never, Occasional, Regular). Larger slices for frequent use categories may indicate a need for alcohol awareness programs." chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Alcohol Habit Analysis">
+        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Alcohol Habit Analysis" tooltipText="Donut chart showing the distribution of alcohol consumption habits (e.g., Never, Occasional, Regular). Larger slices for frequent use categories may indicate a need for alcohol awareness programs." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Alcohol Habit Analysis">
           <div className="overflow-x-auto">
             <div style={{ minWidth: 300, height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -922,7 +922,7 @@ export default function EmotionalWellbeingPage() {
         </CVCard>}
 
         {/* Smoking Habit */}
-        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Smoking frequency distribution" tooltipText="Line chart showing patient counts across smoking frequency categories. Peaks at higher frequency labels suggest a significant smoking population. Use this to prioritize cessation programs." chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Smoking frequency distribution">
+        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Smoking frequency distribution" tooltipText="Line chart showing patient counts across smoking frequency categories. Peaks at higher frequency labels suggest a significant smoking population. Use this to prioritize cessation programs." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Smoking frequency distribution">
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(smokingHabit.length * 80, 300), height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -951,7 +951,7 @@ export default function EmotionalWellbeingPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Visit Pattern */}
-          <CVCard accentColor={T.amber} title="Visit Pattern" expandable={false} tooltipText="Shows how many patients fall into each visit frequency bucket (e.g., 1 visit, 2-3 visits, 4+ visits). Click a bar to filter the adjacent Impressions chart by that visit bucket." chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
+          <CVCard accentColor={T.amber} title="Visit Pattern" expandable={false} tooltipText="Shows how many patients fall into each visit frequency bucket (e.g., 1 visit, 2-3 visits, 4+ visits). Click a bar to filter the adjacent Impressions chart by that visit bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
             <p className="text-[11px] mb-2" style={{ color: T.textMuted }}>Click a bar to filter Impressions chart</p>
             <div className="overflow-x-auto">
               <div className="flex items-end justify-center gap-3 mt-1" style={{ height: 200, minWidth: Math.max(visitPattern.length * 85, 250) }}>
@@ -985,7 +985,7 @@ export default function EmotionalWellbeingPage() {
           </CVCard>
 
           {/* Impressions Analysis Pie */}
-          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} expandable={false} tooltipText="Pie chart displaying the proportion of impressions (problem categories) across all consults. When a visit bucket is selected, it filters to show only impressions for that visit frequency group." chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category distribution">
+          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} expandable={false} tooltipText="Pie chart displaying the proportion of impressions (problem categories) across all consults. When a visit bucket is selected, it filters to show only impressions for that visit frequency group." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category distribution">
             <div className="overflow-x-auto">
               <div style={{ minWidth: 320, height: 260 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1011,16 +1011,16 @@ export default function EmotionalWellbeingPage() {
       {/* SECTION 5: Scales                         */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
+        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
           <InsightBox text="Focus on the Moderate and Severe segments. If combined they exceed 20%, consider scaling up access to anxiety management workshops, cognitive behavioral therapy resources, and stress reduction programs." />
         </CVCard>}
-        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
+        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
           <StackedPercentBar data={selfEsteemScale} colors={["#4f46e5", "#0d9488"]} />
           <InsightBox text="Low self-esteem often underlies both anxiety and depression. A dominant Low segment suggests employees may benefit from mentorship programs, positive feedback culture initiatives, and confidence-building workshops." />
         </CVCard>}
       </div>
-      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
+      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
         <InsightBox text="Pay close attention to the Moderately Severe and Severe segments. Even small percentages here represent individuals who may need immediate professional support. Ensure follow-up protocols are in place for these cases." />
       </CVCard>}
@@ -1028,7 +1028,7 @@ export default function EmotionalWellbeingPage() {
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 6: Impressions Detail (clickable) */}
       {/* ══════════════════════════════════════════ */}
-      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Click a category to see subcategory breakdown" tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
+      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Click a category to see subcategory breakdown" tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
         {/* Stacked bar at top */}
         <div className="mb-4">
           <div className="flex h-8 rounded-lg overflow-hidden">

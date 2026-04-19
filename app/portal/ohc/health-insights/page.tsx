@@ -46,7 +46,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
@@ -159,11 +159,11 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 // ─── Card ───
 function CVCard({
   children, className = "", accentColor, title, subtitle, tooltipText, expandable = true,
-  headerRight, comments, chartData, chartTitle, chartDescription,
+  headerRight, chartId, chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
-  headerRight?: React.ReactNode; comments?: ChartComment[];
+  headerRight?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -191,8 +191,8 @@ function CVCard({
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
                 {headerRight}
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/health-insights" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -696,6 +696,7 @@ export default function HealthInsightsPage() {
             subtitle="Total patients by Condition Type - click to filter the dashboard"
             tooltipText="Shows the split between chronic (long-term) and acute (short-term) conditions. Use toggle buttons to filter the dashboard by condition type."
             expandable={false}
+            chartId="chronicVsAcute"
             chartData={{ chronicCount, acuteCount, totalPatients, chronicPct, acutePct }}
             chartDescription="Split between chronic (long-term) and acute (short-term) conditions"
 
@@ -765,6 +766,7 @@ export default function HealthInsightsPage() {
             subtitle="Most prevalent clinical conditions observed across consultations. Click any category to view its conditions breakdown on right"
             tooltipText="Treemap showing proportional distribution of disease categories by consultation volume. Click any category to view its condition breakdown on the right panel."
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
+            chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
             chartDescription="Proportional distribution of disease categories by consultation volume"
           >
@@ -858,6 +860,7 @@ export default function HealthInsightsPage() {
             title="Condition Share Distribution"
             subtitle="Breakdown of specific conditions within the selected category. Click to see the trends below"
             tooltipText="Breaks down specific conditions within the selected ICD category. Tile sizes represent relative consultation volumes with power-balanced percentages."
+            chartId="conditionShareDistribution"
             chartData={conditionBreakdown}
             chartDescription="Breakdown of specific conditions within the selected ICD category"
           >
@@ -961,6 +964,7 @@ export default function HealthInsightsPage() {
         title="Condition & Demographic Insights"
         subtitle="Explore how each condition within your selected ICD Category is distributed across demographic segments."
         tooltipText="Heatmap matrix showing condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination."
+        chartId="demographicAnalysis"
         chartData={demoMatrix}
         chartDescription="Condition frequency across demographic segments (heatmap)"
         headerRight={
@@ -1066,7 +1070,7 @@ export default function HealthInsightsPage() {
         title="Year on Year Trends"
         subtitle="Tracks how prevalence of key conditions changes over time."
         tooltipText="Line chart tracking how the selected condition's consultation volume changes over time. Toggle between yearly and monthly views."
-
+        chartId="trendsOverTime"
         chartData={trendData}
         chartDescription="Condition consultation volume trends over time"
         headerRight={
@@ -1181,7 +1185,7 @@ export default function HealthInsightsPage() {
           title="Severe Diseases Combination and Gender"
           subtitle="Frequently co-occurring chronic conditions that effect significant portion of population. Useful for bundled care planning & referrals"
           tooltipText="Displays the most common disease co-occurrences among patients. Each bar shows how frequently two conditions appear together."
-
+          chartId="coOccurrence"
           chartData={combos}
           chartDescription="Disease co-occurrence frequency with gender breakdown"
           headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
@@ -1262,6 +1266,7 @@ export default function HealthInsightsPage() {
           title="Vitals Trend and Distribution"
           tooltipText="% of patients per vital sign falling below, within, or above normal ranges"
           subtitle="Updates for selected ICD diagnosis/cohort."
+          chartId="vitalsTrend"
           chartData={vitalsData}
           chartDescription="Vital sign distribution showing below/within/above normal ranges over time"
 
@@ -1366,6 +1371,7 @@ export default function HealthInsightsPage() {
             title="Seasonal Condition Patterns"
             subtitle="Monthly diagnosis trends for key seasonal conditions. Click any month to filter demographics and related panels."
             tooltipText="12-month calendar grid showing the top seasonal conditions per month with season-colored backgrounds. Helps identify cyclical disease patterns."
+            chartId="seasonalPatterns"
             chartData={monthData}
             chartDescription="Monthly diagnosis trends for key seasonal conditions"
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
@@ -1430,6 +1436,7 @@ export default function HealthInsightsPage() {
         title="Symptom vs Diagnosis Mapping"
         subtitle="Distribution of Diagnosis for the most common presented symptoms"
         tooltipText="Maps the most frequently reported symptoms and their association with diagnosed conditions."
+        chartId="symptomMapping"
         chartData={symptomData}
         chartDescription="Distribution of diagnoses for the most common presented symptoms"
         headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}

@@ -15,7 +15,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChartComments, type ChartComment } from "@/components/ui/chart-comments";
+import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
   Maximize2,
@@ -89,11 +89,11 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 
 // ─── Card ───
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, comments,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId,
   chartData, chartTitle, chartDescription,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
-  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; comments?: ChartComment[];
+  title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -120,8 +120,8 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} kamComments={comments} />}
-                {comments && comments.length > 0 && <ChartComments comments={comments} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                {chartId && <ChartComments chartId={chartId} pageSlug="/portal/employee-experience/lsmp" />}
                 {expandable && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
                     {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -555,6 +555,7 @@ export default function LSMPPage() {
           title="Care Plan Distribution"
           subtitle="Shows total number of enrollments across different care plan packages."
           tooltipText="Horizontal bar chart showing enrollment counts per care plan type. Longer bars indicate higher enrollment."
+          chartId="carePlanDistribution"
           chartData={data.carePlanDistribution}
           chartDescription="Enrollment counts across the four LSMP care plan types — Prime Health, Supreme Health, Calorie Fit, and Pro Health — showing which plans have the highest and lowest participation."
         >
@@ -582,6 +583,7 @@ export default function LSMPPage() {
           title="Age Group Distribution"
           subtitle="Displays patient distribution by age brackets."
           tooltipText="Donut chart showing enrolled patients broken down by age group."
+          chartId="ageGroupDistribution"
           chartData={data.ageGroupDistribution}
           chartDescription="Donut chart showing how enrolled LSMP patients are distributed across age brackets — reveals which age cohorts drive the most care plan participation."
         >
@@ -605,6 +607,7 @@ export default function LSMPPage() {
           title="Gender Distribution"
           subtitle="Shows male, female, and unspecified gender breakdown."
           tooltipText="Donut chart displaying gender-wise breakdown of enrolled patients."
+          chartId="genderDistribution"
           chartData={data.genderDistribution}
           chartDescription="Gender breakdown of enrolled LSMP patients — shows the proportion of male, female, and other gender identities participating in lifestyle management programs."
         >
@@ -630,7 +633,7 @@ export default function LSMPPage() {
           title="Patient Improvement Status"
           subtitle="Displays outcome categories for patients in care plans."
           tooltipText="Horizontal bar chart showing patient counts by improvement status — Improvement, Eligible for Exit, Intermediate, Completed, and No Improvement. Sorted by count to highlight the most common outcomes. Use this to assess program effectiveness and identify cohorts needing additional support."
-
+          chartId="improvementStatus"
           chartData={data.improvementStatus}
           chartDescription="Patient outcome distribution across care plans — shows how many enrolled employees fall into Improvement, Eligible for Exit, Intermediate, Completed, and No Improvement categories, enabling program effectiveness assessment."
         >
@@ -657,6 +660,7 @@ export default function LSMPPage() {
           title="Compliance Status & Location Distribution"
           subtitle="Shows compliance rates alongside geographical distribution of patients."
           tooltipText="Left: donut chart with compliance status breakdown. Right: horizontal bar chart ranking locations by patient count."
+          chartId="complianceLocation"
           chartData={{ complianceStatus: data.complianceStatus, locationDistribution: data.locationDistribution }}
           chartDescription="Two-panel view: compliance status donut (proportion of Compliant, Partially Compliant, Non-Compliant patients) alongside a location bar chart showing which sites have the highest LSMP patient volumes."
         >
@@ -699,6 +703,7 @@ export default function LSMPPage() {
           title="Care Plan Trends"
           subtitle="Shows monthly enrollment trends across different care plan types."
           tooltipText="Multi-line chart tracking monthly enrollment trends for each care plan type (Prime Health, Supreme Health, Calorie Fit, Pro Health). Dots mark data points. Use this to identify seasonal patterns, growth trajectories, and plan popularity over time."
+          chartId="carePlanTrends"
           chartData={data.carePlanTrends}
           chartDescription="Monthly enrollment trends for each LSMP care plan type over time — reveals which plans are growing, seasonal enrollment patterns, and which plan type needs intervention to sustain participation."
 
@@ -728,6 +733,7 @@ export default function LSMPPage() {
           title="Improvement vs Duration"
           subtitle="Compares improvement outcomes against time spent in care plan."
           tooltipText="Grouped bar chart showing patient outcomes (Improvement, Partial, No Change, Inconclusive) across care plan duration brackets (<3M, 3-6M, 6-12M, >12M). Reveals whether longer engagement leads to better health outcomes."
+          chartId="improvementVsDuration"
           chartData={data.improvementVsDuration}
           chartDescription="Grouped bar chart comparing health improvement outcomes across care plan duration brackets (<3 months, 3–6 months, 6–12 months, >12 months) — answers whether staying enrolled longer produces meaningfully better outcomes."
         >
@@ -757,6 +763,7 @@ export default function LSMPPage() {
         title="Compliance Trigger Pattern Analysis"
         subtitle="Shows compliance rates by age group, gender, and facility."
         tooltipText="Color-coded table showing compliance percentages across demographic segments and facilities. Green (80%+) = high, Blue (70-79%) = medium, Purple (<70%) = low."
+        chartId="complianceTrigger"
         chartData={data.complianceTriggerPattern}
         chartDescription="Heat-map table showing care plan compliance rates across age group, gender, and facility dimensions — green cells (80%+) indicate high compliance, while purple cells (<70%) flag specific demographic-facility combinations that need targeted intervention."
 

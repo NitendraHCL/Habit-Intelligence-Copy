@@ -242,7 +242,7 @@ export default function ActionPlanPage() {
   usePageAccess("/portal/action-plan");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {

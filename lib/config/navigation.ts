@@ -96,12 +96,14 @@ export const navigation: NavItem[] = [
     href: "/portal/builder",
     icon: PenTool,
     walkthroughId: "nav-builder",
+    requiredRole: "SUPER_ADMIN",
   },
   {
     label: "Data Sources",
     href: "/portal/admin/data-sources",
     icon: Database,
     walkthroughId: "nav-data-sources",
+    requiredRole: "SUPER_ADMIN",
   },
   {
     label: "CUG Management",

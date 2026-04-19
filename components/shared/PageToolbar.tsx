@@ -42,7 +42,7 @@ export default function PageToolbar({
 }: PageToolbarProps) {
   const { user } = useAuth();
   const isSuperAdmin =
-    user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+    user?.role === "SUPER_ADMIN";
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showToast, setShowToast] = useState(false);
 

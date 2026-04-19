@@ -80,7 +80,7 @@ export default function HomePage() {
   const { data, isLoading, mutate } = useDashboardData<OverviewData>("overview");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {

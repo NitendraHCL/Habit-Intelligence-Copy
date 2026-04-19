@@ -242,7 +242,7 @@ export default function EngagementPage() {
   usePageAccess("/portal/engagement");
   const { user, activeClientId } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [cohortTab, setCohortTab] = useState<"department" | "age" | "location">("department");
   const [trendMetric, setTrendMetric] = useState<"activeUsers" | "stepsAvg" | "challengeUsers" | "webinarUsers">("activeUsers");
   const [pageFilters, setPageFilters] = useState({

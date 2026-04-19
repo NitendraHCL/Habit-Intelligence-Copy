@@ -35,7 +35,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 export default function DataSourcesAdminPage() {
   const { user } = useAuth();
   const isAdmin =
-    user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+    user?.role === "SUPER_ADMIN";
 
   const { data, isLoading, mutate } = useSWR<{ dataSources: DataSourceRow[] }>(
     "/api/admin/data-sources",

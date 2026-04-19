@@ -68,7 +68,7 @@ function DynamicPageInner({
   const { user } = useAuth();
   const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
   const isPreview = previewConfig !== null;
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   // Build chart list for ConfigurePanel
   const chartDefs = useMemo(() => {

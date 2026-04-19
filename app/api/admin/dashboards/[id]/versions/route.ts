@@ -42,7 +42,7 @@ export async function POST(
     const session = await requireAuth();
     const { id } = await params;
 
-    if (!["SUPER_ADMIN", "INTERNAL_OPS"].includes(session.user.role)) {
+    if (!["SUPER_ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

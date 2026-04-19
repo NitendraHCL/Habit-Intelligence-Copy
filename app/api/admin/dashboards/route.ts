@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (slug) where.slug = slug;
 
     // Non-superadmin users can only see published dashboards for their client
-    if (!["SUPER_ADMIN", "INTERNAL_OPS"].includes(session.user.role)) {
+    if (!["SUPER_ADMIN"].includes(session.user.role)) {
       where.isDraft = false;
       where.clientId = session.user.clientId;
     }
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
 
-    if (!["SUPER_ADMIN", "INTERNAL_OPS"].includes(session.user.role)) {
+    if (!["SUPER_ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

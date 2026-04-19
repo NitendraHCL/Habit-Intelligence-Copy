@@ -10,7 +10,7 @@ export async function PUT(
 ) {
   try {
     const session = await requireAuth();
-    if (!["SUPER_ADMIN", "INTERNAL_OPS"].includes(session.user.role)) {
+    if (!["SUPER_ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { id } = await params;
@@ -44,7 +44,7 @@ export async function DELETE(
 ) {
   try {
     const session = await requireAuth();
-    if (!["SUPER_ADMIN", "INTERNAL_OPS"].includes(session.user.role)) {
+    if (!["SUPER_ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { id } = await params;

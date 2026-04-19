@@ -21,14 +21,8 @@ export async function GET() {
           cugId: true,
           cugCode: true,
           cugName: true,
-          name: true,
-          logo: true,
-          hasOhc: true,
-          hasOhcAdvanced: true,
-          hasAhc: true,
-          hasSmartReports: true,
-          hasWallet: true,
-          hasHabitApp: true,
+          enabledPages: true,
+          hasCustomDashboards: true,
         },
       });
     }

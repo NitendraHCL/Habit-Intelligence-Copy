@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import {
   Tooltip,
@@ -343,6 +344,7 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 
 // ─── MAIN PAGE ───
 export default function HealthInsightsPage() {
+  usePageAccess("/portal/ohc/health-insights");
   const { activeClientId } = useAuth();
   const [selectedYear, setSelectedYear] = useState(2025);
   const [selectedCategory, setSelectedCategory] = useState("");

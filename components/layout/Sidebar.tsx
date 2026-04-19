@@ -319,7 +319,7 @@ export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [flyout, setFlyout] = useState<{ item: NavItem; top: number } | null>(null);
   const { shouldExpandSidebar } = useWalkthrough();
-  const { user, assignedClients, activeClientId, setActiveClientId } = useAuth();
+  const { user, assignedClients, activeClientId, setActiveClientId, isPageEnabledForClient, isCustomDashboardsEnabled } = useAuth();
   const { isPageVisible } = useConfig();
   const activeClient = assignedClients.find((c) => c.id === activeClientId);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
@@ -333,8 +333,10 @@ export function Sidebar() {
 
   // Merge published dashboards into matching nav groups
   const dynamicNavigation = useMemo(() => {
-    const published = (customDashData?.dashboards ?? [])
-      .filter((d: Record<string, unknown>) => !d.isDraft);
+    const customEnabled = isCustomDashboardsEnabled();
+    const published = customEnabled
+      ? (customDashData?.dashboards ?? []).filter((d: Record<string, unknown>) => !d.isDraft)
+      : [];
 
     // Group dashboards by navGroup label (case-insensitive match)
     const byGroup = new Map<string, { label: string; href: string; icon: typeof BarChart3 }[]>();
@@ -488,13 +490,19 @@ export function Sidebar() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <nav className={cn("flex flex-col", effectiveCollapsed ? "px-2 py-3" : "")}>
           {dynamicNavigation.filter((item) => {
-            // Filter parent page visibility
+            // Filter by required role
+            if (item.requiredRole && user?.role !== item.requiredRole) return false;
+            // Filter by CUG-level page enablement
+            if (!isPageEnabledForClient(item.href)) return false;
+            // Filter parent page visibility (per-page configure)
             if (!isPageVisible(item.href)) return false;
             return true;
           }).map((item, index) => {
-            // Filter children visibility
+            // Filter children visibility — both CUG-level + per-page config
             const filteredItem = item.children
-              ? { ...item, children: item.children.filter((child) => isPageVisible(child.href)) }
+              ? { ...item, children: item.children.filter((child) =>
+                  isPageEnabledForClient(child.href) && isPageVisible(child.href)
+                ) }
               : item;
             // Hide parent if all children are hidden
             if (filteredItem.children && filteredItem.children.length === 0) return null;

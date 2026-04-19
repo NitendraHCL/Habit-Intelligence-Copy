@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { T } from "@/lib/ui/theme";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
@@ -191,6 +192,7 @@ function WorkflowStep({ step, title, description, color }: {
 
 // ─── Main Page ───
 export default function AlertsSurveysPage() {
+  usePageAccess("/portal/employee-experience/alerts-surveys");
   // TODO: Alerts and rules will be derived from real dashboard data via API
   const exampleAlertsData: Array<{ severity: string; title: string; description: string; dataRef: string; email: boolean }> = [];
 

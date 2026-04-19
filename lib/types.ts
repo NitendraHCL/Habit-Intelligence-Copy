@@ -26,17 +26,12 @@ export interface AuthSession {
 
 export interface Client {
   id: string;
-  name: string;
   cugCode: string;
-  logo: string | null;
-  industry: string | null;
-  workforceSize: number | null;
-  hasOhc: boolean;
-  hasOhcAdvanced: boolean;
-  hasAhc: boolean;
-  hasSmartReports: boolean;
-  hasWallet: boolean;
-  hasHabitApp: boolean;
+  cugName: string;
+  /** JSON array of enabled page slugs. null = all pages visible. */
+  enabledPages: string[] | null;
+  /** When true, custom dashboards for this CUG are visible by default. */
+  hasCustomDashboards: boolean;
 }
 
 // ── Metric System Types ──

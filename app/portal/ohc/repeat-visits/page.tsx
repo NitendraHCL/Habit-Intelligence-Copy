@@ -10,6 +10,7 @@ import {
   aggregateRepeatVisits,
 } from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -242,6 +243,7 @@ function ActiveFilterChips({
 // MAIN PAGE
 // ═══════════════════════════════════════════════
 export default function RepeatVisitsPage() {
+  usePageAccess("/portal/ohc/repeat-visits");
   const { activeClientId } = useAuth();
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);

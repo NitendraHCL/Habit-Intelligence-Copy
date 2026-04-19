@@ -4,8 +4,10 @@ import { PageWrapper } from "@/components/layout/PageWrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ClipboardCheck } from "lucide-react";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 
 export default function AHCActionPlanPage() {
+  usePageAccess("/portal/ahc/action-plan");
   return (
     <PageWrapper
       title="AHC Action Plan"

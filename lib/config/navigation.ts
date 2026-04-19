@@ -16,6 +16,7 @@ import {
   ListChecks,
   PenTool,
   Database,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,8 @@ export interface NavItem {
   badge?: string;
   external?: boolean;
   walkthroughId?: string;
+  /** If set, only users with this role see the item. */
+  requiredRole?: string;
   children?: NavItem[];
 }
 
@@ -99,6 +102,13 @@ export const navigation: NavItem[] = [
     href: "/portal/admin/data-sources",
     icon: Database,
     walkthroughId: "nav-data-sources",
+  },
+  {
+    label: "CUG Management",
+    href: "/portal/admin/cug-management",
+    icon: Building2,
+    walkthroughId: "nav-cug-management",
+    requiredRole: "SUPER_ADMIN",
   },
   {
     label: "Custom Dashboards",

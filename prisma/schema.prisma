@@ -65,6 +65,12 @@ model Client {
   hasLsmp         Boolean  @default(false) @map("has_lsmp")
   hasNps          Boolean  @default(false) @map("has_nps")
   hasHabitApp     Boolean  @default(false) @map("has_habit_app")
+  /// JSON array of page slugs this CUG can access, e.g.
+  /// ["/portal/home", "/portal/ohc/utilization", ...].
+  /// null = all pages visible (backwards compat for existing CUGs).
+  enabledPages      Json?    @map("enabled_pages")
+  /// When true, custom dashboards created for this CUG are visible by default.
+  hasCustomDashboards Boolean @default(false) @map("has_custom_dashboards")
   aiProvider      String?  @map("ai_provider")
   aiContextNotes  String?  @map("ai_context_notes")
   metricOverrides   Json?    @map("metric_overrides")

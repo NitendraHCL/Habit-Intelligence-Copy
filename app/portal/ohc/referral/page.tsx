@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -218,6 +219,7 @@ function ActiveFilterChips({
 
 // ─── Main Page ───
 export default function ReferralAnalyticsPage() {
+  usePageAccess("/portal/ohc/referral");
   const { activeClientId } = useAuth();
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),

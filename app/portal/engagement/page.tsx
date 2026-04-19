@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import useSWR from "swr";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -238,6 +239,7 @@ function KPIStatCard({ icon, label, value, subValue, trend, color }: {
 
 // ─── MAIN PAGE ───
 export default function EngagementPage() {
+  usePageAccess("/portal/engagement");
   const { user, activeClientId } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
   const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";

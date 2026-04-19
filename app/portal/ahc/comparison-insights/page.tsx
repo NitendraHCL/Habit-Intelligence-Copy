@@ -2,11 +2,13 @@
 
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 
 const EXTERNAL_URL =
   "https://facility.habithealth.com/patient-registration/patient_tab/list?tab_0=patient&p__no=0";
 
 export default function AHCComparisonInsightsPage() {
+  usePageAccess("/portal/ahc/comparison-insights");
   useEffect(() => {
     window.open(EXTERNAL_URL, "_blank");
   }, []);

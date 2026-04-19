@@ -30,6 +30,7 @@ import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useConfig } from "@/lib/contexts/config-context";
 import { RotateCcw } from "lucide-react";
 import type { PageConfig } from "@/lib/types/dashboard-config";
@@ -238,6 +239,7 @@ const inProgressCount = actionItems.filter((i) => i.status === "in_progress").le
 
 // ─── Main Page ───
 export default function ActionPlanPage() {
+  usePageAccess("/portal/action-plan");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
   const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "INTERNAL_OPS";

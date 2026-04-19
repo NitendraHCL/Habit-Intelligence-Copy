@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // dynamic import removed — no longer using echarts-for-react
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Button } from "@/components/ui/button";
 import {
@@ -272,6 +273,7 @@ interface LsmpData {
 
 // ─── Main Page ───
 export default function LSMPPage() {
+  usePageAccess("/portal/employee-experience/lsmp");
   const { activeClientId } = useAuth();
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),

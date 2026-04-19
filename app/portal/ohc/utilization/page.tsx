@@ -25,6 +25,7 @@ import { ChartComments, type ChartComment } from "@/components/ui/chart-comments
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import {
   Info,
   Maximize2,
@@ -259,6 +260,7 @@ function ActiveFilterChips({
 
 // ─── Main Page ───
 export default function OHCUtilizationPage() {
+  usePageAccess("/portal/ohc/utilization");
   const { activeClientId } = useAuth();
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;

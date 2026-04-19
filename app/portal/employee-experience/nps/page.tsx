@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Button } from "@/components/ui/button";
 import {
@@ -245,6 +246,7 @@ const QUARTER_MAP: Record<string, string> = {
 
 // ─── Main Page ───
 export default function NPSPage() {
+  usePageAccess("/portal/employee-experience/nps");
   const { activeClientId } = useAuth();
   const [trendView, setTrendView] = useState<"yearly" | "quarterly" | "monthly">("monthly");
 

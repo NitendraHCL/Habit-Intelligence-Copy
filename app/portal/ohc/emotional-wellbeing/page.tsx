@@ -10,6 +10,7 @@ import {
   aggregateEmotionalWellbeing,
 } from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -264,6 +265,7 @@ function StackedPercentBar({ data, colors }: { data: Array<{ label: string; coun
 // MAIN PAGE
 // ═══════════════════════════════════════════
 export default function EmotionalWellbeingPage() {
+  usePageAccess("/portal/ohc/emotional-wellbeing");
   const { activeClientId } = useAuth();
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1), to: new Date(2026, 2, 31),

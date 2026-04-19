@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useConfig } from "@/lib/contexts/config-context";
 import { RotateCcw } from "lucide-react";
 import type { PageConfig } from "@/lib/types/dashboard-config";
@@ -147,6 +148,7 @@ const fallbackData = {
 
 // ─── Main Page ───
 export default function CorrelationsPage() {
+  usePageAccess("/portal/correlations");
   const { data, isLoading, mutate } = useDashboardData("correlations");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();

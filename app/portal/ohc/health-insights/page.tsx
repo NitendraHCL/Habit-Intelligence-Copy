@@ -21,7 +21,6 @@ import {
   ChevronDown,
   CalendarDays,
   Bell,
-  Download,
   RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -33,6 +32,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import PageDownload from "@/components/shared/PageDownload";
 import {
   AreaChart,
   Area,
@@ -569,9 +569,7 @@ export default function HealthInsightsPage() {
         <FilterMultiSelect label="Condition" options={categories} selected={pageFilters.conditions} onChange={(v) => setPageFilters((p) => ({ ...p, conditions: v }))} />
 
         <div className="flex-1" />
-        <button className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors" style={{ borderColor: T.border, color: T.textMuted }}>
-          <Download size={15} />
-        </button>
+        <PageDownload pageTitle="Health Insights" />
         <button className="relative h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors" style={{ borderColor: T.border, color: T.textMuted }}>
           <Bell size={15} />
           <span className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#DC2626] text-[8px] font-bold text-white">3</span>

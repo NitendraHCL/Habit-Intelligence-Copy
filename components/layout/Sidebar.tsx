@@ -421,11 +421,11 @@ export function Sidebar() {
             className={cn("shrink-0", effectiveCollapsed ? "block" : "hidden")}
           />
           <Image
-            src="/logo-habit-full.png"
+            src="/logo-habit-expanded.svg"
             alt="Habit Intelligence"
-            width={180}
-            height={36}
-            className={cn("shrink-0", effectiveCollapsed ? "hidden" : "block")}
+            width={232}
+            height={40}
+            className={cn("w-full h-auto", effectiveCollapsed ? "hidden" : "block")}
           />
         </Link>
 

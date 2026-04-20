@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/contexts/auth-context";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { RotateCcw } from "lucide-react";
+import PageDownload from "@/components/shared/PageDownload";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -312,7 +313,8 @@ function DynamicPageInner({
           {/* Spacer + Configure */}
           <div className="flex-1" />
 
-          {/* Refresh button */}
+          {/* Download + Refresh */}
+          <PageDownload pageTitle={config.title || "Dashboard"} />
           <div className="relative">
             <Tooltip>
               <TooltipTrigger asChild>

@@ -414,22 +414,19 @@ export function Sidebar() {
       >
         <Link href="/portal/home" className="flex items-center gap-3">
           <Image
-            src="/logos/habit-intelligence-logo.png"
+            src="/logo-habit.svg"
             alt="Habit Intelligence"
-            width={36}
-            height={36}
-            className="shrink-0"
+            width={32}
+            height={32}
+            className={cn("shrink-0", effectiveCollapsed ? "block" : "hidden")}
           />
-          {!effectiveCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-[15px] font-bold tracking-[-0.02em] text-[#111827]">
-                Habit Intelligence
-              </span>
-              <span className="text-[11px] font-medium text-[#9CA3AF] tracking-[0.02em] mt-[1px]">
-                Analytics Platform
-              </span>
-            </div>
-          )}
+          <Image
+            src="/logo-habit-full.png"
+            alt="Habit Intelligence"
+            width={180}
+            height={36}
+            className={cn("shrink-0", effectiveCollapsed ? "hidden" : "block")}
+          />
         </Link>
 
         {/* Client selector */}

@@ -5,13 +5,6 @@ import { T } from "@/lib/ui/theme";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import useSWR from "swr";
-import {
-  type RawAppointment,
-  filterRows,
-  aggregateUtilization,
-  aggregateRepeatTrends,
-  extractFilterOptions,
-} from "@/lib/aggregation/ohc-utilization";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -331,66 +324,39 @@ export default function OHCUtilizationPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
 
-  // ── Fetch raw appointment rows once per client ──
-  const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading, mutate: refreshData } = useSWR<{ rows: RawAppointment[] }>(
-    rawUrl,
-    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: false }
-  );
-  const allRows = rawData?.rows || [];
-  const isValidating = false; // no background revalidation needed
+  // ── Build API URL with all applied filters ──
+  const utilizationUrl = useMemo(() => {
+    if (!activeClientId) return null;
+    const p = new URLSearchParams();
+    p.set("clientId", activeClientId);
+    p.set("dateFrom", format(appliedDateRange.from, "yyyy-MM-dd"));
+    p.set("dateTo", format(appliedDateRange.to, "yyyy-MM-dd"));
+    if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
+    if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
+    if (appliedFilters.ageGroups.length) p.set("ageGroups", appliedFilters.ageGroups.join(","));
+    if (appliedFilters.specialties.length) p.set("specialties", appliedFilters.specialties.join(","));
+    if (appliedFilters.relations.length) p.set("relations", appliedFilters.relations.join(","));
+    return `/api/ohc/utilization?${p.toString()}`;
+  }, [activeClientId, appliedDateRange, appliedFilters]);
 
-  // ── Derive filter options from raw data (instant, no API call) ──
-  const filterOptions = useMemo(() => extractFilterOptions(allRows), [allRows]);
-
-  // ── Client-side aggregation using applied filters ──
-  const appliedOHCFilters = useMemo(() => ({
-    dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
-    dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
-    locations: appliedFilters.locations,
-    genders: appliedFilters.genders,
-    ageGroups: appliedFilters.ageGroups,
-    specialties: appliedFilters.specialties,
-    relations: appliedFilters.relations,
-  }), [appliedDateRange, appliedFilters]);
-
-  const filteredRows = useMemo(() => filterRows(allRows, appliedOHCFilters), [allRows, appliedOHCFilters]);
-
-  const aggregated = useMemo(
-    () => allRows.length ? aggregateUtilization(filteredRows, allRows, appliedOHCFilters) : null,
-    [filteredRows, allRows, appliedOHCFilters]
-  );
-
-  // Stage trends from separate lightweight API (renders instantly, doesn't wait for 719K rows)
-  // Visit trends fetched from /api/ohc/utilization (agg_kpi table) which
-  // returns charts.visitTrends as [{period, completed, cancelled, noShow, uniquePatients}].
-  const utilizationUrl = activeClientId
-    ? `/api/ohc/utilization?clientId=${activeClientId}&dateFrom=${format(appliedDateRange.from, "yyyy-MM-dd")}&dateTo=${format(appliedDateRange.to, "yyyy-MM-dd")}`
-    : null;
-  const { data: utilizationData } = useSWR<{ charts: { visitTrends: { period: string; completed: number; cancelled: number; noShow: number; uniquePatients: number }[] } }>(
+  const { data: utilizationData, isLoading, isValidating, mutate: refreshData } = useSWR<any>(
     utilizationUrl,
     (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true, shouldRetryOnError: false }
   );
-  const allStageTrends = utilizationData?.charts?.visitTrends ?? [];
-  const visitTrends = useMemo(() => {
-    const dateFrom = format(appliedDateRange.from, "yyyy-MM");
-    const dateTo = format(appliedDateRange.to, "yyyy-MM");
-    return allStageTrends.filter((t) => t.period >= dateFrom && t.period <= dateTo);
-  }, [allStageTrends, appliedDateRange]);
+
+  const filterOptions = utilizationData?.filterOptions ?? { locations: [], specialties: [], genders: [], ageGroups: [], relations: [] };
+  const kpis = utilizationData?.kpis;
+  const charts = utilizationData?.charts;
+
+  const visitTrends = charts?.visitTrends ?? [];
   const avgConsults = visitTrends.length > 0
-    ? Math.round(visitTrends.reduce((s, v) => s + v.completed, 0) / visitTrends.length)
+    ? Math.round(visitTrends.reduce((s: number, v: any) => s + v.completed, 0) / visitTrends.length)
     : 0;
 
-  const repeatAgg = useMemo(
-    () => aggregateRepeatTrends(filteredRows, repeatView),
-    [filteredRows, repeatView]
-  );
-  const repeatTrendData = repeatAgg.data;
+  const repeatTrendData = charts?.repeatTrends ?? [];
+  const serviceCategories = charts?.serviceCategories ?? [];
 
-  const kpis = aggregated?.kpis;
-  const charts = aggregated?.charts;
   const bubbleSpecs: string[] = charts?.bubbleSpecialties || [];
   const activeBubbleSpec = selectedBubbleSpec || bubbleSpecs[0] || "";
 
@@ -473,7 +439,7 @@ export default function OHCUtilizationPage() {
     });
   }, [sunburstChartSize, charts?.demographicSunburst]);
 
-  if (!aggregated && isLoading) {
+  if (!utilizationData && isLoading) {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="space-y-2"><div className="h-8 w-48 bg-gray-200 rounded animate-pulse" /><div className="h-4 w-96 bg-gray-100 rounded animate-pulse" /></div>
@@ -590,7 +556,12 @@ export default function OHCUtilizationPage() {
 
   // ─── Bubble ───
   const bubbleData = charts?.bubbleBySpecialty?.[activeBubbleSpec] || [];
-  const locationOrder = filterOptions.locations.slice(0, 8);
+  // Derive top locations from the bubble data for the active specialty (not global list)
+  const locationOrder = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const b of bubbleData) totals[b.location] = (totals[b.location] || 0) + b.total;
+    return Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([l]) => l);
+  }, [bubbleData]);
   const ageGroupOrder = ["<20", "20-35", "36-40", "41-60", "61+"];
   const bubbleValues = bubbleData.map((b: any) => b.total);
   const bubbleMax = Math.max(...bubbleValues, 1);
@@ -654,8 +625,8 @@ export default function OHCUtilizationPage() {
         const normalized = (val[2] - bubbleMin) / (bubbleMax - bubbleMin);
         return 14 + normalized * 42;
       },
-      data: bubbleData.map((b: any) => [
-        Math.max(locationOrder.indexOf(b.location), 0),
+      data: bubbleData.filter((b: any) => locationOrder.includes(b.location)).map((b: any) => [
+        locationOrder.indexOf(b.location),
         Math.max(ageGroupOrder.indexOf(b.ageGroup), 0),
         b.total, b.malePercent, b.location, b.ageGroup, b.female, b.male,
       ]),
@@ -670,7 +641,7 @@ export default function OHCUtilizationPage() {
 
   const stackSpecialties: string[] = charts?.topSpecialties || [];
 
-  const radarData = (charts?.serviceCategories || [])
+  const radarData = (serviceCategories || [])
     .filter((sc: any) => sc.category?.toLowerCase() !== "consultation")
     .map((sc: any) => ({
       category: sc.category, booked: sc.booked, completed: sc.completed,
@@ -729,7 +700,7 @@ export default function OHCUtilizationPage() {
                 onClick={async () => {
                   setIsRefreshing(true);
                   try {
-                    const freshUrl = rawUrl ? rawUrl + (rawUrl.includes("?") ? "&" : "?") + "nocache=1" : null;
+                    const freshUrl = utilizationUrl ? utilizationUrl + (utilizationUrl.includes("?") ? "&" : "?") + "nocache=1" : null;
                     if (freshUrl) {
                       const res = await fetch(freshUrl);
                       if (res.ok) {
@@ -918,7 +889,7 @@ export default function OHCUtilizationPage() {
             </CVCard>
           ),
           serviceCategoryMatrix: (
-            <CVCard accentColor="#0d9488" title="Service Category Matrix" subtitle="Booked vs completed across categories" chartId="serviceCategoryMatrix" chartData={charts?.serviceCategories} chartTitle="Service Category Matrix" chartDescription="Table">
+            <CVCard accentColor="#0d9488" title="Service Category Matrix" subtitle="Booked vs completed across categories" chartId="serviceCategoryMatrix" chartData={serviceCategories} chartTitle="Service Category Matrix" chartDescription="Table">
               <div className="overflow-x-auto">
                 <table className="w-full text-[12px]">
                   <thead>
@@ -930,7 +901,7 @@ export default function OHCUtilizationPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(charts?.serviceCategories || []).map((sc: any, idx: number) => (
+                    {(serviceCategories || []).map((sc: any, idx: number) => (
                       <tr key={idx} className="border-b" style={{ borderColor: T.borderLight }}>
                         <td className="py-2 px-3 font-medium" style={{ color: T.textPrimary }}>{sc.category}</td>
                         <td className="text-right py-2 px-3" style={{ color: T.textSecondary }}>{formatNum(sc.booked)}</td>
@@ -1353,7 +1324,7 @@ export default function OHCUtilizationPage() {
             <InsightBox text="Consultation is excluded from this chart — its volume is significantly higher and compresses all other axes, making patterns invisible. The radar reflects ancillary services only: Procedure, Pathology, Vaccination, Cardiology, Radiology, and similar." />
           </CVCard>}
 
-          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title="Service Category Metrics" subtitle="Booked vs completed with completion rate" tooltipText="Summary table listing each service category with booked count, completed count, and completion rate percentage. The completion rate column uses a progress bar for quick visual comparison. Low completion rates highlight categories needing scheduling or follow-up interventions." chartId="serviceCategoryMatrix" chartData={charts?.serviceCategories} chartTitle="Service Category Metrics" chartDescription="Service category breakdown with booked, completed counts and completion rates">
+          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title="Service Category Metrics" subtitle="Booked vs completed with completion rate" tooltipText="Summary table listing each service category with booked count, completed count, and completion rate percentage. The completion rate column uses a progress bar for quick visual comparison. Low completion rates highlight categories needing scheduling or follow-up interventions." chartId="serviceCategoryMatrix" chartData={serviceCategories} chartTitle="Service Category Metrics" chartDescription="Service category breakdown with booked, completed counts and completion rates">
             <div className="h-full overflow-auto">
               <table className="w-full text-[12px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                 <thead>
@@ -1365,7 +1336,7 @@ export default function OHCUtilizationPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(charts?.serviceCategories || []).map((sc: any, idx: number) => (
+                  {(serviceCategories || []).map((sc: any, idx: number) => (
                     <tr key={sc.category} style={{ borderBottom: `1px solid ${T.borderLight}`, background: idx % 2 === 1 ? "#fafbfd" : undefined }} className="hover:bg-[#eef2ff] transition-colors">
                       <td className="py-3.5 px-4 font-semibold" style={{ color: T.textPrimary }}>{sc.category}</td>
                       <td className="py-3.5 px-4 text-right tabular-nums" style={{ color: T.textSecondary }}>{formatNum(sc.booked)}</td>

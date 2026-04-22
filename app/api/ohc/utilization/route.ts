@@ -3,13 +3,33 @@ import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
+/* ────────────────────────────────────────────────
+ * OHC Utilization API — powered by aggregated_table.agg_kpi
+ *
+ * Fresh schema (Apr 2026):
+ *   slotstarttime (timestamp), uhid (text), speciality_name (text),
+ *   age (int), patient_gender (text), stage (text),
+ *   facility_mapping (text), cug_code_mapped (text), relationship (text),
+ *   total_consult_count (bigint), unique_consult_count (int), repeat_patient_count (int)
+ *
+ * Category Radar / Service Category Metrics still come from agg_bookedvscompleted.
+ * ──────────────────────────────────────────────── */
+
+const BASE_TABLE = "aggregated_table.agg_kpi";
+const COMPLETED = "a.stage = 'Completed'";
+
 function yoyChange(current: number, previous: number): number | null {
   if (previous === 0) return current > 0 ? 100 : null;
   return Math.round(((current - previous) / previous) * 100);
 }
 
-const BASE_TABLE = "aggregated_table.agg_kpi";
-const COMPLETED = "stage_category = 'Completed'";
+function normGender(g: string | null | undefined): "M" | "F" | "O" {
+  if (!g) return "O";
+  const l = g.trim().toLowerCase();
+  if (l === "male" || l === "m") return "M";
+  if (l === "female" || l === "f") return "F";
+  return "O";
+}
 
 function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -18,37 +38,44 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const genders = searchParams.get("genders")?.split(",").filter(Boolean);
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
+  const relations = searchParams.get("relations")?.split(",").filter(Boolean);
 
-  const conditions: string[] = [
-    `a.cug_code_mapped = $1`,
-    COMPLETED,
-  ];
-  const prevConditions: string[] = [...conditions];
+  const conditions: string[] = [`a.cug_code_mapped = $1`, COMPLETED];
+  const prevConditions: string[] = [`a.cug_code_mapped = $1`, COMPLETED];
+  // "all-stage" variant for visit trends (includes Cancelled / No Show / Pending)
+  const allStageConditions: string[] = [`a.cug_code_mapped = $1`];
+  const allStagePrevConditions: string[] = [`a.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
   let idx = 2;
   const hasDateRange = !!(dateFrom && dateTo);
 
   if (dateFrom) {
-    conditions.push(`a.consult_date >= $${idx}::date`);
-    prevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.consult_date >= $${idx}::timestamp`);
+    prevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
+    allStageConditions.push(`a.consult_date >= $${idx}::timestamp`);
+    allStagePrevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`a.consult_date <= $${idx}::date`);
-    prevConditions.push(`a.consult_date <= ($${idx}::date - interval '1 year')`);
+    conditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
+    prevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
+    allStageConditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
+    allStagePrevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
   if (locations?.length) {
-    conditions.push(`a.facility_name = ANY($${idx})`);
-    prevConditions.push(`a.facility_name = ANY($${idx})`);
+    const cond = `a.facility_mapping = ANY($${idx})`;
+    conditions.push(cond); prevConditions.push(cond);
+    allStageConditions.push(cond); allStagePrevConditions.push(cond);
     params.push(locations);
     idx++;
   }
   if (specialties?.length) {
-    conditions.push(`a.speciality_name = ANY($${idx})`);
-    prevConditions.push(`a.speciality_name = ANY($${idx})`);
+    const cond = `a.speciality_name = ANY($${idx})`;
+    conditions.push(cond); prevConditions.push(cond);
+    allStageConditions.push(cond); allStagePrevConditions.push(cond);
     params.push(specialties);
     idx++;
   }
@@ -60,13 +87,21 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
       return "(LOWER(TRIM(a.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR a.patient_gender IS NULL OR TRIM(a.patient_gender) = '')";
     });
     const cond = `(${gc.join(" OR ")})`;
-    conditions.push(cond);
-    prevConditions.push(cond);
+    conditions.push(cond); prevConditions.push(cond);
+    allStageConditions.push(cond); allStagePrevConditions.push(cond);
   }
   if (ageGroups?.length) {
-    conditions.push(`a.age_group = ANY($${idx})`);
-    prevConditions.push(`a.age_group = ANY($${idx})`);
+    const cond = `a.age_group = ANY($${idx})`;
+    conditions.push(cond); prevConditions.push(cond);
+    allStageConditions.push(cond); allStagePrevConditions.push(cond);
     params.push(ageGroups);
+    idx++;
+  }
+  if (relations?.length) {
+    const cond = `a.relationship = ANY($${idx})`;
+    conditions.push(cond); prevConditions.push(cond);
+    allStageConditions.push(cond); allStagePrevConditions.push(cond);
+    params.push(relations);
     idx++;
   }
 
@@ -75,15 +110,8 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     hasDateRange,
     currentWhere: conditions.join(" AND "),
     prevWhere: prevConditions.join(" AND "),
+    allStageWhere: allStageConditions.join(" AND "),
   };
-}
-
-function normGender(g: string | null | undefined): "M" | "F" | "O" {
-  if (!g) return "O";
-  const l = g.trim().toLowerCase();
-  if (l === "male" || l === "m") return "M";
-  if (l === "female" || l === "f") return "F";
-  return "O";
 }
 
 async function handler(request: NextRequest) {
@@ -104,20 +132,159 @@ async function handler(request: NextRequest) {
       try { return await fn(); } catch (e) { console.error("Query failed:", e); return []; }
     }
 
+    // ── FILTER OPTIONS (unfiltered, completed only) ──
+    const baseWhere = `a.cug_code_mapped = $1 AND ${COMPLETED}`;
+    const filterPromise = Promise.all([
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.facility_mapping AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.facility_mapping IS NOT NULL ORDER BY 1`, [cugCode])),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.speciality_name AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> '' ORDER BY 1`, [cugCode])),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.patient_gender AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.patient_gender IS NOT NULL ORDER BY 1`, [cugCode])),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.relationship AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.relationship IS NOT NULL ORDER BY 1`, [cugCode])),
+    ]);
+
     // ── BATCH 1: KPIs ──
-    const kpiRows = await safeQuery(() => dwQuery<{
+    const kpiPromise = safeQuery(() => dwQuery<{
       total_consults: string; unique_patients: string; repeat_patients: string; location_count: string;
     }>(
       `SELECT
-        COALESCE(SUM(a.consult_count), 0)::bigint AS total_consults,
-        COALESCE(SUM(a.unique_patients), 0)::bigint AS unique_patients,
-        COALESCE(SUM(a.repeat_patients), 0)::bigint AS repeat_patients,
-        COUNT(DISTINCT a.facility_name) AS location_count
+        COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
+        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
+        COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients,
+        COUNT(DISTINCT a.facility_mapping) AS location_count
       FROM ${BASE_TABLE} a
       WHERE ${q.currentWhere}`,
       q.params
     ));
 
+    // ── BATCH 2: Specialty treemap + Location × Specialty ──
+    const specPromise = safeQuery(() => dwQuery<{ name: string; value: string }>(
+      `SELECT a.speciality_name AS name, COALESCE(SUM(a.total_consult_count), 0)::bigint AS value
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
+      GROUP BY a.speciality_name ORDER BY value DESC`,
+      q.params
+    ));
+
+    const locSpecPromise = safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
+      `SELECT a.facility_mapping AS location, a.speciality_name AS specialty,
+       COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.facility_mapping IS NOT NULL AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
+      GROUP BY a.facility_mapping, a.speciality_name ORDER BY total_consults DESC`,
+      q.params
+    ));
+
+    // ── BATCH 3: Demographics + Peak hours + Visit Trends ──
+    const demoPromise = safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_pats: string }>(
+      `SELECT
+        a.age_group,
+        a.patient_gender AS gender,
+        COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
+        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_pats
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.age_group IS NOT NULL
+      GROUP BY a.age_group, a.patient_gender`,
+      q.params
+    ));
+
+    const peakPromise = safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
+      `SELECT EXTRACT(DOW FROM a.consult_date) AS day_of_week,
+       a.consult_hour AS hour_of_day,
+       COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.consult_hour IS NOT NULL
+      GROUP BY day_of_week, a.consult_hour ORDER BY day_of_week, a.consult_hour`,
+      q.params
+    ));
+
+    // Visit trends: monthly, ALL stages
+    const trendPromise = safeQuery(() => dwQuery<{
+      period: string; stage: string; consults: string; unique_pats: string;
+    }>(
+      `SELECT
+        to_char(a.consult_date, 'YYYY-MM') AS period,
+        a.stage,
+        CASE WHEN a.stage = 'Completed'
+          THEN COALESCE(SUM(a.total_consult_count), 0)::bigint
+          ELSE COUNT(*)::bigint
+        END AS consults,
+        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_pats
+      FROM ${BASE_TABLE} a
+      WHERE ${q.allStageWhere}
+      GROUP BY period, a.stage
+      ORDER BY period`,
+      q.params
+    ));
+
+    // ── BATCH 4: Repeat trends (monthly, from completed rows) ──
+    const repeatPromise = safeQuery(() => dwQuery<{
+      period: string; repeat_visits: string; repeat_patients: string;
+    }>(
+      `SELECT
+        to_char(a.consult_date, 'YYYY-MM') AS period,
+        COALESCE(SUM(a.total_consult_count) FILTER (WHERE a.repeat_patient_count > 0), 0)::bigint AS repeat_visits,
+        COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere}
+      GROUP BY period
+      ORDER BY period`,
+      q.params
+    ));
+
+    // ── Bubble chart: specialty × location × ageGroup × gender ──
+    const bubblePromise = safeQuery(() => dwQuery<{
+      specialty: string; location: string; age_group: string; gender: string; total: string;
+    }>(
+      `SELECT a.speciality_name AS specialty, a.facility_mapping AS location, a.age_group,
+       a.patient_gender AS gender, COALESCE(SUM(a.total_consult_count), 0)::bigint AS total
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
+        AND a.facility_mapping IS NOT NULL AND a.age_group IS NOT NULL
+      GROUP BY a.speciality_name, a.facility_mapping, a.age_group, a.patient_gender`,
+      q.params
+    ));
+
+    // ── Service Categories (from agg_bookedvscompleted) ──
+    const svcParams: unknown[] = [cugCode];
+    let svcWhere = `a.cug_code_mapped = $1`;
+    let svcIdx = 2;
+    const svcDateFrom = searchParams.get("dateFrom");
+    const svcDateTo = searchParams.get("dateTo");
+    if (svcDateFrom) {
+      svcWhere += ` AND a.g_creation_time >= $${svcIdx}::timestamp`;
+      svcParams.push(svcDateFrom); svcIdx++;
+    }
+    if (svcDateTo) {
+      svcWhere += ` AND a.g_creation_time <= $${svcIdx}::timestamp`;
+      svcParams.push(svcDateTo + "T23:59:59"); svcIdx++;
+    }
+    const svcPromise = safeQuery(() => dwQuery<{ category: string; booked: string; completed: string }>(
+      `SELECT a."serviceType" AS category, SUM(a.booked) AS booked, SUM(a.completed) AS completed
+       FROM aggregated_table.agg_bookedvscompleted a
+       WHERE ${svcWhere} AND a."serviceType" IS NOT NULL
+       GROUP BY a."serviceType" ORDER BY booked DESC`, svcParams,
+      { statementTimeoutMs: 60000 }
+    ));
+
+    // ── Execute all in parallel ──
+    const [
+      [filterLocations, filterSpecialties, filterGenders, filterRelations],
+      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows,
+    ] = await Promise.all([
+      filterPromise, kpiPromise, specPromise, locSpecPromise,
+      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise,
+    ]);
+
+    // ── Filter options ──
+    const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
+    const filterOptions = {
+      locations: filterLocations.map((r) => r.v),
+      specialties: filterSpecialties.map((r) => r.v),
+      genders: [...new Set(filterGenders.map((r) => { const n = normGender(r.v); return n === "M" ? "Male" : n === "F" ? "Female" : "Other"; }))],
+      ageGroups: AGE_ORDER,
+      relations: filterRelations.map((r) => r.v),
+    };
+
+    // ── KPIs ──
     const kpi = kpiRows[0];
     const totalConsults = Number(kpi?.total_consults || 0);
     const uniquePatients = Number(kpi?.unique_patients || 0);
@@ -125,66 +292,7 @@ async function handler(request: NextRequest) {
     const locationCount = Number(kpi?.location_count || 0);
     const repeatRate = uniquePatients > 0 ? Math.round((repeatPatients / uniquePatients) * 100) : 0;
 
-    // ── BATCH 2: Specialty treemap + Location x Specialty (concurrent) ──
-    const [specRows, locSpecRows] = await Promise.all([
-      safeQuery(() => dwQuery<{ name: string; value: string }>(
-        `SELECT a.speciality_name AS name, COALESCE(SUM(a.consult_count), 0)::bigint AS value
-        FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL
-        GROUP BY a.speciality_name ORDER BY value DESC`,
-        q.params
-      )),
-      safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
-        `SELECT a.facility_name AS location, a.speciality_name AS specialty,
-         COALESCE(SUM(a.consult_count), 0)::bigint AS total_consults
-        FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.facility_name IS NOT NULL AND a.speciality_name IS NOT NULL
-        GROUP BY a.facility_name, a.speciality_name ORDER BY total_consults DESC`,
-        q.params
-      )),
-    ]);
-
-    // ── BATCH 3: Demographics + Peak hours + Visit Trends (concurrent) ──
-    // Visit trends: monthly, ALL stages (not just Completed)
-    const trendWhere = q.currentWhere.replace(COMPLETED, "1=1");
-    const [demoRows, peakRows, trendRows] = await Promise.all([
-      safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_pats: string }>(
-        `SELECT
-          a.age_group,
-          a.patient_gender AS gender,
-          COALESCE(SUM(a.consult_count), 0)::bigint AS total_consults,
-          COALESCE(SUM(a.unique_patients), 0)::bigint AS unique_pats
-        FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.age_group IS NOT NULL
-        GROUP BY a.age_group, a.patient_gender`,
-        q.params
-      )),
-      safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
-        `SELECT EXTRACT(DOW FROM a.consult_date) AS day_of_week,
-         a.consult_hour AS hour_of_day,
-         COALESCE(SUM(a.consult_count), 0)::bigint AS total_consults
-        FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere} AND a.consult_hour IS NOT NULL
-        GROUP BY day_of_week, hour_of_day ORDER BY day_of_week, hour_of_day`,
-        q.params
-      )),
-      safeQuery(() => dwQuery<{
-        period: string; stage: string; consults: string; unique_pats: string;
-      }>(
-        `SELECT
-          to_char(a.consult_date, 'YYYY-MM') AS period,
-          a.stage_category AS stage,
-          COALESCE(SUM(a.consult_count), 0)::bigint AS consults,
-          COALESCE(SUM(a.unique_patients), 0)::bigint AS unique_pats
-        FROM ${BASE_TABLE} a
-        WHERE ${trendWhere}
-        GROUP BY period, stage
-        ORDER BY period`,
-        q.params
-      )),
-    ]);
-
-    // ── BATCH 4: YoY ──
+    // ── YoY ──
     let yoyConsults: number | null = null;
     let yoyUnique: number | null = null;
     let yoyRepeat: number | null = null;
@@ -193,9 +301,9 @@ async function handler(request: NextRequest) {
         total_consults: string; unique_patients: string; repeat_patients: string;
       }>(
         `SELECT
-          COALESCE(SUM(a.consult_count), 0)::bigint AS total_consults,
-          COALESCE(SUM(a.unique_patients), 0)::bigint AS unique_patients,
-          COALESCE(SUM(a.repeat_patients), 0)::bigint AS repeat_patients
+          COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
+          COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
+          COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
         FROM ${BASE_TABLE} a WHERE ${q.prevWhere}`,
         q.params
       ));
@@ -206,8 +314,7 @@ async function handler(request: NextRequest) {
       }
     }
 
-    // ── Process visit trends ──
-    // Pivot stage_category rows into { period, completed, cancelled, noShow, uniquePatients }
+    // ── Visit trends (pivot by stage) ──
     const trendMap: Record<string, { completed: number; cancelled: number; noShow: number; uniquePatients: number }> = {};
     for (const row of trendRows) {
       if (!trendMap[row.period]) {
@@ -235,10 +342,17 @@ async function handler(request: NextRequest) {
       ? Math.round(visitTrends.reduce((s, v) => s + v.completed, 0) / visitTrends.length)
       : 0;
 
-    // ── Process specialty treemap ──
+    // ── Repeat trends ──
+    const repeatTrends = repeatRows.map((r) => ({
+      label: r.period,
+      repeatVisits: Number(r.repeat_visits),
+      repeatPatients: Number(r.repeat_patients),
+    }));
+
+    // ── Specialty treemap ──
     const specialtyTreemap = specRows.map((r) => ({ name: r.name, value: Number(r.value) }));
 
-    // ── Process location × specialty ──
+    // ── Location × Specialty ──
     const specTotals: Record<string, number> = {};
     for (const row of locSpecRows) specTotals[row.specialty] = (specTotals[row.specialty] || 0) + Number(row.total_consults);
     const topSpecialties = Object.entries(specTotals).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([s]) => s);
@@ -255,7 +369,7 @@ async function handler(request: NextRequest) {
         return sum(b) - sum(a);
       });
 
-    // ── Process peak hours ──
+    // ── Peak hours ──
     const dowToChart: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
     const peakHoursData: [number, number, number][] = [];
     let peakMax = 0; let peakCell = { day: 0, hour: 0, count: 0 };
@@ -272,44 +386,77 @@ async function handler(request: NextRequest) {
     const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const HOUR_NAMES = ["6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM","1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM","9 PM","10 PM"];
 
-    // ── Process demographics ──
+    // ── Demographics (age_group comes pre-bucketed from warehouse) ──
     const SUNBURST_COLORS: Record<string, string> = { "<20": "#818cf8", "20-35": "#0d9488", "36-40": "#d4d4d8", "41-60": "#a78bfa", "61+": "#6366f1" };
     const GENDER_COLORS: Record<string, string> = { M: "#0d9488", F: "#a78bfa", O: "#a1a1aa" };
-    const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
     const ageMap: Record<string, Record<string, { consults: number; patients: number }>> = {};
     for (const row of demoRows) {
-      if (!row.age_group) continue;
+      const ag = row.age_group;
       const g = normGender(row.gender);
-      if (!ageMap[row.age_group]) ageMap[row.age_group] = {};
-      ageMap[row.age_group][g] = {
-        consults: (ageMap[row.age_group][g]?.consults ?? 0) + Number(row.total_consults),
-        patients: (ageMap[row.age_group][g]?.patients ?? 0) + Number(row.unique_pats),
+      if (!ageMap[ag]) ageMap[ag] = {};
+      ageMap[ag][g] = {
+        consults: (ageMap[ag][g]?.consults ?? 0) + Number(row.total_consults),
+        patients: (ageMap[ag][g]?.patients ?? 0) + Number(row.unique_pats),
       };
     }
     const demographicSunburst = AGE_ORDER.filter((ag) => ageMap[ag]).map((ag) => ({
       name: ag, itemStyle: { color: SUNBURST_COLORS[ag] || "#888" },
       children: (["M", "F", "O"] as const)
-        .filter((g) => ageMap[ag][g] && ageMap[ag][g].consults > 0)
+        .filter((g) => ageMap[ag]?.[g] && ageMap[ag][g].consults > 0)
         .map((g) => ({ name: g, value: ageMap[ag][g].consults, itemStyle: { color: GENDER_COLORS[g] } })),
     }));
     const genderTotals: Record<string, number> = {};
     const ageGroupTotals: Record<string, number> = {};
     let highestCohort = { ageGroup: "", gender: "", count: 0, patients: 0 };
     for (const row of demoRows) {
-      if (!row.age_group) continue;
+      const ag = row.age_group;
       const g = normGender(row.gender);
       const c = Number(row.total_consults); const p = Number(row.unique_pats);
       genderTotals[g] = (genderTotals[g] || 0) + c;
-      ageGroupTotals[row.age_group] = (ageGroupTotals[row.age_group] || 0) + c;
+      ageGroupTotals[ag] = (ageGroupTotals[ag] || 0) + c;
       if (c > highestCohort.count) {
-        highestCohort = { ageGroup: row.age_group, gender: g === "M" ? "Male" : g === "F" ? "Female" : "Others", count: c, patients: p };
+        highestCohort = { ageGroup: ag, gender: g === "M" ? "Male" : g === "F" ? "Female" : "Others", count: c, patients: p };
       }
     }
     const topGenderEntry = Object.entries(genderTotals).sort((a, b) => b[1] - a[1])[0];
     const topAgeEntry = Object.entries(ageGroupTotals).sort((a, b) => b[1] - a[1])[0];
     const gl = (g: string) => g === "M" ? "Male" : g === "F" ? "Female" : "Others";
 
+    // ── Service categories ──
+    const serviceCategories = svcRows.map((r) => {
+      const booked = Number(r.booked);
+      const completed = Number(r.completed);
+      return { category: r.category, booked, completed, completionRate: booked > 0 ? Math.round((completed / booked) * 100) : 0 };
+    });
+
+    // ── Bubble chart: group by specialty → location × ageGroup with gender split ──
+    const bubbleMap: Record<string, Record<string, { male: number; female: number }>> = {};
+    const bubbleSpecTotals: Record<string, number> = {};
+    for (const row of bubbleRows) {
+      const key = `${row.location}||${row.age_group}`;
+      if (!bubbleMap[row.specialty]) bubbleMap[row.specialty] = {};
+      if (!bubbleMap[row.specialty][key]) bubbleMap[row.specialty][key] = { male: 0, female: 0 };
+      const g = normGender(row.gender);
+      const count = Number(row.total);
+      if (g === "M") bubbleMap[row.specialty][key].male += count;
+      else bubbleMap[row.specialty][key].female += count;
+      bubbleSpecTotals[row.specialty] = (bubbleSpecTotals[row.specialty] || 0) + count;
+    }
+    const bubbleSpecialties = Object.entries(bubbleSpecTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([s]) => s);
+    const bubbleBySpecialty: Record<string, { location: string; ageGroup: string; total: number; male: number; female: number; malePercent: number }[]> = {};
+    for (const spec of bubbleSpecialties) {
+      bubbleBySpecialty[spec] = Object.entries(bubbleMap[spec] || {}).map(([key, v]) => {
+        const [location, ageGroup] = key.split("||");
+        const total = v.male + v.female;
+        return { location, ageGroup, total, male: v.male, female: v.female, malePercent: total > 0 ? Math.round((v.male / total) * 100) : 0 };
+      }).sort((a, b) => b.total - a.total);
+    }
+
     return NextResponse.json({
+      filterOptions,
       kpis: { totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat },
       charts: {
         demographicSunburst,
@@ -323,7 +470,8 @@ async function handler(request: NextRequest) {
         visitTrends, avgConsults,
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
-        serviceCategories: [], bubbleBySpecialty: {}, bubbleSpecialties: [],
+        serviceCategories, bubbleBySpecialty, bubbleSpecialties,
+        repeatTrends,
       },
       lastUpdated: new Date().toISOString(),
     });

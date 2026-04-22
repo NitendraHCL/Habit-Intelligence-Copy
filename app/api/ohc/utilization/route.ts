@@ -361,13 +361,27 @@ async function handler(request: NextRequest) {
       if (!locationMap[row.location]) locationMap[row.location] = {};
       if (topSpecialties.includes(row.specialty)) locationMap[row.location][row.specialty] = Number(row.total_consults);
     }
-    const locationBySpecialty = Object.entries(locationMap)
+    const sumSpecs = (obj: Record<string, unknown>) =>
+      Object.entries(obj).filter(([k]) => k !== "location").reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
+    const allLocationsSorted = Object.entries(locationMap)
       .map(([location, specs]) => ({ location, ...specs }))
-      .sort((a, b) => {
-        const sum = (obj: Record<string, unknown>) =>
-          Object.entries(obj).filter(([k]) => k !== "location").reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
-        return sum(b) - sum(a);
-      });
+      .sort((a, b) => sumSpecs(b) - sumSpecs(a));
+    const TOP_N = 15;
+    const topLocations = allLocationsSorted.slice(0, TOP_N);
+    const restLocations = allLocationsSorted.slice(TOP_N);
+    const othersEntry: Record<string, unknown> = { location: "Others" };
+    const othersBreakdown: { location: string; total: number }[] = [];
+    for (const loc of restLocations) {
+      const locTotal = sumSpecs(loc);
+      if (locTotal > 0) othersBreakdown.push({ location: loc.location as string, total: locTotal });
+      for (const spec of topSpecialties) {
+        othersEntry[spec] = ((othersEntry[spec] as number) || 0) + ((loc as any)[spec] || 0);
+      }
+    }
+    othersBreakdown.sort((a, b) => b.total - a.total);
+    const locationBySpecialty = restLocations.length > 0
+      ? [...topLocations, othersEntry as any]
+      : topLocations;
 
     // ── Peak hours ──
     const dowToChart: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
@@ -466,7 +480,7 @@ async function handler(request: NextRequest) {
           topGender: topGenderEntry ? { gender: gl(topGenderEntry[0]), count: topGenderEntry[1] } : null,
           topAgeGroup: topAgeEntry ? { ageGroup: topAgeEntry[0], count: topAgeEntry[1] } : null,
         },
-        locationBySpecialty, topSpecialties,
+        locationBySpecialty, topSpecialties, othersBreakdown,
         visitTrends, avgConsults,
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },

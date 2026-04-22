@@ -439,6 +439,14 @@ export default function OHCUtilizationPage() {
     });
   }, [sunburstChartSize, charts?.demographicSunburst]);
 
+  // Derive top locations from bubble data (must be before early return to satisfy Rules of Hooks)
+  const bubbleData = charts?.bubbleBySpecialty?.[activeBubbleSpec] || [];
+  const locationOrder = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const b of bubbleData) totals[b.location] = (totals[b.location] || 0) + b.total;
+    return Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([l]) => l);
+  }, [bubbleData]);
+
   if (!utilizationData && isLoading) {
     return (
       <div className="animate-fade-in space-y-5">
@@ -555,13 +563,6 @@ export default function OHCUtilizationPage() {
   };
 
   // ─── Bubble ───
-  const bubbleData = charts?.bubbleBySpecialty?.[activeBubbleSpec] || [];
-  // Derive top locations from the bubble data for the active specialty (not global list)
-  const locationOrder = useMemo(() => {
-    const totals: Record<string, number> = {};
-    for (const b of bubbleData) totals[b.location] = (totals[b.location] || 0) + b.total;
-    return Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([l]) => l);
-  }, [bubbleData]);
   const ageGroupOrder = ["<20", "20-35", "36-40", "41-60", "61+"];
   const bubbleValues = bubbleData.map((b: any) => b.total);
   const bubbleMax = Math.max(...bubbleValues, 1);
@@ -828,15 +829,52 @@ export default function OHCUtilizationPage() {
           ),
           locationBySpecialty: (
             <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Consultation volume per location with specialty breakdown" chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization" chartDescription="Stacked bar">
-              <div className="overflow-x-auto mt-4">
-                <div style={{ height: 400 }}>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
+                {(charts?.topSpecialties || []).map((spec: string, i: number) => (
+                  <div key={spec} className="flex items-center gap-1">
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="overflow-x-auto">
+                <div style={{ height: 340 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 40 }}>
+                    <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 45 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                      <XAxis dataKey="location" tick={{ fontSize: 11, fill: T.textMuted }} />
+                      <XAxis dataKey="location" tick={{ fontSize: 9, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                       <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
-                      <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" iconSize={8} />
+                      <RechartsTooltip
+                        contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
+                        content={({ active, payload, label }: any) => {
+                          if (!active || !payload?.length) return null;
+                          const isOthers = label === "Others";
+                          const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
+                          return (
+                            <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, maxHeight: 300, overflowY: "auto" }}>
+                              <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                              {payload.filter((p: any) => p.value > 0).map((p: any) => (
+                                <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
+                                  <span style={{ color: p.color }}>{p.name}</span>
+                                  <span style={{ fontWeight: 600 }}>{formatNum(p.value)}</span>
+                                </div>
+                              ))}
+                              {isOthers && breakdown.length > 0 && (
+                                <>
+                                  <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontWeight: 600, fontSize: 11, color: T.textMuted }}>Includes {breakdown.length} locations:</div>
+                                  {breakdown.slice(0, 15).map((b: any) => (
+                                    <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, marginTop: 2 }}>
+                                      <span style={{ color: T.textSecondary }}>{b.location}</span>
+                                      <span style={{ fontWeight: 500 }}>{formatNum(b.total)}</span>
+                                    </div>
+                                  ))}
+                                  {breakdown.length > 15 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>+{breakdown.length - 15} more</div>}
+                                </>
+                              )}
+                            </div>
+                          );
+                        }}
+                      />
                       {(charts?.topSpecialties || []).map((spec: string, i: number) => (
                         <Bar key={spec} dataKey={spec} name={spec} stackId="a" fill={SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length]} maxBarSize={50} />
                       ))}
@@ -1111,18 +1149,51 @@ export default function OHCUtilizationPage() {
           </CVCard>}
 
           {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Consultation volume per location with specialty breakdown" tooltipText="Stacked horizontal bar chart showing consultation volume per clinic location, broken down by medical specialty. Each color segment represents a specialty. Longer bars indicate higher-traffic locations. Hover to see exact counts per specialty at each site." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Stacked bar chart showing consultation volume per location with specialty breakdown">
-            <div className="overflow-x-auto mt-4">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
+              {stackSpecialties.map((spec: string, i: number) => (
+                <div key={spec} className="flex items-center gap-1">
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+                </div>
+              ))}
+            </div>
+            <div className="overflow-x-auto">
             <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 40 }}>
+                <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="location" tick={{ fontSize: 11, fill: T.textMuted }} />
+                  <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                   <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
                   <RechartsTooltip
-                    contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }}
-                    formatter={(value: any, name: any) => [formatNum(Number(value)), String(name)]}
+                    content={({ active, payload, label }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const isOthers = label === "Others";
+                      const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
+                      return (
+                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxHeight: 300, overflowY: "auto" }}>
+                          <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                          {payload.filter((p: any) => p.value > 0).map((p: any) => (
+                            <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
+                              <span style={{ color: p.color }}>{p.name}</span>
+                              <span style={{ fontWeight: 600 }}>{formatNum(p.value)}</span>
+                            </div>
+                          ))}
+                          {isOthers && breakdown.length > 0 && (
+                            <>
+                              <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontWeight: 600, fontSize: 11, color: T.textMuted }}>Includes {breakdown.length} locations:</div>
+                              {breakdown.slice(0, 15).map((b: any) => (
+                                <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, marginTop: 2 }}>
+                                  <span style={{ color: T.textSecondary }}>{b.location}</span>
+                                  <span style={{ fontWeight: 500 }}>{formatNum(b.total)}</span>
+                                </div>
+                              ))}
+                              {breakdown.length > 15 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>+{breakdown.length - 15} more</div>}
+                            </>
+                          )}
+                        </div>
+                      );
+                    }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="circle" iconSize={8} />
                   {stackSpecialties.map((spec: string, i: number) => (
                     <Bar key={spec} dataKey={spec} name={spec} stackId="a" fill={SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length]} maxBarSize={50} radius={i === stackSpecialties.length - 1 ? [3, 3, 0, 0] : undefined} />
                   ))}

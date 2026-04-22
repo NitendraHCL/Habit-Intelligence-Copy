@@ -12,7 +12,10 @@ import { withCache } from "@/lib/cache/middleware";
  *   facility_mapping (text), cug_code_mapped (text), relationship (text),
  *   total_consult_count (bigint), unique_consult_count (int), repeat_patient_count (int)
  *
- * Category Radar / Service Category Metrics still come from agg_bookedvscompleted.
+ * Category Radar / Service Category Metrics come from aggregated_table.agg_service_kpi
+ * (fresh table — replaces agg_bookedvscompleted). Columns: g_creation_time,
+ * "serviceType", booked_count, completed_count, cug_code_mapped, age_group,
+ * patient_gender, relationship, status.
  * ──────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
@@ -243,12 +246,15 @@ async function handler(request: NextRequest) {
       q.params
     ));
 
-    // ── Service Categories (from agg_bookedvscompleted) ──
+    // ── Service Categories (from agg_service_kpi) ──
     const svcParams: unknown[] = [cugCode];
     let svcWhere = `a.cug_code_mapped = $1`;
     let svcIdx = 2;
     const svcDateFrom = searchParams.get("dateFrom");
     const svcDateTo = searchParams.get("dateTo");
+    const svcAgeGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
+    const svcGenders = searchParams.get("genders")?.split(",").filter(Boolean);
+    const svcRelations = searchParams.get("relations")?.split(",").filter(Boolean);
     if (svcDateFrom) {
       svcWhere += ` AND a.g_creation_time >= $${svcIdx}::timestamp`;
       svcParams.push(svcDateFrom); svcIdx++;
@@ -257,9 +263,28 @@ async function handler(request: NextRequest) {
       svcWhere += ` AND a.g_creation_time <= $${svcIdx}::timestamp`;
       svcParams.push(svcDateTo + "T23:59:59"); svcIdx++;
     }
+    if (svcAgeGroups?.length) {
+      svcWhere += ` AND a.age_group = ANY($${svcIdx})`;
+      svcParams.push(svcAgeGroups); svcIdx++;
+    }
+    if (svcGenders?.length) {
+      const gc = svcGenders.map((g) => {
+        const l = g.toLowerCase();
+        if (l === "male") return "LOWER(TRIM(a.patient_gender)) IN ('male', 'm')";
+        if (l === "female") return "LOWER(TRIM(a.patient_gender)) IN ('female', 'f')";
+        return "(LOWER(TRIM(a.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR a.patient_gender IS NULL OR TRIM(a.patient_gender) = '')";
+      });
+      svcWhere += ` AND (${gc.join(" OR ")})`;
+    }
+    if (svcRelations?.length) {
+      svcWhere += ` AND a.relationship = ANY($${svcIdx})`;
+      svcParams.push(svcRelations); svcIdx++;
+    }
     const svcPromise = safeQuery(() => dwQuery<{ category: string; booked: string; completed: string }>(
-      `SELECT a."serviceType" AS category, SUM(a.booked) AS booked, SUM(a.completed) AS completed
-       FROM aggregated_table.agg_bookedvscompleted a
+      `SELECT a."serviceType" AS category,
+              COALESCE(SUM(a.booked_count), 0)::bigint AS booked,
+              COALESCE(SUM(a.completed_count), 0)::bigint AS completed
+       FROM aggregated_table.agg_service_kpi a
        WHERE ${svcWhere} AND a."serviceType" IS NOT NULL
        GROUP BY a."serviceType" ORDER BY booked DESC`, svcParams,
       { statementTimeoutMs: 60000 }

@@ -14,6 +14,8 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChartComments } from "@/components/ui/chart-comments";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
@@ -53,6 +55,7 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
@@ -123,7 +126,7 @@ function CVCard({
   return (
     <div
       data-chart-card
-      className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px ${expanded ? "col-span-full" : ""} ${className}`}
+      className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
       {(title || accentColor) && (
@@ -156,7 +159,7 @@ function CVCard({
           )}
         </div>
       )}
-      <div data-chart-body className="px-6 pb-5">{children}</div>
+      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
     </div>
   );
 }
@@ -173,8 +176,10 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 // ─── Insight Box ───
 function InsightBox({ text }: { text: string }) {
   return (
-    <div className="rounded-[14px] px-4 py-3.5 mt-4 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
-      {text}
+    <div className="mt-auto pt-4">
+      <div className="rounded-[14px] px-4 py-3.5 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
+        {text}
+      </div>
     </div>
   );
 }
@@ -268,6 +273,8 @@ export default function OHCUtilizationPage() {
   const [selectedBubbleSpec, setSelectedBubbleSpec] = useState<string>("");
   const [repeatView, setRepeatView] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
+  const [othersModalOpen, setOthersModalOpen] = useState(false);
+  const [othersSearch, setOthersSearch] = useState("");
   const sunburstRef = useRef<any>(null);
 
   const handleSunburstReset = useCallback(() => {
@@ -673,6 +680,10 @@ export default function OHCUtilizationPage() {
   };
 
   const stackSpecialties: string[] = charts?.topSpecialties || [];
+  const locationBySpecialtyData = (charts?.locationBySpecialty || []).map((r: any) => ({
+    ...r,
+    __total: stackSpecialties.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
+  }));
 
   const radarData = (serviceCategories || [])
     .filter((sc: any) => sc.category?.toLowerCase() !== "consultation")
@@ -860,7 +871,7 @@ export default function OHCUtilizationPage() {
             </CVCard>
           ),
           locationBySpecialty: (
-            <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Consultation volume per location with specialty breakdown" chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization" chartDescription="Stacked bar">
+            <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization" chartDescription="Stacked bar">
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {(charts?.topSpecialties || []).map((spec: string, i: number) => (
                   <div key={spec} className="flex items-center gap-1">
@@ -872,7 +883,7 @@ export default function OHCUtilizationPage() {
               <div className="overflow-x-auto">
                 <div style={{ height: 340 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 45 }}>
+                    <BarChart data={locationBySpecialtyData} margin={{ top: 24, right: 10, left: 0, bottom: 45 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
                       <XAxis dataKey="location" tick={{ fontSize: 9, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                       <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
@@ -1051,8 +1062,8 @@ export default function OHCUtilizationPage() {
 
       {/* ── KPI Cards (auto-adjust columns) ── */}
       <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("totalConsults"), isChartVisible("uniquePatients"), isChartVisible("repeatPatients")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("totalConsults") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-          <div className="p-6">
+        {isChartVisible("totalConsults") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Consults</p>
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Total completed OHC consultations in the selected period — includes Completed, Prescription Sent, and Re-opened appointments</TooltipContent></Tooltip>
@@ -1064,12 +1075,15 @@ export default function OHCUtilizationPage() {
                 <span className="text-xs font-semibold" style={{ color: kpis.yoyConsults >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyConsults >= 0 ? "+" : ""}{kpis.yoyConsults}% vs Last Year</span>
               </div>
             )}
-            <p className="text-xs mt-3.5 leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>All consultations that reached a completed stage — Completed, Prescription Sent, or Re-opened</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Completed consultations in selected date range</p>
+            <div className="mt-auto pt-4">
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>All consultations that reached a completed stage — Completed, Prescription Sent, or Re-opened</p>
+            </div>
           </div>
         </div>}
 
-        {isChartVisible("uniquePatients") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-          <div className="p-6">
+        {isChartVisible("uniquePatients") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Unique Patients</p>
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Distinct employees who visited the OHC at least once</TooltipContent></Tooltip>
@@ -1081,12 +1095,15 @@ export default function OHCUtilizationPage() {
                 <span className="text-xs font-semibold" style={{ color: kpis.yoyUnique >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyUnique >= 0 ? "+" : ""}{kpis.yoyUnique}% vs Last Year</span>
               </div>
             )}
-            <p className="text-xs mt-3.5 leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who visited the OHC at least once — across any service or specialty</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Distinct employees who visited OHC in selected date range</p>
+            <div className="mt-auto pt-4">
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who visited the OHC at least once — across any service or specialty</p>
+            </div>
           </div>
         </div>}
 
-        {isChartVisible("repeatPatients") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-          <div className="p-6">
+        {isChartVisible("repeatPatients") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Repeat Patients</p>
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Employees who have availed any OHC service at least twice within the selected date range</TooltipContent></Tooltip>
@@ -1099,7 +1116,9 @@ export default function OHCUtilizationPage() {
               </div>
             )}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Employees with 2+ OHC visits in selected date range</p>
-            <p className="text-xs mt-1.5 leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who availed any OHC service at least twice — not necessarily the same specialty</p>
+            <div className="mt-auto pt-4">
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who availed any OHC service at least twice — not necessarily the same specialty</p>
+            </div>
           </div>
         </div>}
       </div>
@@ -1180,7 +1199,7 @@ export default function OHCUtilizationPage() {
               : "Select a date range to view demographic breakdown."} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Consultation volume per location with specialty breakdown" tooltipText="Stacked horizontal bar chart showing consultation volume per clinic location, broken down by medical specialty. Each color segment represents a specialty. Longer bars indicate higher-traffic locations. Hover to see exact counts per specialty at each site." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Stacked bar chart showing consultation volume per location with specialty breakdown">
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts." tooltipText="Stacked horizontal bar chart showing consultation volume per clinic location, broken down by medical specialty. Each color segment represents a specialty. Longer bars indicate higher-traffic locations. Hover to see exact counts per specialty at each site." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Stacked bar chart showing consultation volume per location with specialty breakdown">
             <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
               {stackSpecialties.map((spec: string, i: number) => (
                 <div key={spec} className="flex items-center gap-1">
@@ -1192,7 +1211,7 @@ export default function OHCUtilizationPage() {
             <div className="overflow-x-auto">
             <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={charts?.locationBySpecialty || []} margin={{ top: 5, right: 10, left: 0, bottom: 45 }}>
+                <BarChart data={locationBySpecialtyData} margin={{ top: 24, right: 10, left: 0, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
                   <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                   <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
@@ -1201,8 +1220,9 @@ export default function OHCUtilizationPage() {
                       if (!active || !payload?.length) return null;
                       const isOthers = label === "Others";
                       const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
+                      const othersTotal = breakdown.reduce((s: number, b: any) => s + (b.total || 0), 0);
                       return (
-                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxWidth: isOthers ? 480 : 260 }}>
+                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxWidth: 260 }}>
                           <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
                           {payload.filter((p: any) => p.value > 0).map((p: any) => (
                             <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
@@ -1211,32 +1231,103 @@ export default function OHCUtilizationPage() {
                             </div>
                           ))}
                           {isOthers && breakdown.length > 0 && (
-                            <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6 }}>
-                              <div style={{ fontWeight: 600, fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Includes {breakdown.length} locations:</div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                                {breakdown.map((b: any) => (
-                                  <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
-                                    <span style={{ color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.location}</span>
-                                    <span style={{ fontWeight: 500, flexShrink: 0 }}>{formatNum(b.total)}</span>
-                                  </div>
-                                ))}
-                              </div>
+                            <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontSize: 11, color: T.textSecondary }}>
+                              <div><strong>{breakdown.length}</strong> locations · <strong>{formatNum(othersTotal)}</strong> consults</div>
+                              <div style={{ marginTop: 4, color: T.textMuted }}>See breakdown panel below ↓</div>
                             </div>
                           )}
                         </div>
                       );
                     }}
                   />
-                  {stackSpecialties.map((spec: string, i: number) => (
-                    <Bar key={spec} dataKey={spec} name={spec} stackId="a" fill={SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length]} maxBarSize={50} radius={i === stackSpecialties.length - 1 ? [3, 3, 0, 0] : undefined} />
-                  ))}
+                  {stackSpecialties.map((spec: string, i: number) => {
+                    const isLast = i === stackSpecialties.length - 1;
+                    return (
+                      <Bar
+                        key={spec}
+                        dataKey={spec}
+                        name={spec}
+                        stackId="a"
+                        fill={SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length]}
+                        maxBarSize={50}
+                        minPointSize={2}
+                        radius={isLast ? [3, 3, 0, 0] : undefined}
+                        onClick={(d: any) => { if (d?.location === "Others") { setOthersSearch(""); setOthersModalOpen(true); } }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {isLast && (
+                          <LabelList
+                            dataKey="__total"
+                            position="top"
+                            fontSize={10}
+                            fontWeight={600}
+                            fill={T.textSecondary}
+                            formatter={(v: any) => (v > 0 ? formatNum(Number(v)) : "")}
+                          />
+                        )}
+                      </Bar>
+                    );
+                  })}
                 </BarChart>
               </ResponsiveContainer>
             </div>
             </div>
+            {(charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
+              const list = charts?.othersBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              return (
+                <button
+                  onClick={() => { setOthersSearch(""); setOthersModalOpen(true); }}
+                  className="mt-3 w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-left transition hover:shadow-sm hover:border-indigo-300"
+                  style={{ borderColor: T.border, background: "#fafafa" }}
+                >
+                  <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#a1a1aa" }} />
+                    <span>
+                      <strong style={{ color: T.textPrimary }}>Others:</strong> {list.length} smaller sites · <strong style={{ color: T.textPrimary }}>{formatNum(total)}</strong> consults
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
+                </button>
+              );
+            })()}
             <InsightBox text="Location-wise specialty breakdown reveals regional demand patterns. Use this to optimize specialist allocation and identify underserved locations." />
           </CVCard>}
         </div>
+        <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Others — Location Breakdown</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const list = charts?.othersBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              const q = othersSearch.trim().toLowerCase();
+              const filtered = q ? list.filter((b: any) => b.location.toLowerCase().includes(q)) : list;
+              return (
+                <>
+                  <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                    <strong>{list.length}</strong> smaller sites grouped · <strong>{formatNum(total)}</strong> total consults
+                  </div>
+                  <Input placeholder="Search location…" value={othersSearch} onChange={(e) => setOthersSearch(e.target.value)} className="mb-3" />
+                  <ScrollArea className="h-[360px] pr-3">
+                    <div className="space-y-1">
+                      {filtered.map((b: any) => (
+                        <div key={b.location} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                          <span style={{ color: T.textSecondary }}>{b.location}</span>
+                          <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.total)}</span>
+                        </div>
+                      ))}
+                      {filtered.length === 0 && (
+                        <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No locations match &ldquo;{othersSearch}&rdquo;</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </WarmSection>}
 
       {/* ── Section: Trends + Specialty ── */}

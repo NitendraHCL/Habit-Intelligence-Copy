@@ -599,10 +599,10 @@ export default function OHCUtilizationPage() {
           </div>`;
       },
     },
-    grid: { left: 70, right: 40, top: 20, bottom: 55 },
+    grid: { left: 70, right: 40, top: 20, bottom: 80 },
     xAxis: {
       type: "category", data: locationOrder,
-      axisLabel: { fontSize: 11, fontFamily: "Inter, sans-serif", color: T.textMuted },
+      axisLabel: { fontSize: 10, fontFamily: "Inter, sans-serif", color: T.textMuted, interval: 0, rotate: 25 },
       axisTick: { show: false }, axisLine: { lineStyle: { color: T.border } },
       splitLine: { show: false },
       splitArea: {

@@ -1069,12 +1069,14 @@ export default function OHCUtilizationPage() {
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Total completed OHC consultations in the selected period — includes Completed, Prescription Sent, and Re-opened appointments</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalConsults || 0)}</p>
-            {kpis?.yoyConsults != null && (
+            {kpis?.yoyConsults != null ? (
               <div className="flex items-center gap-1 mt-1.5">
                 {kpis.yoyConsults >= 0 ? <TrendingUp size={12} style={{ color: "#059669" }} /> : <TrendingDown size={12} style={{ color: "#e11d48" }} />}
-                <span className="text-xs font-semibold" style={{ color: kpis.yoyConsults >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyConsults >= 0 ? "+" : ""}{kpis.yoyConsults}% vs Last Year</span>
+                <span className="text-xs font-semibold" style={{ color: kpis.yoyConsults >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyConsults >= 0 ? "+" : ""}{kpis.yoyConsults}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
-            )}
+            ) : kpis?.hasInsufficientHistory ? (
+              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+            ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Completed consultations in selected date range</p>
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>All consultations that reached a completed stage — Completed, Prescription Sent, or Re-opened</p>
@@ -1089,12 +1091,14 @@ export default function OHCUtilizationPage() {
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Distinct employees who visited the OHC at least once</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.uniquePatients || 0)}</p>
-            {kpis?.yoyUnique != null && (
+            {kpis?.yoyUnique != null ? (
               <div className="flex items-center gap-1 mt-1.5">
                 {kpis.yoyUnique >= 0 ? <TrendingUp size={12} style={{ color: "#059669" }} /> : <TrendingDown size={12} style={{ color: "#e11d48" }} />}
-                <span className="text-xs font-semibold" style={{ color: kpis.yoyUnique >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyUnique >= 0 ? "+" : ""}{kpis.yoyUnique}% vs Last Year</span>
+                <span className="text-xs font-semibold" style={{ color: kpis.yoyUnique >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyUnique >= 0 ? "+" : ""}{kpis.yoyUnique}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
-            )}
+            ) : kpis?.hasInsufficientHistory ? (
+              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+            ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Distinct employees who visited OHC in selected date range</p>
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who visited the OHC at least once — across any service or specialty</p>
@@ -1109,12 +1113,14 @@ export default function OHCUtilizationPage() {
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Employees who have availed any OHC service at least twice within the selected date range</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.repeatPatients || 0)}</p>
-            {kpis?.yoyRepeat != null && (
+            {kpis?.yoyRepeat != null ? (
               <div className="flex items-center gap-1 mt-1.5">
                 {kpis.yoyRepeat >= 0 ? <TrendingUp size={12} style={{ color: "#059669" }} /> : <TrendingDown size={12} style={{ color: "#e11d48" }} />}
-                <span className="text-xs font-semibold" style={{ color: kpis.yoyRepeat >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyRepeat >= 0 ? "+" : ""}{kpis.yoyRepeat}% vs Last Year</span>
+                <span className="text-xs font-semibold" style={{ color: kpis.yoyRepeat >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyRepeat >= 0 ? "+" : ""}{kpis.yoyRepeat}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
-            )}
+            ) : kpis?.hasInsufficientHistory ? (
+              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+            ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Employees with 2+ OHC visits in selected date range</p>
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who availed any OHC service at least twice — not necessarily the same specialty</p>

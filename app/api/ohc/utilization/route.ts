@@ -317,12 +317,22 @@ async function handler(request: NextRequest) {
     const locationCount = Number(kpi?.location_count || 0);
     const repeatRate = uniquePatients > 0 ? Math.round((repeatPatients / uniquePatients) * 100) : 0;
 
-    // ── YoY ──
+    // ── YoY with fallback to period-over-period (PoP) ──
+    // Primary: compare to the same window one year ago (YoY).
+    // If prior-period history is too thin (< threshold consults — usually a
+    // recently-onboarded client), fall back to the immediately preceding
+    // window of equal length (PoP). If even PoP is thin, surface a
+    // "New this year" pill via hasInsufficientHistory.
+    const YOY_MIN_PRIOR_CONSULTS = 50;
     let yoyConsults: number | null = null;
     let yoyUnique: number | null = null;
     let yoyRepeat: number | null = null;
+    let yoyBasis: "yoy" | "pop" | null = null;
+    let yoyLabel: string | null = null;
+    let hasInsufficientHistory = false;
+
     if (q.hasDateRange) {
-      const prevRows = await safeQuery(() => dwQuery<{
+      const yoyPrev = await safeQuery(() => dwQuery<{
         total_consults: string; unique_patients: string; repeat_patients: string;
       }>(
         `SELECT
@@ -332,10 +342,60 @@ async function handler(request: NextRequest) {
         FROM ${BASE_TABLE} a WHERE ${q.prevWhere}`,
         q.params
       ));
-      if (prevRows[0]) {
-        yoyConsults = yoyChange(totalConsults, Number(prevRows[0].total_consults || 0));
-        yoyUnique = yoyChange(uniquePatients, Number(prevRows[0].unique_patients || 0));
-        yoyRepeat = yoyChange(repeatPatients, Number(prevRows[0].repeat_patients || 0));
+      const yoyPrevConsults = Number(yoyPrev[0]?.total_consults || 0);
+
+      if (yoyPrevConsults >= YOY_MIN_PRIOR_CONSULTS) {
+        yoyBasis = "yoy";
+        yoyLabel = "vs Last Year";
+        yoyConsults = yoyChange(totalConsults, yoyPrevConsults);
+        yoyUnique = yoyChange(uniquePatients, Number(yoyPrev[0]!.unique_patients || 0));
+        yoyRepeat = yoyChange(repeatPatients, Number(yoyPrev[0]!.repeat_patients || 0));
+      } else {
+        // Try PoP: preceding equal-length window
+        const dateFromStr = searchParams.get("dateFrom")!;
+        const dateToStr = searchParams.get("dateTo")!;
+        const MS = 86400000;
+        const fromMs = Date.parse(dateFromStr);
+        const toMs = Date.parse(dateToStr);
+        const durationMs = toMs - fromMs;
+        const popToMs = fromMs - MS;
+        const popFromMs = popToMs - durationMs;
+        const popFromStr = new Date(popFromMs).toISOString().slice(0, 10);
+        const popToStr = new Date(popToMs).toISOString().slice(0, 10);
+
+        // Reuse currentWhere (no year offset) with substituted date params.
+        // q.params positional order: [cugCode, dateFrom, dateTo, ...otherFilters]
+        const popParams = [...q.params];
+        popParams[1] = popFromStr;
+        popParams[2] = popToStr;
+
+        const popPrev = await safeQuery(() => dwQuery<{
+          total_consults: string; unique_patients: string; repeat_patients: string;
+        }>(
+          `SELECT
+            COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
+            COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
+            COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
+          FROM ${BASE_TABLE} a WHERE ${q.currentWhere}`,
+          popParams
+        ));
+        const popPrevConsults = Number(popPrev[0]?.total_consults || 0);
+
+        if (popPrevConsults >= YOY_MIN_PRIOR_CONSULTS) {
+          yoyBasis = "pop";
+          const days = Math.round(durationMs / MS) + 1;
+          const humanRange = days <= 45
+            ? `${days} days`
+            : days <= 60
+              ? "1 month"
+              : `${(days / 30).toFixed(days < 120 ? 1 : 0)} months`;
+          yoyLabel = `vs previous ${humanRange}`;
+          yoyConsults = yoyChange(totalConsults, popPrevConsults);
+          yoyUnique = yoyChange(uniquePatients, Number(popPrev[0]!.unique_patients || 0));
+          yoyRepeat = yoyChange(repeatPatients, Number(popPrev[0]!.repeat_patients || 0));
+        } else {
+          hasInsufficientHistory = true;
+        }
       }
     }
 
@@ -496,7 +556,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       filterOptions,
-      kpis: { totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat },
+      kpis: { totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
       charts: {
         demographicSunburst,
         demographicStats: {

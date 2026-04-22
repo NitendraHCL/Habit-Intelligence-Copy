@@ -845,13 +845,12 @@ export default function OHCUtilizationPage() {
                       <XAxis dataKey="location" tick={{ fontSize: 9, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                       <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
                       <RechartsTooltip
-                        contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
                         content={({ active, payload, label }: any) => {
                           if (!active || !payload?.length) return null;
                           const isOthers = label === "Others";
                           const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
                           return (
-                            <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, maxHeight: 300, overflowY: "auto" }}>
+                            <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxWidth: isOthers ? 480 : 260 }}>
                               <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
                               {payload.filter((p: any) => p.value > 0).map((p: any) => (
                                 <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
@@ -860,16 +859,17 @@ export default function OHCUtilizationPage() {
                                 </div>
                               ))}
                               {isOthers && breakdown.length > 0 && (
-                                <>
-                                  <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontWeight: 600, fontSize: 11, color: T.textMuted }}>Includes {breakdown.length} locations:</div>
-                                  {breakdown.slice(0, 15).map((b: any) => (
-                                    <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, marginTop: 2 }}>
-                                      <span style={{ color: T.textSecondary }}>{b.location}</span>
-                                      <span style={{ fontWeight: 500 }}>{formatNum(b.total)}</span>
-                                    </div>
-                                  ))}
-                                  {breakdown.length > 15 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>+{breakdown.length - 15} more</div>}
-                                </>
+                                <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Includes {breakdown.length} locations:</div>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                                    {breakdown.map((b: any) => (
+                                      <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                                        <span style={{ color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.location}</span>
+                                        <span style={{ fontWeight: 500, flexShrink: 0 }}>{formatNum(b.total)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                             </div>
                           );
@@ -1170,7 +1170,7 @@ export default function OHCUtilizationPage() {
                       const isOthers = label === "Others";
                       const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
                       return (
-                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxHeight: 300, overflowY: "auto" }}>
+                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxWidth: isOthers ? 480 : 260 }}>
                           <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
                           {payload.filter((p: any) => p.value > 0).map((p: any) => (
                             <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
@@ -1179,16 +1179,17 @@ export default function OHCUtilizationPage() {
                             </div>
                           ))}
                           {isOthers && breakdown.length > 0 && (
-                            <>
-                              <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontWeight: 600, fontSize: 11, color: T.textMuted }}>Includes {breakdown.length} locations:</div>
-                              {breakdown.slice(0, 15).map((b: any) => (
-                                <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, marginTop: 2 }}>
-                                  <span style={{ color: T.textSecondary }}>{b.location}</span>
-                                  <span style={{ fontWeight: 500 }}>{formatNum(b.total)}</span>
-                                </div>
-                              ))}
-                              {breakdown.length > 15 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>+{breakdown.length - 15} more</div>}
-                            </>
+                            <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6 }}>
+                              <div style={{ fontWeight: 600, fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Includes {breakdown.length} locations:</div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                                {breakdown.map((b: any) => (
+                                  <div key={b.location} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                                    <span style={{ color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.location}</span>
+                                    <span style={{ fontWeight: 500, flexShrink: 0 }}>{formatNum(b.total)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
                       );

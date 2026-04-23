@@ -1245,7 +1245,7 @@ export default function OHCUtilizationPage() {
                 <BarChart data={locationBySpecialtyData} margin={{ top: 40, right: 10, left: 0, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
                   <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
-                  <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
+                  <YAxis tick={{ fontSize: 11, fill: T.textMuted }} domain={[0, (dataMax: number) => { const padded = dataMax * 1.1; const mag = Math.pow(10, Math.floor(Math.log10(padded))); return Math.ceil(padded / mag) * mag; }]} />
                   <RechartsTooltip
                     content={({ active, payload, label }: any) => {
                       if (!active || !payload?.length) return null;
@@ -1289,11 +1289,24 @@ export default function OHCUtilizationPage() {
                         {isLast && (
                           <LabelList
                             dataKey="__total"
-                            position="top"
-                            fontSize={10}
-                            fontWeight={600}
-                            fill={T.textSecondary}
-                            formatter={(v: any) => (v > 0 ? formatNum(Number(v)) : "")}
+                            content={(props: any) => {
+                              const { x, y, width, value } = props;
+                              const n = Number(value);
+                              if (!n || n <= 0) return null;
+                              const text = formatNum(n);
+                              const barTopY = Number(y);
+                              const cx = Number(x) + Number(width) / 2;
+                              const w = Math.max(30, text.length * 6 + 10);
+                              const h = 16;
+                              const rectY = barTopY - h - 6;
+                              const textY = rectY + h - 4;
+                              return (
+                                <g>
+                                  <rect x={cx - w / 2} y={rectY} width={w} height={h} rx={3} ry={3} fill="#fff" stroke={T.borderLight} />
+                                  <text x={cx} y={textY} textAnchor="middle" fontSize={10} fontWeight={600} fill={T.textPrimary}>{text}</text>
+                                </g>
+                              );
+                            }}
                           />
                         )}
                       </Bar>

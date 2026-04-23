@@ -269,7 +269,7 @@ export default function OHCUtilizationPage() {
     if (!cc) return true;
     return cc.visible;
   };
-  const [trendView, setTrendView] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
   const [selectedBubbleSpec, setSelectedBubbleSpec] = useState<string>("");
   const [repeatView, setRepeatView] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
@@ -299,9 +299,9 @@ export default function OHCUtilizationPage() {
 
   // Page-level filters (including date range)
   // "draft" state — what the user is selecting in the filter dropdowns
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(2024, 0, 1),
-    to: new Date(2026, 2, 31),
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(() => {
+    const today = new Date();
+    return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
   });
   const [dateOpen, setDateOpen] = useState(false);
 
@@ -315,9 +315,9 @@ export default function OHCUtilizationPage() {
   });
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(2024, 0, 1),
-    to: new Date(2026, 2, 31),
+  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>(() => {
+    const today = new Date();
+    return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
   });
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[],
@@ -360,6 +360,25 @@ export default function OHCUtilizationPage() {
   const avgConsults = visitTrends.length > 0
     ? Math.round(visitTrends.reduce((s: number, v: any) => s + v.completed, 0) / visitTrends.length)
     : 0;
+
+  const yearlyTrends = useMemo(() => {
+    if (visitTrends.length === 0) return [] as Array<{ period: string; completed: number; cancelled: number; noShow: number; yoy: number | null; isYtd: boolean }>;
+    const byYear: Record<string, { completed: number; cancelled: number; noShow: number }> = {};
+    for (const v of visitTrends as Array<{ period: string; completed?: number; cancelled?: number; noShow?: number }>) {
+      const yr = String(v.period).slice(0, 4);
+      if (!byYear[yr]) byYear[yr] = { completed: 0, cancelled: 0, noShow: 0 };
+      byYear[yr].completed += v.completed || 0;
+      byYear[yr].cancelled += v.cancelled || 0;
+      byYear[yr].noShow += v.noShow || 0;
+    }
+    const currentYear = String(new Date().getFullYear());
+    const years = Object.keys(byYear).sort();
+    return years.map((yr, i) => {
+      const prev = i > 0 ? byYear[years[i - 1]].completed : 0;
+      const yoy = i > 0 && prev > 0 ? Math.round(((byYear[yr].completed - prev) / prev) * 100) : null;
+      return { period: yr, ...byYear[yr], yoy, isYtd: yr === currentYear };
+    });
+  }, [visitTrends]);
 
   const repeatTrendData = charts?.repeatTrends ?? [];
   const serviceCategories = charts?.serviceCategories ?? [];
@@ -1217,7 +1236,7 @@ export default function OHCUtilizationPage() {
             <div className="overflow-x-auto">
             <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={locationBySpecialtyData} margin={{ top: 24, right: 10, left: 0, bottom: 45 }}>
+                <BarChart data={locationBySpecialtyData} margin={{ top: 40, right: 10, left: 0, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
                   <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
                   <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
@@ -1338,10 +1357,10 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? "Shows month-wise total consultations to identify demand peaks, across selected year" : trendView === "weekly" ? "Highlights peak consultation windows across weeks and time slots for first time and repeat visitors" : "Year-over-year consultation volume comparison"} tooltipText="Line chart tracking total consultations and unique patients over time. Switch between monthly, weekly, and yearly views using the toggle. Monthly view identifies seasonal demand peaks; weekly view shows time-slot heatmaps for first-time vs repeat visitors; yearly view compares year-over-year growth." chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={visitTrends.map((v: { period: string }) => v.period)}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? "Shows month-wise total consultations to identify demand peaks, across selected year" : "Year-over-year consultation volume comparison"} tooltipText="Track consultation volume over time. Monthly view identifies seasonal demand peaks; yearly view compares year-over-year growth." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
-              {(["weekly", "monthly", "yearly"] as const).map((v) => (
+              {(["monthly", "yearly"] as const).map((v) => (
                 <button key={v} onClick={() => setTrendView(v)} className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${trendView === v ? "bg-white shadow-sm" : ""}`} style={{ color: trendView === v ? T.textPrimary : T.textMuted }}>
                   {v.charAt(0).toUpperCase() + v.slice(1)}
                 </button>
@@ -1351,41 +1370,88 @@ export default function OHCUtilizationPage() {
           </div>
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} angle={trendView === "weekly" ? -45 : 0} textAnchor={trendView === "weekly" ? "end" : "middle"} height={trendView === "weekly" ? 60 : 30} />
-                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-                <RechartsTooltip content={({ active, payload, label }: any) => {
-                  if (!active || !payload?.length) return null;
-                  const dd = payload[0]?.payload;
-                  const total = (dd?.completed || 0) + (dd?.cancelled || 0) + (dd?.noShow || 0);
-                  return (
-                    <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                      <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                      <p>Total Appointments: <strong>{formatNum(total)}</strong></p>
-                      <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
-                        <p style={{ color: "#4f46e5" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>
-                        <p style={{ color: "#f59e0b" }}>Cancelled: <strong>{formatNum(dd?.cancelled)}</strong></p>
-                        <p style={{ color: "#ef4444" }}>No-Show: <strong>{formatNum(dd?.noShow)}</strong></p>
+              {trendView === "yearly" ? (
+                <BarChart data={yearlyTrends} margin={{ top: 30, right: 20, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const d = yearlyTrends.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; }} />
+                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <RechartsTooltip content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const dd = payload[0]?.payload;
+                    const total = (dd?.completed || 0) + (dd?.cancelled || 0) + (dd?.noShow || 0);
+                    return (
+                      <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}{dd?.isYtd ? " (YTD)" : ""}</p>
+                        <p>Total Appointments: <strong>{formatNum(total)}</strong></p>
+                        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
+                          <p style={{ color: "#4f46e5" }}>Completed: <strong>{formatNum(dd?.completed)}</strong>{dd?.yoy != null ? <span className="ml-2 text-[10px]" style={{ color: dd.yoy >= 0 ? "#16a34a" : "#dc2626" }}>{dd.yoy >= 0 ? "+" : ""}{dd.yoy}% YoY</span> : null}</p>
+                          <p style={{ color: "#f59e0b" }}>Cancelled: <strong>{formatNum(dd?.cancelled)}</strong></p>
+                          <p style={{ color: "#ef4444" }}>No-Show: <strong>{formatNum(dd?.noShow)}</strong></p>
+                        </div>
                       </div>
-                      <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
-                        <p style={{ color: "#0d9488" }}>Unique Patients: <strong>{formatNum(dd?.uniquePatients)}</strong></p>
+                    );
+                  }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar dataKey="completed" name="Completed" fill="#4f46e5" radius={[4, 4, 0, 0]}>
+                    <LabelList content={(props: any) => {
+                      const { x, y, width, index } = props;
+                      const d = yearlyTrends[index];
+                      if (!d || d.yoy == null) return null;
+                      const color = d.yoy >= 0 ? "#16a34a" : "#dc2626";
+                      const label = `${d.yoy >= 0 ? "+" : ""}${d.yoy}%`;
+                      return <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>{label}</text>;
+                    }} />
+                  </Bar>
+                  <Bar dataKey="cancelled" name="Cancelled" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="noShow" name="No-Show" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              ) : (
+                <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+                  <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <RechartsTooltip content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const dd = payload[0]?.payload;
+                    const total = (dd?.completed || 0) + (dd?.cancelled || 0) + (dd?.noShow || 0);
+                    return (
+                      <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                        <p>Total Appointments: <strong>{formatNum(total)}</strong></p>
+                        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
+                          <p style={{ color: "#4f46e5" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>
+                          <p style={{ color: "#f59e0b" }}>Cancelled: <strong>{formatNum(dd?.cancelled)}</strong></p>
+                          <p style={{ color: "#ef4444" }}>No-Show: <strong>{formatNum(dd?.noShow)}</strong></p>
+                        </div>
+                        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
+                          <p style={{ color: "#0d9488" }}>Unique Patients: <strong>{formatNum(dd?.uniquePatients)}</strong></p>
+                        </div>
                       </div>
-                    </div>
-                  );
-                }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                <ReferenceLine y={avgConsults} stroke={T.border} strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
-                <Line type="monotone" dataKey="cancelled" name="Cancelled" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#f59e0b" }} />
-                <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />
-                <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
-              </LineChart>
+                    );
+                  }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <ReferenceLine y={avgConsults} stroke={T.border} strokeDasharray="5 5" />
+                  <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
+                  <Line type="monotone" dataKey="cancelled" name="Cancelled" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#f59e0b" }} />
+                  <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />
+                  <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
+                </LineChart>
+              )}
             </ResponsiveContainer>
           </div>
-          <InsightBox text={visitTrends.length > 0
-            ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); return `Average ${trendView} completed consults: ${formatNum(avgConsults)}. Peak period: ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, ${formatNum(peak.noShow)} no-shows.`; })()
-            : "No trend data available for the selected period."} />
+          <InsightBox text={trendView === "yearly"
+            ? (() => {
+                if (yearlyTrends.length === 0) return "No trend data available for the selected period.";
+                if (yearlyTrends.length === 1) { const y = yearlyTrends[0]; return `${y.period}${y.isYtd ? " (YTD)" : ""}: ${formatNum(y.completed)} completed consults. Widen the date range to see year-over-year comparisons.`; }
+                const lastFull = [...yearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
+                const ytd = yearlyTrends.find((y) => y.isYtd);
+                const basePart = lastFull ? `Completed consults ${lastFull.yoy! >= 0 ? "grew" : "declined"} ${Math.abs(lastFull.yoy!)}% YoY in ${lastFull.period}.` : "";
+                const ytdPart = ytd ? ` ${ytd.period} is currently at ${formatNum(ytd.completed)} completed (YTD).` : "";
+                return (basePart + ytdPart).trim() || "Insufficient history for a year-over-year comparison.";
+              })()
+            : visitTrends.length > 0
+              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); return `Average ${trendView} completed consults: ${formatNum(avgConsults)}. Peak period: ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, ${formatNum(peak.noShow)} no-shows.`; })()
+              : "No trend data available for the selected period."} />
         </CVCard>}
 
         {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Proportional distribution of consultations" tooltipText="Donut chart showing consultation share per specialty. Center shows total consults. Hover for exact count and percentage." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">

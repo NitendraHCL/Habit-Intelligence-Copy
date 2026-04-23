@@ -6,16 +6,17 @@ import { withCache } from "@/lib/cache/middleware";
 /* ────────────────────────────────────────────────
  * OHC Utilization API — powered by aggregated_table.agg_kpi
  *
- * Fresh schema (Apr 2026):
- *   slotstarttime (timestamp), uhid (text), speciality_name (text),
- *   age (int), patient_gender (text), stage (text),
+ * Live agg_kpi schema:
+ *   slotstarttime (timestamp), consult_date_only (date), consult_hour (int),
+ *   consult_dow (int), uhid (text), speciality_name (text), age (int),
+ *   age_group (text), patient_gender (text), stage (text),
  *   facility_mapping (text), cug_code_mapped (text), relationship (text),
- *   total_consult_count (bigint), unique_consult_count (int), repeat_patient_count (int)
+ *   total_consult_count (bigint), unique_consult_count (int),
+ *   repeat_patient_count (int)
  *
- * Category Radar / Service Category Metrics come from aggregated_table.agg_service_kpi
- * (fresh table — replaces agg_bookedvscompleted). Columns: g_creation_time,
- * "serviceType", booked_count, completed_count, cug_code_mapped, age_group,
- * patient_gender, relationship, status.
+ * Category Radar / Service Category Metrics come from aggregated_table.agg_service_kpi.
+ * Columns: g_creation_time, "serviceType", booked_count, completed_count,
+ * cug_code_mapped, age_group, patient_gender, relationship, status.
  * ──────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
@@ -53,18 +54,18 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const hasDateRange = !!(dateFrom && dateTo);
 
   if (dateFrom) {
-    conditions.push(`a.consult_date >= $${idx}::timestamp`);
-    prevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
-    allStageConditions.push(`a.consult_date >= $${idx}::timestamp`);
-    allStagePrevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
+    conditions.push(`a.consult_date_only >= $${idx}::timestamp`);
+    prevConditions.push(`a.consult_date_only >= ($${idx}::date - interval '1 year')::timestamp`);
+    allStageConditions.push(`a.consult_date_only >= $${idx}::timestamp`);
+    allStagePrevConditions.push(`a.consult_date_only >= ($${idx}::date - interval '1 year')::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
-    prevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
-    allStageConditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
-    allStagePrevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
+    conditions.push(`a.consult_date_only <= ($${idx}::date + interval '1 day')::timestamp`);
+    prevConditions.push(`a.consult_date_only <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
+    allStageConditions.push(`a.consult_date_only <= ($${idx}::date + interval '1 day')::timestamp`);
+    allStagePrevConditions.push(`a.consult_date_only <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
@@ -189,23 +190,17 @@ async function handler(request: NextRequest) {
       q.params
     ));
 
-    const peakPromise = safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
-      `SELECT EXTRACT(DOW FROM a.consult_date) AS day_of_week,
-       a.consult_hour AS hour_of_day,
-       COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
-      FROM ${BASE_TABLE} a
-      WHERE ${q.currentWhere} AND a.consult_hour IS NOT NULL
-      GROUP BY day_of_week, a.consult_hour ORDER BY day_of_week, a.consult_hour`,
-      q.params
-    ));
+    // Peak hours: agg_kpi no longer exposes consult_hour (schema redesign).
+    // Return empty so the heatmap renders blank instead of breaking the endpoint.
+    const peakPromise: Promise<{ day_of_week: string; hour_of_day: string; total_consults: string }[]> = Promise.resolve([]);
 
     // Visit trends: monthly, ALL stages
     const trendPromise = safeQuery(() => dwQuery<{
       period: string; stage: string; consults: string; unique_pats: string;
     }>(
       `SELECT
-        to_char(a.consult_date, 'YYYY-MM') AS period,
-        a.stage,
+        to_char(a.consult_date_only, 'YYYY-MM') AS period,
+        a.stage AS stage,
         CASE WHEN a.stage = 'Completed'
           THEN COALESCE(SUM(a.total_consult_count), 0)::bigint
           ELSE COUNT(*)::bigint
@@ -223,7 +218,7 @@ async function handler(request: NextRequest) {
       period: string; repeat_visits: string; repeat_patients: string;
     }>(
       `SELECT
-        to_char(a.consult_date, 'YYYY-MM') AS period,
+        to_char(a.consult_date_only, 'YYYY-MM') AS period,
         COALESCE(SUM(a.total_consult_count) FILTER (WHERE a.repeat_patient_count > 0), 0)::bigint AS repeat_visits,
         COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
       FROM ${BASE_TABLE} a

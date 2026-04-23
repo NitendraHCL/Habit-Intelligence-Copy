@@ -273,7 +273,6 @@ export default function ReferralAnalyticsPage() {
 
   const [matrixYear, setMatrixYear] = useState<string>("");
   const [matrixView, setMatrixView] = useState<"absolute" | "percent">("absolute");
-  const [specFilter, setSpecFilter] = useState<"all" | "available" | "external">("all");
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {
@@ -335,13 +334,13 @@ export default function ReferralAnalyticsPage() {
     rowTotals[from] = referredSpecs.reduce((s, to) => s + (matrixLookup[`${from}|${to}`] || 0), 0);
   });
 
-  // Specialty detail filter
+  // Specialty details — external-only specialties are hidden on this page
+  // (external data is out of scope for now), so the table only shows
+  // specialties available in-clinic.
   const filteredSpecDetails = useMemo(() => {
     const details: any[] = charts?.specialtyDetails || [];
-    if (specFilter === "available") return details.filter((s: any) => s.isAvailableInClinic);
-    if (specFilter === "external") return details.filter((s: any) => !s.isAvailableInClinic);
-    return details;
-  }, [charts?.specialtyDetails, specFilter]);
+    return details.filter((s: any) => s.isAvailableInClinic);
+  }, [charts?.specialtyDetails]);
 
   // Demographics data for polar radial
   const demoData: Array<{ ageGroup: string; male: number; female: number }> = charts?.demographics || [];
@@ -541,21 +540,9 @@ export default function ReferralAnalyticsPage() {
       </WarmSection>
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
-      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="Referral Availability & Conversion by Specialty" subtitle="Which specialties are available in-clinic vs. external, and their conversion rates" tooltipText="Table listing each referred specialty with availability status, referral count, conversion progress bar, and in-clinic consult counts. Filter between all, available, or external specialties."
+      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Referral volume and conversion rate for specialties available in-clinic" tooltipText="Table listing each referred specialty available in-clinic, with referral count, conversion progress bar, and in-clinic consult counts."
         chartId="specialtyConversion"
-        chartData={filteredSpecDetails} chartTitle="Referral Availability & Conversion by Specialty" chartDescription="Which specialties are available in-clinic vs. external, and their conversion rates">
-        <div className="flex items-center justify-end gap-2 mb-3">
-          <div className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5" style={{ backgroundColor: T.borderLight }}>
-            {([["all", "All Specialties"], ["available", "Available in Clinic"]] as const).map(([key, label]) => (
-              <button key={key} onClick={() => setSpecFilter(key)}
-                className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${specFilter === key ? "bg-white shadow-sm" : ""}`}
-                style={{ color: specFilter === key ? T.textPrimary : T.textMuted }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <ResetFilter visible={specFilter !== "all"} onClick={() => setSpecFilter("all")} />
-        </div>
+        chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Referral volume and conversion rate for specialties available in-clinic">
         <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}`, backgroundColor: T.white }}>
           <div className="overflow-x-auto">
           {/* Table Header */}
@@ -578,12 +565,8 @@ export default function ReferralAnalyticsPage() {
                   <p className="text-[14px] font-semibold" style={{ color: T.textPrimary }}>{s.specialty}</p>
                 </div>
                 <div>
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold ${
-                    s.isAvailableInClinic
-                      ? "bg-blue-50 text-blue-700 border border-blue-200"
-                      : "bg-orange-50 text-orange-600 border border-orange-200"
-                  }`}>
-                    {s.isAvailableInClinic ? "Available in Clinic" : "External Only"}
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    Available in Clinic
                   </span>
                 </div>
                 <div className="text-center">
@@ -622,12 +605,9 @@ export default function ReferralAnalyticsPage() {
         </div>
         {filteredSpecDetails.length > 0 && (
           <div className="mt-4">
-            <InsightBox text={`${filteredSpecDetails.filter((s: any) => s.isAvailableInClinic).length} specialties are available in-clinic. ${(() => {
-              const top = filteredSpecDetails.find((s: any) => s.isAvailableInClinic && s.conversionRate > 0);
+            <InsightBox text={`${filteredSpecDetails.length} specialties are available in-clinic. ${(() => {
+              const top = filteredSpecDetails.find((s: any) => s.conversionRate > 0);
               return top ? `${top.specialty} leads in-clinic conversions with ${formatNum(top.inClinicConsults)} consults.` : "";
-            })()}${(() => {
-              const extCount = filteredSpecDetails.filter((s: any) => !s.isAvailableInClinic).length;
-              return extCount > 0 ? ` ${extCount} specialties are external-only with 0% in-clinic conversion.` : "";
             })()}`} />
           </div>
         )}
@@ -808,16 +788,16 @@ export default function ReferralAnalyticsPage() {
           </div>
         </CVCard>}
 
-        {/* Referral Volume by Specialty & Clinic Availability */}
+        {/* Referral Volume by Specialty & Location */}
         {isChartVisible("locationBySpecialty") && <CVCard
           accentColor={"#4f46e5"}
-          title="Referral Volume by Specialty & Clinic Availability"
-          subtitle="Per-Location Referral Counts: In-Clinic vs. Out-of-Clinic Specialties"
-          tooltipText="Stacked bar chart showing referral volume per location. Each bar is stacked by specialty — purple-toned segments are specialties available in-clinic, warm-toned (brown/orange/gold) segments are external-only referrals. This helps identify which locations depend most on external providers and where in-clinic expansion could reduce referral leakage."
+          title="Referral Volume by Specialty & Location"
+          subtitle="Per-location referral counts for specialties available in-clinic"
+          tooltipText="Stacked bar chart showing referral volume per location, segmented by specialty. Darker bar segments indicate higher referral volumes."
           chartId="locationBySpecialty"
           chartData={charts?.locationBySpecialty}
-          chartTitle="Referral Volume by Specialty & Clinic Availability"
-          chartDescription="Stacked bar chart showing per-location referral counts broken down by specialty. Purple-toned bars = in-clinic specialties; warm-toned bars = external-only. Helps identify referral leakage and expansion opportunities."
+          chartTitle="Referral Volume by Specialty & Location"
+          chartDescription="Stacked bar chart showing per-location referral counts broken down by in-clinic specialty."
 
         >
           {(() => {
@@ -825,7 +805,6 @@ export default function ReferralAnalyticsPage() {
             const locData = charts?.locationBySpecialty || [];
 
             const clinicSpecs = topBarSpecs.filter((s) => specAvailability[s]);
-            const externalSpecs = topBarSpecs.filter((s) => !specAvailability[s]);
 
             // Interpolate hex colors for a dark→light gradient palette of n steps
             const buildPalette = (darkHex: string, lightHex: string, n: number): string[] => {
@@ -841,47 +820,28 @@ export default function ReferralAnalyticsPage() {
             };
 
             const CLINIC_PALETTE  = buildPalette("#3730A3", "#C7D2FE", clinicSpecs.length);
-            const EXTERNAL_PALETTE = buildPalette("#92400E", "#FDE8C8", externalSpecs.length);
 
             // Per-location sorted specialty lists: index 0 = highest volume = bottom of stack = darkest
             const clinicByRank: string[][] = locData.map((d: any) =>
               [...clinicSpecs].sort((a, b) => (d[b] || 0) - (d[a] || 0))
             );
-            const externalByRank: string[][] = locData.map((d: any) =>
-              [...externalSpecs].sort((a, b) => (d[b] || 0) - (d[a] || 0))
-            );
 
             // Build rank-slot series: series[rank] carries the value of whichever specialty
             // occupies that rank slot in each location — so physical position = volume rank
-            const series: any[] = [
-              ...Array.from({ length: clinicSpecs.length }, (_, rank) => ({
-                name: `clinic_r${rank}`,
-                type: "bar",
-                stack: "clinic",
-                barMaxWidth: 48,
-                barGap: "20%",
-                legendHoverLink: false,
-                emphasis: { disabled: true },
-                itemStyle: { color: CLINIC_PALETTE[rank] },
-                data: locData.map((d: any, j: number) => {
-                  const spec = clinicByRank[j][rank];
-                  return spec ? { value: d[spec] || 0, specName: spec } : { value: 0, specName: "" };
-                }),
-              })),
-              ...Array.from({ length: externalSpecs.length }, (_, rank) => ({
-                name: `external_r${rank}`,
-                type: "bar",
-                stack: "external",
-                barMaxWidth: 48,
-                legendHoverLink: false,
-                emphasis: { disabled: true },
-                itemStyle: { color: EXTERNAL_PALETTE[rank] },
-                data: locData.map((d: any, j: number) => {
-                  const spec = externalByRank[j][rank];
-                  return spec ? { value: d[spec] || 0, specName: spec } : { value: 0, specName: "" };
-                }),
-              })),
-            ];
+            const series: any[] = Array.from({ length: clinicSpecs.length }, (_, rank) => ({
+              name: `clinic_r${rank}`,
+              type: "bar",
+              stack: "clinic",
+              barMaxWidth: 48,
+              barGap: "20%",
+              legendHoverLink: false,
+              emphasis: { disabled: true },
+              itemStyle: { color: CLINIC_PALETTE[rank] },
+              data: locData.map((d: any, j: number) => {
+                const spec = clinicByRank[j][rank];
+                return spec ? { value: d[spec] || 0, specName: spec } : { value: 0, specName: "" };
+              }),
+            }));
 
             return (
               <div className="overflow-x-auto">
@@ -901,18 +861,15 @@ export default function ReferralAnalyticsPage() {
                           const val = params?.data?.value ?? params?.value ?? 0;
                           if (!params || val === 0) return "";
                           const specName: string = params?.data?.specName || "";
-                          const isClinic = params.seriesName?.startsWith("clinic_");
-                          const accentColor = isClinic ? "#4338CA" : "#92400E";
-                          const tag = isClinic ? "Available in Clinic" : "External Only";
+                          const accentColor = "#4338CA";
                           // rank is encoded in series name as clinic_r0, clinic_r1, etc.
                           const rank = parseInt(params.seriesName?.split("_r")[1] ?? "0", 10);
-                          const groupSize = isClinic ? clinicSpecs.length : externalSpecs.length;
-                          const rankLabel = rank === 0 ? "Highest volume in location" : rank === groupSize - 1 ? "Lowest volume in location" : `#${rank + 1} by volume`;
+                          const rankLabel = rank === 0 ? "Highest volume in location" : rank === clinicSpecs.length - 1 ? "Lowest volume in location" : `#${rank + 1} by volume`;
                           return (
                             `<div style="font-weight:700;font-size:13px;margin-bottom:6px;color:${T.textPrimary}">${params.name}</div>` +
                             `<div style="color:${accentColor};margin-bottom:4px;font-weight:600">${specName}</div>` +
                             `<div style="display:flex;justify-content:space-between;gap:16px">` +
-                            `<span style="color:${T.textMuted};font-size:11px">${tag}</span>` +
+                            `<span style="color:${T.textMuted};font-size:11px">Available in Clinic</span>` +
                             `<span style="font-weight:700;font-size:13px;color:${accentColor}">${formatNum(val)}</span>` +
                             `</div>` +
                             `<div style="font-size:10px;color:${T.textMuted};margin-top:4px">${rankLabel}</div>`
@@ -949,13 +906,9 @@ export default function ReferralAnalyticsPage() {
               <div className="w-10 h-3 rounded-sm" style={{ background: "linear-gradient(90deg, #3730A3, #C7D2FE)" }} />
               <span>Available in Clinic — dark = highest volume</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-3 rounded-sm" style={{ background: "linear-gradient(90deg, #92400E, #FDE8C8)" }} />
-              <span>External Only — dark = highest volume</span>
-            </div>
           </div>
           <div className="mt-4">
-            <InsightBox text="Compare referral volumes across locations to identify high-demand areas. Each location has two bars — the purple-toned left bar shows in-clinic specialties, the warm-toned right bar shows external-only referrals. Tall right bars indicate locations heavily dependent on external providers." />
+            <InsightBox text="Compare in-clinic referral volumes across locations to identify high-demand areas. Within each bar, darker segments represent the specialties with highest referral volume at that location." />
           </div>
         </CVCard>}
       </div>}

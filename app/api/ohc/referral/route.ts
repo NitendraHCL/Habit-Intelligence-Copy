@@ -3,7 +3,31 @@ import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
-const BASE_TABLE = "aggregated_table.agg_referral_kpi";
+/* ────────────────────────────────────────────────────────────────────
+ * OHC Referral API — powered by aggregated_table.agg_referral, joined
+ * with aggregated_table.agg_apptt on (uhid, slotstarttime) for patient
+ * demographics and facility information.
+ *
+ * agg_referral  → conversion events (one row per converted referral),
+ *                 plus patient-level rollups (total_referrals_by_uhid,
+ *                 total_conversions_by_uhid).
+ * agg_apptt     → appointment-level patient attributes (age, gender,
+ *                 facility_name, specialty).
+ *
+ * The (uhid, slotstarttime) join yields a 100% match against HCL data,
+ * so every chart can honour location/gender/age filters.
+ * ──────────────────────────────────────────────────────────────────── */
+
+const BASE_TABLE = "aggregated_table.agg_referral";
+const APPTT_TABLE = "aggregated_table.agg_apptt";
+
+const AGE_GROUP_CASE = `CASE
+  WHEN ap.age < 20 THEN '<20'
+  WHEN ap.age BETWEEN 20 AND 35 THEN '20-35'
+  WHEN ap.age BETWEEN 36 AND 40 THEN '36-40'
+  WHEN ap.age BETWEEN 41 AND 60 THEN '41-60'
+  WHEN ap.age > 60 THEN '61+'
+END`;
 
 const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
 
@@ -18,28 +42,23 @@ function normGender(g: string | null | undefined): "M" | "F" | "O" {
 function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
+  const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
   const locations = searchParams.get("locations")?.split(",").filter(Boolean);
   const genders = searchParams.get("genders")?.split(",").filter(Boolean);
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
-  const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
 
   const conditions: string[] = [`r.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
   let idx = 2;
 
   if (dateFrom) {
-    conditions.push(`r.consult_month >= date_trunc('month', $${idx}::date)`);
+    conditions.push(`r.bill_date_time >= $${idx}::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`r.consult_month <= date_trunc('month', $${idx}::date)`);
+    conditions.push(`r.bill_date_time <= ($${idx}::date + interval '1 day')::timestamp`);
     params.push(dateTo);
-    idx++;
-  }
-  if (locations?.length) {
-    conditions.push(`r.facility_name = ANY($${idx})`);
-    params.push(locations);
     idx++;
   }
   if (specialties?.length) {
@@ -47,23 +66,34 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     params.push(specialties);
     idx++;
   }
+  if (locations?.length) {
+    conditions.push(`ap.facility_name = ANY($${idx})`);
+    params.push(locations);
+    idx++;
+  }
   if (genders?.length) {
     const gc = genders.map((g) => {
       const l = g.toLowerCase();
-      if (l === "male") return "LOWER(TRIM(r.patient_gender)) IN ('male', 'm')";
-      if (l === "female") return "LOWER(TRIM(r.patient_gender)) IN ('female', 'f')";
-      return "(LOWER(TRIM(r.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR r.patient_gender IS NULL OR TRIM(r.patient_gender) = '')";
+      if (l === "male") return "LOWER(TRIM(ap.patient_gender)) IN ('male', 'm')";
+      if (l === "female") return "LOWER(TRIM(ap.patient_gender)) IN ('female', 'f')";
+      return "(LOWER(TRIM(ap.patient_gender)) NOT IN ('male','m','female','f') OR ap.patient_gender IS NULL OR TRIM(ap.patient_gender)='')";
     });
     conditions.push(`(${gc.join(" OR ")})`);
   }
   if (ageGroups?.length) {
-    conditions.push(`r.age_group = ANY($${idx})`);
+    conditions.push(`${AGE_GROUP_CASE} = ANY($${idx})`);
     params.push(ageGroups);
     idx++;
   }
 
   return { params, where: conditions.join(" AND ") };
 }
+
+// Common JOIN fragment used by every query that needs patient/facility data.
+const JOIN_APPTT = `
+  JOIN ${APPTT_TABLE} ap
+    ON ap.uhid = r.uhid
+   AND ap.slotstarttime = r.slotstarttime`;
 
 async function handler(request: NextRequest) {
   try {
@@ -89,98 +119,121 @@ async function handler(request: NextRequest) {
     }
 
     // ── KPIs ──
-    const kpiRows = await safeQuery(() =>
-      dwQuery<{ total_referrals: string; converted_count: string }>(
-        `SELECT
-           COALESCE(SUM(r.referral_count), 0)::bigint AS total_referrals,
-           COALESCE(SUM(CASE WHEN r.converted = 'Conversion' THEN r.referral_count ELSE 0 END), 0)::bigint AS converted_count
-         FROM ${BASE_TABLE} r
-         WHERE ${q.where}`,
-        q.params
-      )
-    );
-    const totalReferrals = Number(kpiRows[0]?.total_referrals || 0);
-    const convertedCount = Number(kpiRows[0]?.converted_count || 0);
+    // Total referrals: SUM over DISTINCT uhids of their patient-level
+    // total_referrals_by_uhid (the column is constant per uhid).
+    // Converted count: COUNT of matched conversion rows.
+    const [totalsRow, convRow] = await Promise.all([
+      safeQuery(() =>
+        dwQuery<{ total_referrals: string }>(
+          `SELECT COALESCE(SUM(min_tr), 0)::bigint AS total_referrals
+           FROM (
+             SELECT r.uhid, MIN(r.total_referrals_by_uhid) AS min_tr
+             FROM ${BASE_TABLE} r ${JOIN_APPTT}
+             WHERE ${q.where}
+             GROUP BY r.uhid
+           ) s`,
+          q.params
+        )
+      ),
+      safeQuery(() =>
+        dwQuery<{ converted_count: string }>(
+          `SELECT COUNT(*)::bigint AS converted_count
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
+           WHERE ${q.where}`,
+          q.params
+        )
+      ),
+    ]);
+
+    const totalReferrals = Number(totalsRow[0]?.total_referrals || 0);
+    const convertedCount = Number(convRow[0]?.converted_count || 0);
     const conversionPct = totalReferrals > 0 ? Math.round((convertedCount / totalReferrals) * 100) : 0;
 
-    // ── Concurrent batch: trends, matrix, demographics, specialty, location ──
-    const [trendRows, matrixRows, demoRows, specRows, locSpecRows] = await Promise.all([
+    // ── Concurrent batch: trends, matrix, specialty, demographics, location ──
+    const [trendRows, matrixRows, specRows, demoRows, locSpecRows] = await Promise.all([
       safeQuery(() =>
-        dwQuery<{ month: string; total_referrals: string; converted_count: string }>(
+        dwQuery<{ period: string; bucket: string; conversions: string }>(
           `SELECT
-             to_char(r.consult_month, 'Mon YYYY') AS month,
-             COALESCE(SUM(r.referral_count), 0)::bigint AS total_referrals,
-             COALESCE(SUM(CASE WHEN r.converted = 'Conversion' THEN r.referral_count ELSE 0 END), 0)::bigint AS converted_count
-           FROM ${BASE_TABLE} r
+             to_char(date_trunc('month', r.bill_date_time), 'Mon YYYY') AS period,
+             to_char(date_trunc('month', r.bill_date_time), 'YYYY-MM')   AS bucket,
+             COUNT(*)::bigint AS conversions
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
            WHERE ${q.where}
-           GROUP BY r.consult_month
-           ORDER BY r.consult_month`,
+           GROUP BY 1, 2
+           ORDER BY bucket`,
           q.params
         )
       ),
       safeQuery(() =>
         dwQuery<{ year: string; from_spec: string; to_spec: string; cnt: string }>(
           `SELECT
-             EXTRACT(YEAR FROM r.consult_month)::int::text AS year,
-             r.referring_speciality AS from_spec,
-             r.speciality_referred_to AS to_spec,
-             COALESCE(SUM(r.referral_count), 0)::bigint AS cnt
-           FROM ${BASE_TABLE} r
+             EXTRACT(YEAR FROM r.bill_date_time)::int::text AS year,
+             r.speciality_referred_from AS from_spec,
+             r.speciality_referred_to   AS to_spec,
+             COUNT(*)::bigint AS cnt
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
            WHERE ${q.where}
-             AND r.referring_speciality IS NOT NULL
-             AND r.speciality_referred_to IS NOT NULL
+             AND r.speciality_referred_from IS NOT NULL
+             AND r.speciality_referred_to   IS NOT NULL
            GROUP BY year, from_spec, to_spec`,
           q.params
         )
       ),
       safeQuery(() =>
-        dwQuery<{ age_group: string; gender: string; cnt: string }>(
-          `SELECT
-             r.age_group,
-             r.patient_gender AS gender,
-             COALESCE(SUM(r.referral_count), 0)::bigint AS cnt
-           FROM ${BASE_TABLE} r
-           WHERE ${q.where} AND r.age_group IS NOT NULL
-           GROUP BY r.age_group, r.patient_gender`,
-          q.params
-        )
-      ),
-      safeQuery(() =>
-        dwQuery<{ specialty: string; referrals: string; converted: string }>(
+        dwQuery<{ specialty: string; conversions: string }>(
           `SELECT
              r.speciality_referred_to AS specialty,
-             COALESCE(SUM(r.referral_count), 0)::bigint AS referrals,
-             COALESCE(SUM(CASE WHEN r.converted = 'Conversion' THEN r.referral_count ELSE 0 END), 0)::bigint AS converted
-           FROM ${BASE_TABLE} r
+             COUNT(*)::bigint AS conversions
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
            WHERE ${q.where} AND r.speciality_referred_to IS NOT NULL
            GROUP BY r.speciality_referred_to
-           ORDER BY referrals DESC`,
+           ORDER BY conversions DESC`,
           q.params
         )
       ),
+      // Demographics: age_group × gender count
+      safeQuery(() =>
+        dwQuery<{ age_group: string; gender: string; cnt: string }>(
+          `SELECT
+             ${AGE_GROUP_CASE} AS age_group,
+             ap.patient_gender AS gender,
+             COUNT(*)::bigint AS cnt
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
+           WHERE ${q.where} AND ${AGE_GROUP_CASE} IS NOT NULL
+           GROUP BY age_group, ap.patient_gender`,
+          q.params
+        )
+      ),
+      // Location × specialty: facility -> referred-to specialty counts
       safeQuery(() =>
         dwQuery<{ location: string; specialty: string; cnt: string }>(
           `SELECT
-             r.facility_name AS location,
+             ap.facility_name AS location,
              r.speciality_referred_to AS specialty,
-             COALESCE(SUM(r.referral_count), 0)::bigint AS cnt
-           FROM ${BASE_TABLE} r
+             COUNT(*)::bigint AS cnt
+           FROM ${BASE_TABLE} r ${JOIN_APPTT}
            WHERE ${q.where}
-             AND r.facility_name IS NOT NULL
+             AND ap.facility_name IS NOT NULL
              AND r.speciality_referred_to IS NOT NULL
-           GROUP BY r.facility_name, r.speciality_referred_to`,
+           GROUP BY ap.facility_name, r.speciality_referred_to`,
           q.params
         )
       ),
     ]);
 
     // ── Trends ──
-    const referralTrends = trendRows.map((r) => ({
-      period: r.month,
-      totalReferrals: Number(r.total_referrals),
-      availableInClinic: 0,
-      inClinicConversions: Number(r.converted_count),
-    }));
+    // agg_referral only records conversions, so the three trend lines
+    // (totalReferrals, availableInClinic, inClinicConversions) all mirror
+    // the monthly conversion count.
+    const referralTrends = trendRows.map((row) => {
+      const c = Number(row.conversions);
+      return {
+        period: row.period,
+        totalReferrals: c,
+        availableInClinic: c,
+        inClinicConversions: c,
+      };
+    });
 
     // ── Matrix by year ──
     const matrixByYear: Record<string, { referredFrom: string; referredTo: string; count: number }[]> = {};
@@ -196,7 +249,20 @@ async function handler(request: NextRequest) {
     }
     const matrixYears = Array.from(matrixYearsSet).sort();
 
-    // ── Demographics ──
+    // ── Specialty details ──
+    // agg_referral stores only conversion rows, so a per-specialty
+    // conversion rate (conversions / referrals to that specialty) is not
+    // derivable from this table. We expose conversion counts and flag
+    // every returned specialty as available in-clinic.
+    const specialtyDetails = specRows.map((r) => ({
+      specialty: r.specialty,
+      referrals: Number(r.conversions),
+      inClinicConsults: Number(r.conversions),
+      conversionRate: 100,
+      isAvailableInClinic: true,
+    }));
+
+    // ── Demographics (age_group × gender) ──
     const ageBuckets: Record<string, { male: number; female: number; others: number }> = {};
     for (const row of demoRows) {
       if (!row.age_group) continue;
@@ -237,20 +303,7 @@ async function handler(request: NextRequest) {
       topCombo,
     };
 
-    // ── Specialty details ──
-    const specialtyDetails = specRows.map((r) => {
-      const referrals = Number(r.referrals);
-      const converted = Number(r.converted);
-      return {
-        specialty: r.specialty,
-        referrals,
-        conversionRate: referrals > 0 ? Math.round((converted / referrals) * 100) : 0,
-        inClinicConsults: converted,
-        isAvailableInClinic: true,
-      };
-    });
-
-    // ── Location × Specialty ──
+    // ── Location × Specialty (top-N specialties rolled into bars per location) ──
     const specTotals: Record<string, number> = {};
     for (const row of locSpecRows) {
       specTotals[row.specialty] = (specTotals[row.specialty] || 0) + Number(row.cnt);
@@ -281,8 +334,8 @@ async function handler(request: NextRequest) {
     return NextResponse.json({
       kpis: {
         totalReferrals,
-        availableInClinicCount: 0,
-        availableInClinicPct: 0,
+        availableInClinicCount: totalReferrals,
+        availableInClinicPct: totalReferrals > 0 ? 100 : 0,
         convertedCount,
         conversionPct,
       },

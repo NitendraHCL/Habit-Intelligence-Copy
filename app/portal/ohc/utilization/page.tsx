@@ -272,7 +272,7 @@ export default function OHCUtilizationPage() {
   };
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
   const [selectedBubbleSpec, setSelectedBubbleSpec] = useState<string>("");
-  const [repeatView, setRepeatView] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [repeatView, setRepeatView] = useState<"monthly" | "yearly">("monthly");
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
@@ -405,6 +405,25 @@ export default function OHCUtilizationPage() {
   }, [charts?.specialtyTreemap]);
 
   const repeatTrendData = charts?.repeatTrends ?? [];
+
+  const repeatYearlyTrends = useMemo(() => {
+    const rows = repeatTrendData as Array<{ label: string; repeatVisits?: number; repeatPatients?: number }>;
+    if (rows.length === 0) return [] as Array<{ period: string; repeatVisits: number; repeatPatients: number; yoy: number | null; isYtd: boolean }>;
+    const byYear: Record<string, { visits: number; patients: number }> = {};
+    for (const r of rows) {
+      const yr = String(r.label).slice(0, 4);
+      if (!byYear[yr]) byYear[yr] = { visits: 0, patients: 0 };
+      byYear[yr].visits += r.repeatVisits || 0;
+      byYear[yr].patients += r.repeatPatients || 0;
+    }
+    const currentYear = String(new Date().getFullYear());
+    const years = Object.keys(byYear).sort();
+    return years.map((yr, i) => {
+      const prev = i > 0 ? byYear[years[i - 1]].visits : 0;
+      const yoy = i > 0 && prev > 0 ? Math.round(((byYear[yr].visits - prev) / prev) * 100) : null;
+      return { period: yr, repeatVisits: byYear[yr].visits, repeatPatients: byYear[yr].patients, yoy, isYtd: yr === currentYear };
+    });
+  }, [repeatTrendData]);
   const serviceCategories = charts?.serviceCategories ?? [];
 
   const bubbleSpecs: string[] = charts?.bubbleSpecialties || [];
@@ -1872,26 +1891,120 @@ export default function OHCUtilizationPage() {
       {isChartVisible("repeatTrends") && <CVCard
         accentColor="#e11d48"
         title="Repeat Visit Trends"
-        subtitle="Repeat Visits = total consultations by employees who visited OHC more than once · Repeat Patients = unique employees who visited more than once · The gap between the two lines indicates visit intensity — a wider gap means each repeat patient returns more frequently"
-        tooltipText="Repeat Visits counts every consultation made by employees who have used OHC services more than once. Repeat Patients counts the unique number of such employees. A rising repeat visits line with a stable repeat patients line means the same employees are returning more often — indicating ongoing care needs. Toggle between weekly, monthly, and yearly views."
+        subtitle={repeatView === "yearly"
+          ? "Bars: total consults by employees who visited OHC more than once, aggregated per year. Teal line traces the year-over-year trajectory; YoY % shows change vs the prior year."
+          : isDailyView
+            ? "Solid line: total consults by repeat-visit employees by day. Dashed line: how many distinct repeat-visit employees there were. Widening gap = same people returning more often."
+            : "Solid line: total consults by repeat-visit employees by month. Dashed line: how many distinct repeat-visit employees there were. Widening gap = same people returning more often."}
+        tooltipText="Repeat Visits counts every consultation made by employees who have used OHC services more than once. Repeat Patients counts the unique number of such employees in each period. Note: summing Repeat Patients across periods double-counts employees who returned in multiple periods, so the yearly view shows Repeat Visits only."
         chartId="repeatTrends"
-        chartData={repeatTrendData}
+        chartData={repeatView === "yearly" ? repeatYearlyTrends : repeatTrendData}
         chartTitle="Repeat Visit Trends"
-        chartDescription="Repeat visit trends over time — toggle between weekly, monthly and yearly views"
+        chartDescription={`${repeatView} view of repeat visit trends`}
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: T.borderLight }}>
-            {(["weekly", "monthly", "yearly"] as const).map((v) => (
+            {(["monthly", "yearly"] as const).map((v) => (
               <button key={v} onClick={() => setRepeatView(v)}
                 className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${repeatView === v ? "bg-white shadow-sm" : ""}`}
                 style={{ color: repeatView === v ? T.textPrimary : T.textMuted }}>
-                {v.charAt(0).toUpperCase() + v.slice(1)}
+                {v === "monthly" && isDailyView ? "Daily" : v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
           <ResetFilter visible={repeatView !== "monthly"} onClick={() => setRepeatView("monthly")} />
         </div>
         {(() => {
+          const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          const fmtPeriodTick = (value: string) => {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) { const [, m, d] = value.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; }
+            if (/^\d{4}-\d{2}$/.test(value)) { const [y, m] = value.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; }
+            return value;
+          };
+
+          if (repeatView === "yearly") {
+            const yearly = repeatYearlyTrends;
+            const yearlyOption = {
+              tooltip: {
+                trigger: "axis" as const,
+                backgroundColor: "#fff",
+                borderColor: T.border,
+                borderWidth: 1,
+                padding: [10, 14],
+                textStyle: { fontSize: 12, color: T.textPrimary },
+                extraCssText: "box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:10px;",
+                formatter: (params: any) => {
+                  const period = params[0]?.axisValue || "";
+                  const d = yearly.find((y) => y.period === period);
+                  const suffix = d?.isYtd ? " (YTD)" : "";
+                  const yoyPart = d?.yoy != null ? ` <span style="color:${d.yoy >= 0 ? "#16a34a" : "#dc2626"};font-weight:600">${d.yoy >= 0 ? "+" : ""}${d.yoy}% YoY</span>` : "";
+                  const ratio = d && d.repeatPatients > 0 ? (d.repeatVisits / d.repeatPatients).toFixed(1) : "—";
+                  return `<div style="font-weight:700;margin-bottom:6px;color:${T.textPrimary}">${period}${suffix}</div><div style="color:${T.textSecondary}">Repeat Visits: <strong style="color:${T.textPrimary}">${formatNum(d?.repeatVisits || 0)}</strong>${yoyPart}</div><div style="color:${T.textSecondary}">Repeat Patients: <strong style="color:${T.textPrimary}">${formatNum(d?.repeatPatients || 0)}</strong></div><div style="border-top:1px solid ${T.borderLight};margin-top:6px;padding-top:6px;font-size:11px;color:${T.textSecondary}">Visits per repeat patient: <strong style="color:${T.textPrimary}">${ratio}</strong></div><div style="font-size:10px;color:${T.textMuted};margin-top:3px;font-style:italic">Repeat patients = sum of monthly values (may double-count across months)</div>`;
+                },
+              },
+              legend: { bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: T.textSecondary }, icon: "circle" },
+              grid: { top: 40, bottom: 44, left: 56, right: 24 },
+              xAxis: { type: "category" as const, data: yearly.map((y) => y.period), axisLabel: { fontSize: 11, color: T.textSecondary, formatter: (v: string) => { const d = yearly.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; } }, axisTick: { show: false }, axisLine: { lineStyle: { color: T.borderLight } } },
+              yAxis: { type: "value" as const, axisLabel: { fontSize: 10, color: T.textMuted }, splitLine: { lineStyle: { color: T.borderLight, type: "dashed" as const } }, axisLine: { show: false }, axisTick: { show: false } },
+              series: [
+                {
+                  name: "Repeat Visits",
+                  type: "bar" as const,
+                  itemStyle: { color: "#3b82f6", borderRadius: [4, 4, 0, 0] },
+                  barMaxWidth: 56,
+                  label: {
+                    show: true,
+                    position: "top" as const,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    formatter: (p: any) => {
+                      const d = yearly[p.dataIndex];
+                      if (!d) return "";
+                      const yoyText = d.yoy != null ? `  {yoy|${d.yoy >= 0 ? "+" : ""}${d.yoy}%}` : "";
+                      return `{v|${formatNum(d.repeatVisits)}}${yoyText}`;
+                    },
+                    rich: {
+                      v: { fontSize: 11, fontWeight: 700, color: T.textPrimary },
+                      yoy: { fontSize: 10, fontWeight: 600, color: "#16a34a" },
+                    },
+                  },
+                  data: yearly.map((y) => y.repeatVisits),
+                },
+                {
+                  name: "Repeat Patients",
+                  type: "bar" as const,
+                  itemStyle: { color: "#8b5cf6", borderRadius: [4, 4, 0, 0] },
+                  barMaxWidth: 56,
+                  label: {
+                    show: true,
+                    position: "top" as const,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: T.textSecondary,
+                    formatter: (p: any) => (Number(p.value) > 0 ? formatNum(Number(p.value)) : ""),
+                  },
+                  data: yearly.map((y) => y.repeatPatients),
+                },
+                {
+                  name: "Trend",
+                  type: "line" as const,
+                  smooth: true,
+                  symbol: "circle",
+                  symbolSize: 7,
+                  lineStyle: { width: 2.5, color: "#0d9488" },
+                  itemStyle: { color: "#0d9488", borderWidth: 2, borderColor: "#fff" },
+                  data: yearly.map((y) => y.repeatVisits),
+                  z: 3,
+                },
+              ],
+            };
+            return (
+              <div style={{ height: 340, overflowX: "auto" }}>
+                <ReactECharts option={yearlyOption} style={{ height: "100%", width: "100%" }} notMerge />
+              </div>
+            );
+          }
+
           const data = repeatTrendData;
           const option = {
             tooltip: {
@@ -1904,25 +2017,24 @@ export default function OHCUtilizationPage() {
               extraCssText: "box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:10px;",
               formatter: (params: any) => {
                 const period = params[0]?.axisValue || "";
-                let html = `<div style="font-weight:700;margin-bottom:6px;color:${T.textPrimary}">${period}</div>`;
+                let html = `<div style="font-weight:700;margin-bottom:6px;color:${T.textPrimary}">${fmtPeriodTick(period)}</div>`;
+                let rv = 0; let rp = 0;
                 params.forEach((p: any) => {
+                  if (p.seriesName === "Repeat Visits") rv = Number(p.value) || 0;
+                  if (p.seriesName === "Repeat Patients") rp = Number(p.value) || 0;
                   html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span><span style="color:${T.textSecondary}">${p.seriesName}:</span> <strong>${(p.value || 0).toLocaleString()}</strong></div>`;
                 });
+                const ratio = rp > 0 ? (rv / rp).toFixed(1) : "—";
+                html += `<div style="border-top:1px solid ${T.borderLight};margin-top:6px;padding-top:6px;font-size:11px;color:${T.textSecondary}">Visits per repeat patient: <strong style="color:${T.textPrimary}">${ratio}</strong></div>`;
                 return html;
               },
             },
-            legend: {
-              bottom: 0,
-              itemWidth: 12,
-              itemHeight: 8,
-              textStyle: { fontSize: 11, color: T.textSecondary },
-              icon: "circle",
-            },
-            grid: { top: 20, bottom: 44, left: 56, right: 24 },
+            legend: { bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: T.textSecondary }, icon: "circle" },
+            grid: { top: 30, bottom: 44, left: 56, right: 24 },
             xAxis: {
               type: "category" as const,
               data: data.map((d: any) => d.label),
-              axisLabel: { fontSize: 10, color: T.textSecondary, rotate: repeatView === "weekly" ? 30 : 0, interval: repeatView === "monthly" ? 1 : 0 },
+              axisLabel: { fontSize: 10, color: T.textSecondary, formatter: fmtPeriodTick },
               axisTick: { show: false },
               axisLine: { lineStyle: { color: T.borderLight } },
               boundaryGap: false,
@@ -1945,6 +2057,14 @@ export default function OHCUtilizationPage() {
                 itemStyle: { color: "#e11d48", borderWidth: 2, borderColor: "#fff" },
                 areaStyle: { color: { type: "linear" as const, x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: "rgba(225,29,72,0.14)" }, { offset: 1, color: "rgba(225,29,72,0.01)" }] } },
                 data: data.map((d: any) => d.repeatVisits || 0),
+                markPoint: {
+                  data: [{ type: "max" as const, name: "Peak" }],
+                  symbol: "roundRect",
+                  symbolSize: [72, 24],
+                  symbolOffset: [0, -18],
+                  itemStyle: { color: "#e11d48", borderColor: "#fff", borderWidth: 2, shadowBlur: 6, shadowColor: "rgba(0,0,0,0.15)" },
+                  label: { fontSize: 11, fontWeight: 700, color: "#fff", formatter: (p: any) => `▲ ${formatNum(Number(p.value) || 0)}` },
+                },
               },
               {
                 name: "Repeat Patients",
@@ -1964,7 +2084,42 @@ export default function OHCUtilizationPage() {
             </div>
           );
         })()}
-        <InsightBox text="Repeat Visits = total consultations by employees who visited OHC more than once. Repeat Patients = unique employees who visited more than once. If repeat visits rise while repeat patients stay flat, the same employees are returning more often — check if follow-ups are driving this. If both rise together, more employees are becoming repeat users — a positive engagement signal." />
+        <InsightBox text={(() => {
+          if (repeatView === "yearly") {
+            if (repeatYearlyTrends.length === 0) return "No repeat visit data available for the selected period.";
+            if (repeatYearlyTrends.length === 1) { const y = repeatYearlyTrends[0]; return `${y.period}${y.isYtd ? " (YTD)" : ""}: ${formatNum(y.repeatVisits)} repeat visits. Widen the date range to compare year over year.`; }
+            const lastFull = [...repeatYearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
+            const ytd = repeatYearlyTrends.find((y) => y.isYtd);
+            const base = lastFull ? `Repeat visits ${lastFull.yoy! >= 0 ? "grew" : "declined"} ${Math.abs(lastFull.yoy!)}% YoY in ${lastFull.period}.` : "";
+            const ytdPart = ytd ? ` ${ytd.period} is currently at ${formatNum(ytd.repeatVisits)} repeat visits (YTD).` : "";
+            return (base + ytdPart).trim() || "Insufficient history for a year-over-year comparison.";
+          }
+          const rows = repeatTrendData as Array<{ label: string; repeatVisits: number; repeatPatients: number }>;
+          if (rows.length === 0) return "No repeat visit data available for the selected period.";
+          const peak = rows.reduce((a, b) => (a.repeatVisits > b.repeatVisits ? a : b));
+          const totalV = rows.reduce((s, r) => s + (r.repeatVisits || 0), 0);
+          const totalP = rows.reduce((s, r) => s + (r.repeatPatients || 0), 0);
+          const avgRatio = totalP > 0 ? (totalV / totalP).toFixed(1) : null;
+          const half = Math.max(1, Math.floor(rows.length / 2));
+          const firstHalfAvg = (() => { const slice = rows.slice(0, half); const v = slice.reduce((s, r) => s + r.repeatVisits, 0); const p = slice.reduce((s, r) => s + r.repeatPatients, 0); return p > 0 ? v / p : null; })();
+          const secondHalfAvg = (() => { const slice = rows.slice(-half); const v = slice.reduce((s, r) => s + r.repeatVisits, 0); const p = slice.reduce((s, r) => s + r.repeatPatients, 0); return p > 0 ? v / p : null; })();
+          let gapTrend = "";
+          if (firstHalfAvg != null && secondHalfAvg != null) {
+            const delta = secondHalfAvg - firstHalfAvg;
+            if (Math.abs(delta) / Math.max(firstHalfAvg, 0.01) >= 0.05) gapTrend = delta > 0 ? " The gap is widening — the same people are returning more often." : " The gap is narrowing — a broader set of employees are becoming repeat users.";
+            else gapTrend = " The gap is holding steady.";
+          }
+          const peakLabel = isDailyView ? "Peak day" : "Peak month";
+          const ratioLine = avgRatio ? ` Each repeat patient visited ${avgRatio} times on average.` : "";
+          const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          const peakLabelFmt = (() => {
+            const v = peak.label;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, d] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; }
+            if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; }
+            return v;
+          })();
+          return `${peakLabel}: ${peakLabelFmt} with ${formatNum(peak.repeatVisits)} repeat visits.${ratioLine}${gapTrend}`;
+        })()} />
       </CVCard>}
 
     </div>

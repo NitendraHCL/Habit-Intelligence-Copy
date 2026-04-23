@@ -7,12 +7,16 @@ import { withCache } from "@/lib/cache/middleware";
  * OHC Utilization API — powered by aggregated_table.agg_kpi
  *
  * Live agg_kpi schema:
- *   consult_date (date), consult_hour (int), uhid (text),
+ *   consult_date (timestamp), consult_hour (int), uhid (text),
  *   speciality_name (text), age (int), age_group (text),
  *   patient_gender (text), stage (text), facility_mapping (text),
  *   cug_code_mapped (text), relationship (text),
  *   total_consult_count (bigint), unique_consult_count (int),
+ *   unique_patient_per_day (int), unique_patient_per_month (int),
  *   repeat_patient_count (int)
+ *
+ * Unique-patient math uses COUNT(DISTINCT uhid) over filtered Completed rows.
+ * Repeat-patient math uses uhids_with_2plus_visits (≥2 completed rows).
  *
  * Category Radar / Service Category Metrics come from aggregated_table.agg_service_kpi.
  * Columns: g_creation_time, "serviceType", booked_count, completed_count,
@@ -157,16 +161,22 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── BATCH 1: KPIs ──
+    // unique_patients = COUNT(DISTINCT uhid) over Completed rows
+    // repeat_patients = uhids with ≥2 completed rows in the filtered range
     const kpiPromise = safeQuery(() => dwQuery<{
       total_consults: string; unique_patients: string; repeat_patients: string; location_count: string;
     }>(
-      `SELECT
-        COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
-        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
-        COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients,
-        COUNT(DISTINCT a.facility_mapping) AS location_count
-      FROM ${BASE_TABLE} a
-      WHERE ${q.currentWhere}`,
+      `WITH per_uhid AS (
+        SELECT a.uhid, COUNT(*) AS row_count, SUM(a.total_consult_count) AS consult_count
+        FROM ${BASE_TABLE} a
+        WHERE ${q.currentWhere}
+        GROUP BY a.uhid
+      )
+      SELECT
+        COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
+        (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
+        (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients,
+        (SELECT COUNT(DISTINCT a.facility_mapping) FROM ${BASE_TABLE} a WHERE ${q.currentWhere})::bigint AS location_count`,
       q.params
     ));
 
@@ -194,18 +204,29 @@ async function handler(request: NextRequest) {
         a.age_group,
         a.patient_gender AS gender,
         COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
-        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_pats
+        COUNT(DISTINCT a.uhid)::bigint AS unique_pats
       FROM ${BASE_TABLE} a
       WHERE ${q.currentWhere} AND a.age_group IS NOT NULL
       GROUP BY a.age_group, a.patient_gender`,
       q.params
     ));
 
-    // Peak hours: agg_kpi no longer exposes consult_hour (schema redesign).
-    // Return empty so the heatmap renders blank instead of breaking the endpoint.
-    const peakPromise: Promise<{ day_of_week: string; hour_of_day: string; total_consults: string }[]> = Promise.resolve([]);
+    // Peak hours heatmap — consult_hour is back on agg_kpi, so we can compute
+    // day-of-week × hour buckets directly. DOW: Sun=0 … Sat=6 to match dowToChart.
+    const peakPromise = safeQuery(() => dwQuery<{ day_of_week: string; hour_of_day: string; total_consults: string }>(
+      `SELECT
+        EXTRACT(DOW FROM a.consult_date)::int AS day_of_week,
+        a.consult_hour AS hour_of_day,
+        COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere} AND a.consult_hour IS NOT NULL
+      GROUP BY day_of_week, hour_of_day`,
+      q.params
+    ));
 
-    // Visit trends: monthly, ALL stages
+    // Visit trends: period × stage. For unique_pats we only populate for the
+    // Completed group (COUNT(DISTINCT uhid)); other stages report 0 and the
+    // client aggregator only adds unique_pats from Completed rows anyway.
     const trendPromise = safeQuery(() => dwQuery<{
       period: string; stage: string; consults: string; unique_pats: string;
     }>(
@@ -216,7 +237,10 @@ async function handler(request: NextRequest) {
           THEN COALESCE(SUM(a.total_consult_count), 0)::bigint
           ELSE COUNT(*)::bigint
         END AS consults,
-        COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_pats
+        CASE WHEN a.stage = 'Completed'
+          THEN COUNT(DISTINCT a.uhid)::bigint
+          ELSE 0::bigint
+        END AS unique_pats
       FROM ${BASE_TABLE} a
       WHERE ${q.allStageWhere}
       GROUP BY period, a.stage
@@ -224,16 +248,28 @@ async function handler(request: NextRequest) {
       q.params
     ));
 
-    // ── BATCH 4: Repeat trends (monthly, from completed rows) ──
+    // ── BATCH 4: Repeat trends ──
+    // per_period_uhid aggregates Completed rows to one row per (period, uhid)
+    // repeat_visits = SUM(consult_count) − COUNT(*)  (true_repeat_visits)
+    // repeat_patients = uhids with ≥2 completed rows within the period
     const repeatPromise = safeQuery(() => dwQuery<{
       period: string; repeat_visits: string; repeat_patients: string;
     }>(
-      `SELECT
-        to_char(a.consult_date, '${periodFormat}') AS period,
-        COALESCE(SUM(a.total_consult_count) FILTER (WHERE a.repeat_patient_count > 0), 0)::bigint AS repeat_visits,
-        COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
-      FROM ${BASE_TABLE} a
-      WHERE ${q.currentWhere}
+      `WITH per_period_uhid AS (
+        SELECT
+          to_char(a.consult_date, '${periodFormat}') AS period,
+          a.uhid,
+          COUNT(*) AS row_count,
+          SUM(a.total_consult_count) AS consult_count
+        FROM ${BASE_TABLE} a
+        WHERE ${q.currentWhere}
+        GROUP BY period, a.uhid
+      )
+      SELECT
+        period,
+        (COALESCE(SUM(consult_count), 0) - COUNT(*))::bigint AS repeat_visits,
+        (COUNT(*) FILTER (WHERE row_count >= 2))::bigint AS repeat_patients
+      FROM per_period_uhid
       GROUP BY period
       ORDER BY period`,
       q.params
@@ -341,11 +377,15 @@ async function handler(request: NextRequest) {
       const yoyPrev = await safeQuery(() => dwQuery<{
         total_consults: string; unique_patients: string; repeat_patients: string;
       }>(
-        `SELECT
-          COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
-          COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
-          COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
-        FROM ${BASE_TABLE} a WHERE ${q.prevWhere}`,
+        `WITH per_uhid AS (
+          SELECT a.uhid, COUNT(*) AS row_count, SUM(a.total_consult_count) AS consult_count
+          FROM ${BASE_TABLE} a WHERE ${q.prevWhere}
+          GROUP BY a.uhid
+        )
+        SELECT
+          COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
+          (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
+          (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
         q.params
       ));
       const yoyPrevConsults = Number(yoyPrev[0]?.total_consults || 0);
@@ -378,11 +418,15 @@ async function handler(request: NextRequest) {
         const popPrev = await safeQuery(() => dwQuery<{
           total_consults: string; unique_patients: string; repeat_patients: string;
         }>(
-          `SELECT
-            COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults,
-            COALESCE(SUM(a.unique_consult_count), 0)::bigint AS unique_patients,
-            COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
-          FROM ${BASE_TABLE} a WHERE ${q.currentWhere}`,
+          `WITH per_uhid AS (
+            SELECT a.uhid, COUNT(*) AS row_count, SUM(a.total_consult_count) AS consult_count
+            FROM ${BASE_TABLE} a WHERE ${q.currentWhere}
+            GROUP BY a.uhid
+          )
+          SELECT
+            COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
+            (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
+            (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
           popParams
         ));
         const popPrevConsults = Number(popPrev[0]?.total_consults || 0);

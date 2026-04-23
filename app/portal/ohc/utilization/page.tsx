@@ -45,6 +45,7 @@ import {
   Line,
   BarChart,
   Bar,
+  ComposedChart,
   RadarChart,
   Radar,
   PolarGrid,
@@ -1371,7 +1372,7 @@ export default function OHCUtilizationPage() {
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               {trendView === "yearly" ? (
-                <BarChart data={yearlyTrends} margin={{ top: 30, right: 20, left: 0, bottom: 20 }}>
+                <ComposedChart data={yearlyTrends} margin={{ top: 40, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
                   <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const d = yearlyTrends.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; }} />
                   <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
@@ -1392,19 +1393,29 @@ export default function OHCUtilizationPage() {
                     );
                   }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <Bar dataKey="completed" name="Completed" fill="#4f46e5" radius={[4, 4, 0, 0]}>
+                  <Bar dataKey="completed" name="Completed" fill="#4f46e5" radius={[4, 4, 0, 0]} minPointSize={4}>
                     <LabelList content={(props: any) => {
                       const { x, y, width, index } = props;
                       const d = yearlyTrends[index];
-                      if (!d || d.yoy == null) return null;
-                      const color = d.yoy >= 0 ? "#16a34a" : "#dc2626";
-                      const label = `${d.yoy >= 0 ? "+" : ""}${d.yoy}%`;
-                      return <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>{label}</text>;
+                      if (!d) return null;
+                      const yoyPart = d.yoy != null ? ` ${d.yoy >= 0 ? "+" : ""}${d.yoy}%` : "";
+                      const yoyColor = d.yoy != null && d.yoy >= 0 ? "#16a34a" : "#dc2626";
+                      return (
+                        <text x={Number(x) + Number(width) / 2} y={Number(y) - 6} textAnchor="middle" fontSize={11} fontWeight={600}>
+                          <tspan fill={T.textPrimary}>{formatNum(d.completed)}</tspan>
+                          {yoyPart && <tspan fill={yoyColor} dx={4}>{yoyPart.trim()}</tspan>}
+                        </text>
+                      );
                     }} />
                   </Bar>
-                  <Bar dataKey="cancelled" name="Cancelled" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="noShow" name="No-Show" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <Bar dataKey="cancelled" name="Cancelled" fill="#f59e0b" radius={[4, 4, 0, 0]} minPointSize={4}>
+                    <LabelList dataKey="cancelled" position="top" fontSize={10} fontWeight={600} fill={T.textSecondary} formatter={(v: any) => (Number(v) > 0 ? formatNum(Number(v)) : "")} />
+                  </Bar>
+                  <Bar dataKey="noShow" name="No-Show" fill="#ef4444" radius={[4, 4, 0, 0]} minPointSize={4}>
+                    <LabelList dataKey="noShow" position="top" fontSize={10} fontWeight={600} fill={T.textSecondary} formatter={(v: any) => (Number(v) > 0 ? formatNum(Number(v)) : "")} />
+                  </Bar>
+                  <Line type="monotone" dataKey="completed" name="Completed Trend" stroke="#0d9488" strokeWidth={2.5} dot={{ r: 4, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#0d9488" }} legendType="none" />
+                </ComposedChart>
               ) : (
                 <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />

@@ -2061,10 +2061,10 @@ export default function OHCUtilizationPage() {
                 markPoint: {
                   data: [{ type: "max" as const, name: "Peak" }],
                   symbol: "roundRect",
-                  symbolSize: [72, 24],
-                  symbolOffset: [0, -18],
-                  itemStyle: { color: "#e11d48", borderColor: "#fff", borderWidth: 2, shadowBlur: 6, shadowColor: "rgba(0,0,0,0.15)" },
-                  label: { fontSize: 11, fontWeight: 700, color: "#fff", formatter: (p: any) => `▲ ${formatNum(Number(p.value) || 0)}` },
+                  symbolSize: [92, 26],
+                  symbolOffset: [0, -22],
+                  itemStyle: { color: "#ffffff", borderColor: "#4f46e5", borderWidth: 1.5, shadowBlur: 8, shadowColor: "rgba(79,70,229,0.18)" },
+                  label: { fontSize: 11, fontWeight: 700, color: "#3730a3", formatter: (p: any) => `Peak · ${formatNum(Number(p.value) || 0)}` },
                 },
               },
               {

@@ -276,6 +276,8 @@ export default function OHCUtilizationPage() {
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
+  const [specOthersModalOpen, setSpecOthersModalOpen] = useState(false);
+  const [specOthersSearch, setSpecOthersSearch] = useState("");
   const sunburstRef = useRef<any>(null);
 
   const handleSunburstReset = useCallback(() => {
@@ -385,6 +387,22 @@ export default function OHCUtilizationPage() {
     const days = Math.round((appliedDateRange.to.getTime() - appliedDateRange.from.getTime()) / 86400000) + 1;
     return days > 0 && days <= 31;
   }, [appliedDateRange]);
+
+  const specialtyPareto = useMemo(() => {
+    const raw = (charts?.specialtyTreemap || []) as Array<{ name: string; value: number }>;
+    const total = raw.reduce((s, d) => s + (Number(d.value) || 0), 0);
+    let cum = 0;
+    return raw.map((d) => {
+      const v = Number(d.value) || 0;
+      cum += v;
+      return {
+        name: d.name,
+        value: v,
+        sharePct: total > 0 ? (v / total) * 100 : 0,
+        cumulativePct: total > 0 ? (cum / total) * 100 : 0,
+      };
+    });
+  }, [charts?.specialtyTreemap]);
 
   const repeatTrendData = charts?.repeatTrends ?? [];
   const serviceCategories = charts?.serviceCategories ?? [];
@@ -1489,7 +1507,7 @@ export default function OHCUtilizationPage() {
               : "No trend data available for the selected period."} />
         </CVCard>}
 
-        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Proportional distribution of consultations" tooltipText="Donut chart showing consultation share per specialty. Center shows total consults. Hover for exact count and percentage." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
+        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations — bigger slice, higher demand. Center shows the total and the leading specialty; hover any slice for exact counts." tooltipText="Donut chart showing consultation share per specialty. Center shows total consults. Hover for exact count and percentage." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
           {(() => {
             const raw = charts?.specialtyTreemap || [];
             const top6 = raw.slice(0, 6);
@@ -1512,66 +1530,49 @@ export default function OHCUtilizationPage() {
                       textStyle: { fontSize: 12, fontFamily: "Inter, system-ui, sans-serif", color: T.textPrimary },
                       formatter: (p: any) => {
                         const pct = total > 0 ? ((p.value / total) * 100).toFixed(1) : "0";
-                        if (p.name === "Others" && othersItems.length > 0) {
-                          const breakup = othersItems
-                            .map((d: any) => {
-                              const iPct = total > 0 ? ((d.value / total) * 100).toFixed(1) : "0";
-                              return `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0"><span>${d.name}</span><span style="font-weight:600">${formatNum(d.value)} <span style="color:#9CA3AF;font-weight:400">(${iPct}%)</span></span></div>`;
-                            })
-                            .join("");
-                          return `<div style="min-width:220px;max-width:320px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">Others</div><div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:6px">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-bottom:8px">${pct}% of total</div><div style="border-top:1px solid #E5E7EB;padding-top:8px;font-size:12px;color:#374151;max-height:250px;overflow-y:auto">${breakup}</div></div>`;
-                        }
-                        return `<div style="min-width:140px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${p.name}</div><div style="font-size:20px;font-weight:800;color:#111827">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-top:2px">${pct}% of total</div></div>`;
+                        const hint = p.name === "Others" && othersItems.length > 0
+                          ? `<div style="font-size:11px;color:#4f46e5;margin-top:6px;font-weight:500">${othersItems.length} smaller specialties · click below to view breakdown</div>`
+                          : "";
+                        return `<div style="min-width:140px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${p.name}</div><div style="font-size:20px;font-weight:800;color:#111827">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-top:2px">${pct}% of total</div>${hint}</div>`;
                       },
                     },
                     legend: {
                       orient: "vertical",
-                      right: 12,
+                      right: 16,
                       top: "middle",
-                      icon: "none",
-                      itemGap: 6,
+                      icon: "circle",
+                      itemWidth: 10,
+                      itemHeight: 10,
+                      itemGap: 14,
                       formatter: (name: string) => {
                         const item = donutData.find((d: any) => d.name === name);
-                        const pct = item && total > 0 ? Math.round((item.value / total) * 100) : 0;
+                        const pct = item && total > 0 ? ((item.value / total) * 100).toFixed(1) : "0";
                         const count = item ? formatNum(item.value) : "0";
-                        const idx = donutData.findIndex((d: any) => d.name === name);
-                        return `{dot|●}  {name|${name}}\n{bar${idx}|${"█".repeat(1)}}  {val|${count}}  {pct|${pct}%}`;
+                        return `{name|${name}}\n{val|${count}}{pct|  ${pct}%}`;
                       },
                       textStyle: {
                         fontSize: 12,
                         fontFamily: "Inter, system-ui, sans-serif",
                         color: T.textPrimary,
                         rich: {
-                          dot: { fontSize: 10, padding: [0, 4, 0, 0] },
-                          name: { fontSize: 12, fontWeight: 600, color: "#111827", lineHeight: 20 },
-                          val: { fontSize: 11, fontWeight: 500, color: "#374151", padding: [0, 2, 0, 0] },
-                          pct: { fontSize: 11, fontWeight: 400, color: "#9CA3AF" },
-                          ...Object.fromEntries(donutData.map((d: any, i: number) => [
-                            `bar${i}`,
-                            {
-                              fontSize: 6,
-                              color: d.name === "Others" ? "#d1d5db" : TREEMAP_COLORS[i % TREEMAP_COLORS.length],
-                              lineHeight: 14,
-                              width: Math.max(8, Math.round((d.value / total) * 120)),
-                              backgroundColor: d.name === "Others" ? "#d1d5db" : TREEMAP_COLORS[i % TREEMAP_COLORS.length],
-                              height: 4,
-                              borderRadius: 2,
-                            },
-                          ])),
+                          name: { fontSize: 12, fontWeight: 600, color: "#111827", lineHeight: 18 },
+                          val: { fontSize: 11, fontWeight: 500, color: "#374151", lineHeight: 16 },
+                          pct: { fontSize: 11, fontWeight: 400, color: "#9CA3AF", lineHeight: 16 },
                         },
                       },
                     },
                     series: [{
                       type: "pie",
-                      radius: ["50%", "80%"],
+                      radius: ["58%", "82%"],
                       center: ["32%", "50%"],
                       avoidLabelOverlap: true,
-                      itemStyle: { borderColor: "#fff", borderWidth: 3, borderRadius: 8 },
+                      padAngle: 2,
+                      itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 10 },
                       label: { show: false },
                       emphasis: {
                         scale: true,
-                        scaleSize: 8,
-                        itemStyle: { shadowBlur: 16, shadowColor: "rgba(0,0,0,0.15)", borderWidth: 2, borderColor: "#fff" },
+                        scaleSize: 10,
+                        itemStyle: { shadowBlur: 22, shadowColor: "rgba(79,70,229,0.22)", borderWidth: 2, borderColor: "#fff" },
                         label: { show: false },
                       },
                       data: donutData.map((d: any, i: number) => ({
@@ -1582,11 +1583,13 @@ export default function OHCUtilizationPage() {
                     }],
                     graphic: [{
                       type: "group",
-                      left: "35%",
-                      top: "middle",
+                      left: "32%",
+                      top: "50%",
+                      bounding: "raw",
                       children: [
-                        { type: "text", style: { text: formatNum(total), x: 0, y: -10, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: "Inter, system-ui, sans-serif", fill: "#111827" } },
-                        { type: "text", style: { text: "Total", x: 0, y: 16, textAlign: "center", fontSize: 12, fontWeight: 500, fontFamily: "Inter, system-ui, sans-serif", fill: "#9CA3AF" } },
+                        { type: "circle", shape: { cx: 0, cy: 0, r: 72 }, style: { fill: "#eff6ff", stroke: "#93c5fd", lineWidth: 1.5 } },
+                        { type: "text", style: { text: "Total", x: 0, y: -14, textAlign: "center", textVerticalAlign: "middle", fontSize: 11, fontWeight: 500, fontFamily: "Inter, system-ui, sans-serif", fill: "#6B7280", letterSpacing: 1 } },
+                        { type: "text", style: { text: formatNum(total), x: 0, y: 10, textAlign: "center", textVerticalAlign: "middle", fontSize: 26, fontWeight: 800, fontFamily: "Inter, system-ui, sans-serif", fill: "#111827" } },
                       ],
                     }],
                     animationDuration: 600,
@@ -1596,9 +1599,76 @@ export default function OHCUtilizationPage() {
               </div>
             );
           })()}
-          <InsightBox text={charts?.specialtyTreemap?.length > 0 && kpis?.totalConsults
-            ? `${charts.specialtyTreemap[0].name} accounts for ${Math.round((charts.specialtyTreemap[0].value / kpis.totalConsults) * 100)}% of all consultations (${formatNum(charts.specialtyTreemap[0].value)} of ${formatNum(kpis.totalConsults)}).`
-            : "Specialty breakdown will appear once data is loaded."} />
+          {(() => {
+            const raw = charts?.specialtyTreemap || [];
+            const othersItems = raw.slice(6);
+            if (othersItems.length === 0) return null;
+            const othersTotal = othersItems.reduce((s: number, d: any) => s + d.value, 0);
+            return (
+              <button
+                onClick={() => { setSpecOthersSearch(""); setSpecOthersModalOpen(true); }}
+                className="mt-3 w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-left transition hover:shadow-sm hover:border-indigo-300"
+                style={{ borderColor: T.border, background: "#fafafa" }}
+              >
+                <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#d1d5db" }} />
+                  <span>
+                    <strong style={{ color: T.textPrimary }}>Others:</strong> {othersItems.length} smaller specialties · <strong style={{ color: T.textPrimary }}>{formatNum(othersTotal)}</strong> consults
+                  </span>
+                </div>
+                <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
+              </button>
+            );
+          })()}
+          <Dialog open={specOthersModalOpen} onOpenChange={setSpecOthersModalOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Others — Specialty Breakdown</DialogTitle>
+              </DialogHeader>
+              {(() => {
+                const list = (charts?.specialtyTreemap || []).slice(6) as Array<{ name: string; value: number }>;
+                const total = list.reduce((s, b) => s + (b.value || 0), 0);
+                const q = specOthersSearch.trim().toLowerCase();
+                const filtered = q ? list.filter((b) => b.name.toLowerCase().includes(q)) : list;
+                return (
+                  <>
+                    <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                      <strong>{list.length}</strong> smaller specialties grouped · <strong>{formatNum(total)}</strong> total consults
+                    </div>
+                    <Input placeholder="Search specialty…" value={specOthersSearch} onChange={(e) => setSpecOthersSearch(e.target.value)} className="mb-3" />
+                    <ScrollArea className="h-[360px] pr-3">
+                      <div className="space-y-1">
+                        {filtered.map((b) => (
+                          <div key={b.name} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                            <span style={{ color: T.textSecondary }}>{b.name}</span>
+                            <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.value)}</span>
+                          </div>
+                        ))}
+                        {filtered.length === 0 && (
+                          <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No specialties match &ldquo;{specOthersSearch}&rdquo;</div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </>
+                );
+              })()}
+            </DialogContent>
+          </Dialog>
+          <InsightBox text={(() => {
+            const list = (charts?.specialtyTreemap || []) as Array<{ name: string; value: number }>;
+            const total = kpis?.totalConsults;
+            if (list.length === 0 || !total) return "Specialty breakdown will appear once data is loaded.";
+            const top = list[0];
+            const topShare = ((top.value / total) * 100).toFixed(1);
+            const leadLine = `${top.name} dominates at ${formatNum(top.value)} (${topShare}% of ${formatNum(total)}).`;
+            if (list.length <= 1) return leadLine;
+            const topN = Math.min(5, list.length);
+            const topNSum = list.slice(0, topN).reduce((s, d) => s + d.value, 0);
+            const topNPct = Math.round((topNSum / total) * 100);
+            const remaining = list.length - topN;
+            if (remaining <= 0) return `${leadLine} The full mix spans ${list.length} specialt${list.length === 1 ? "y" : "ies"}.`;
+            return `${leadLine} The top ${topN} specialties cover ${topNPct}% of consultations — the remaining ${remaining === 1 ? "specialty shares" : "specialties share"} the rest.`;
+          })()} />
         </CVCard>}
       </div>}
 

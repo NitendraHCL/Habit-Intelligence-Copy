@@ -7,10 +7,10 @@ import { withCache } from "@/lib/cache/middleware";
  * OHC Utilization API — powered by aggregated_table.agg_kpi
  *
  * Live agg_kpi schema:
- *   slotstarttime (timestamp), consult_date_only (date), consult_hour (int),
- *   consult_dow (int), uhid (text), speciality_name (text), age (int),
- *   age_group (text), patient_gender (text), stage (text),
- *   facility_mapping (text), cug_code_mapped (text), relationship (text),
+ *   consult_date (date), consult_hour (int), uhid (text),
+ *   speciality_name (text), age (int), age_group (text),
+ *   patient_gender (text), stage (text), facility_mapping (text),
+ *   cug_code_mapped (text), relationship (text),
  *   total_consult_count (bigint), unique_consult_count (int),
  *   repeat_patient_count (int)
  *
@@ -54,18 +54,18 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const hasDateRange = !!(dateFrom && dateTo);
 
   if (dateFrom) {
-    conditions.push(`a.consult_date_only >= $${idx}::timestamp`);
-    prevConditions.push(`a.consult_date_only >= ($${idx}::date - interval '1 year')::timestamp`);
-    allStageConditions.push(`a.consult_date_only >= $${idx}::timestamp`);
-    allStagePrevConditions.push(`a.consult_date_only >= ($${idx}::date - interval '1 year')::timestamp`);
+    conditions.push(`a.consult_date >= $${idx}::timestamp`);
+    prevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
+    allStageConditions.push(`a.consult_date >= $${idx}::timestamp`);
+    allStagePrevConditions.push(`a.consult_date >= ($${idx}::date - interval '1 year')::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`a.consult_date_only <= ($${idx}::date + interval '1 day')::timestamp`);
-    prevConditions.push(`a.consult_date_only <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
-    allStageConditions.push(`a.consult_date_only <= ($${idx}::date + interval '1 day')::timestamp`);
-    allStagePrevConditions.push(`a.consult_date_only <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
+    conditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
+    prevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
+    allStageConditions.push(`a.consult_date <= ($${idx}::date + interval '1 day')::timestamp`);
+    allStagePrevConditions.push(`a.consult_date <= (($${idx}::date - interval '1 year') + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
@@ -210,7 +210,7 @@ async function handler(request: NextRequest) {
       period: string; stage: string; consults: string; unique_pats: string;
     }>(
       `SELECT
-        to_char(a.consult_date_only, '${periodFormat}') AS period,
+        to_char(a.consult_date, '${periodFormat}') AS period,
         a.stage AS stage,
         CASE WHEN a.stage = 'Completed'
           THEN COALESCE(SUM(a.total_consult_count), 0)::bigint
@@ -229,7 +229,7 @@ async function handler(request: NextRequest) {
       period: string; repeat_visits: string; repeat_patients: string;
     }>(
       `SELECT
-        to_char(a.consult_date_only, '${periodFormat}') AS period,
+        to_char(a.consult_date, '${periodFormat}') AS period,
         COALESCE(SUM(a.total_consult_count) FILTER (WHERE a.repeat_patient_count > 0), 0)::bigint AS repeat_visits,
         COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
       FROM ${BASE_TABLE} a

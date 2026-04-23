@@ -132,6 +132,17 @@ async function handler(request: NextRequest) {
 
     const q = buildQueryParts(searchParams, cugCode);
 
+    // If the selected range is ≤ 31 days, trend & repeat series bucket by day
+    // (YYYY-MM-DD) instead of by month (YYYY-MM). Same response shape otherwise.
+    const dateFromParam = searchParams.get("dateFrom");
+    const dateToParam = searchParams.get("dateTo");
+    let trendBucket: "day" | "month" = "month";
+    if (dateFromParam && dateToParam) {
+      const days = Math.round((Date.parse(dateToParam) - Date.parse(dateFromParam)) / 86400000) + 1;
+      if (days > 0 && days <= 31) trendBucket = "day";
+    }
+    const periodFormat = trendBucket === "day" ? "YYYY-MM-DD" : "YYYY-MM";
+
     async function safeQuery<T>(fn: () => Promise<T[]>): Promise<T[]> {
       try { return await fn(); } catch (e) { console.error("Query failed:", e); return []; }
     }
@@ -199,7 +210,7 @@ async function handler(request: NextRequest) {
       period: string; stage: string; consults: string; unique_pats: string;
     }>(
       `SELECT
-        to_char(a.consult_date_only, 'YYYY-MM') AS period,
+        to_char(a.consult_date_only, '${periodFormat}') AS period,
         a.stage AS stage,
         CASE WHEN a.stage = 'Completed'
           THEN COALESCE(SUM(a.total_consult_count), 0)::bigint
@@ -218,7 +229,7 @@ async function handler(request: NextRequest) {
       period: string; repeat_visits: string; repeat_patients: string;
     }>(
       `SELECT
-        to_char(a.consult_date_only, 'YYYY-MM') AS period,
+        to_char(a.consult_date_only, '${periodFormat}') AS period,
         COALESCE(SUM(a.total_consult_count) FILTER (WHERE a.repeat_patient_count > 0), 0)::bigint AS repeat_visits,
         COALESCE(SUM(a.repeat_patient_count), 0)::bigint AS repeat_patients
       FROM ${BASE_TABLE} a

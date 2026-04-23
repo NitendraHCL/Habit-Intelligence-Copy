@@ -381,6 +381,11 @@ export default function OHCUtilizationPage() {
     });
   }, [visitTrends]);
 
+  const isDailyView = useMemo(() => {
+    const days = Math.round((appliedDateRange.to.getTime() - appliedDateRange.from.getTime()) / 86400000) + 1;
+    return days > 0 && days <= 31;
+  }, [appliedDateRange]);
+
   const repeatTrendData = charts?.repeatTrends ?? [];
   const serviceCategories = charts?.serviceCategories ?? [];
 
@@ -1358,20 +1363,20 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? "Shows month-wise total consultations to identify demand peaks, across selected year" : "Year-over-year consultation volume comparison"} tooltipText="Track consultation volume over time. Monthly view identifies seasonal demand peaks; yearly view compares year-over-year growth." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Lines track completed, cancelled, no-show, and unique patients by day — spot which days saw the most demand across the selected range." : "Lines track completed, cancelled, no-show, and unique patients by month — spot seasonal demand peaks and shifts in utilisation.") : "Bars break out completed, cancelled, and no-show volumes each year; the line traces completed growth, with YoY % change shown above every bar."} tooltipText="Track consultation volume over time. Monthly view identifies seasonal demand peaks; yearly view compares year-over-year growth." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (
                 <button key={v} onClick={() => setTrendView(v)} className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${trendView === v ? "bg-white shadow-sm" : ""}`} style={{ color: trendView === v ? T.textPrimary : T.textMuted }}>
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                  {v === "monthly" && isDailyView ? "Daily" : v.charAt(0).toUpperCase() + v.slice(1)}
                 </button>
               ))}
             </div>
             <ResetFilter visible={trendView !== "monthly"} onClick={() => setTrendView("monthly")} />
           </div>
+          {trendView === "yearly" ? (
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
-              {trendView === "yearly" ? (
                 <ComposedChart data={yearlyTrends} margin={{ top: 40, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
                   <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const d = yearlyTrends.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; }} />
@@ -1416,10 +1421,15 @@ export default function OHCUtilizationPage() {
                   </Bar>
                   <Line type="monotone" dataKey="completed" name="Completed Trend" stroke="#0d9488" strokeWidth={2.5} dot={{ r: 4, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#0d9488" }} legendType="none" />
                 </ComposedChart>
-              ) : (
+            </ResponsiveContainer>
+          </div>
+          ) : (
+          <div className="overflow-x-auto">
+            <div style={{ height: 300, minWidth: Math.max(600, visitTrends.length * (isDailyView ? 48 : 64)) }}>
+              <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, d] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; } if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; } return v; }} interval={0} />
                   <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
@@ -1447,9 +1457,10 @@ export default function OHCUtilizationPage() {
                   <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />
                   <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
                 </LineChart>
-              )}
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </div>
           </div>
+          )}
           <InsightBox text={trendView === "yearly"
             ? (() => {
                 if (yearlyTrends.length === 0) return "No trend data available for the selected period.";
@@ -1461,7 +1472,7 @@ export default function OHCUtilizationPage() {
                 return (basePart + ytdPart).trim() || "Insufficient history for a year-over-year comparison.";
               })()
             : visitTrends.length > 0
-              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); return `Average ${trendView} completed consults: ${formatNum(avgConsults)}. Peak period: ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, ${formatNum(peak.noShow)} no-shows.`; })()
+              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); const bucket = isDailyView ? "daily" : "monthly"; const peakLabel = isDailyView ? "Peak day" : "Peak month"; return `Average ${bucket} completed consults: ${formatNum(avgConsults)}. ${peakLabel}: ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, ${formatNum(peak.noShow)} no-shows.`; })()
               : "No trend data available for the selected period."} />
         </CVCard>}
 

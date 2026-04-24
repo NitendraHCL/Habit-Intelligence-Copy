@@ -881,6 +881,25 @@ export default function OHCUtilizationPage() {
         <ActiveFilterChips filters={appliedFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
       )}
 
+      {utilizationData?.meta?.hadErrors && (
+        <div
+          className="mb-4 flex items-start gap-3 rounded-lg border px-4 py-3"
+          style={{ borderColor: "#fde68a", background: "#fffbeb", color: "#78350f" }}
+          role="status"
+          aria-live="polite"
+        >
+          <svg className="mt-0.5 h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div className="text-[12.5px] leading-5">
+            <strong className="font-semibold">Some charts could not load live data.</strong>{" "}
+            The warehouse returned errors for:{" "}
+            <span className="font-mono text-[11.5px]">{(utilizationData.meta.failedQueries || []).join(", ")}</span>.{" "}
+            Hit the refresh button above to retry; affected charts will render as zero until the retry succeeds.
+          </div>
+        </div>
+      )}
+
       {/* ── Page Header + AI Summary (Blue Box) ── */}
       <PageGlanceBox
         pageTitle="OHC Utilization"

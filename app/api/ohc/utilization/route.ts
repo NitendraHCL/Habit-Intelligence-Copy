@@ -147,17 +147,24 @@ async function handler(request: NextRequest) {
     }
     const periodFormat = trendBucket === "day" ? "YYYY-MM-DD" : "YYYY-MM";
 
-    async function safeQuery<T>(fn: () => Promise<T[]>): Promise<T[]> {
-      try { return await fn(); } catch (e) { console.error("Query failed:", e); return []; }
+    // Track per-query failures so the endpoint can signal degraded data to the
+    // client + let withCache skip writing a poisoned blob to disk.
+    const failedQueries: string[] = [];
+    async function safeQuery<T>(fn: () => Promise<T[]>, tag: string = "unknown"): Promise<T[]> {
+      try { return await fn(); } catch (e) {
+        console.error(`Query failed [${tag}]:`, e);
+        failedQueries.push(tag);
+        return [];
+      }
     }
 
     // ── FILTER OPTIONS (unfiltered, completed only) ──
     const baseWhere = `a.cug_code_mapped = $1 AND ${COMPLETED}`;
     const filterPromise = Promise.all([
-      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.facility_mapping AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.facility_mapping IS NOT NULL ORDER BY 1`, [cugCode])),
-      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.speciality_name AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> '' ORDER BY 1`, [cugCode])),
-      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.patient_gender AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.patient_gender IS NOT NULL ORDER BY 1`, [cugCode])),
-      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.relationship AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.relationship IS NOT NULL ORDER BY 1`, [cugCode])),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.facility_mapping AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.facility_mapping IS NOT NULL ORDER BY 1`, [cugCode]), "filterLocations"),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.speciality_name AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> '' ORDER BY 1`, [cugCode]), "filterSpecialties"),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.patient_gender AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.patient_gender IS NOT NULL ORDER BY 1`, [cugCode]), "filterGenders"),
+      safeQuery(() => dwQuery<{ v: string }>(`SELECT DISTINCT a.relationship AS v FROM ${BASE_TABLE} a WHERE ${baseWhere} AND a.relationship IS NOT NULL ORDER BY 1`, [cugCode]), "filterRelations"),
     ]);
 
     // ── BATCH 1: KPIs ──
@@ -178,7 +185,7 @@ async function handler(request: NextRequest) {
         (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients,
         (SELECT COUNT(DISTINCT a.facility_mapping) FROM ${BASE_TABLE} a WHERE ${q.currentWhere})::bigint AS location_count`,
       q.params
-    ));
+    ), "kpi");
 
     // ── BATCH 2: Specialty treemap + Location × Specialty ──
     const specPromise = safeQuery(() => dwQuery<{ name: string; value: string }>(
@@ -187,7 +194,7 @@ async function handler(request: NextRequest) {
       WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
       GROUP BY a.speciality_name ORDER BY value DESC`,
       q.params
-    ));
+    ), "specialtyTreemap");
 
     const locSpecPromise = safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
       `SELECT a.facility_mapping AS location, a.speciality_name AS specialty,
@@ -196,7 +203,7 @@ async function handler(request: NextRequest) {
       WHERE ${q.currentWhere} AND a.facility_mapping IS NOT NULL AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
       GROUP BY a.facility_mapping, a.speciality_name ORDER BY total_consults DESC`,
       q.params
-    ));
+    ), "locSpec");
 
     // ── BATCH 3: Demographics + Peak hours + Visit Trends ──
     const demoPromise = safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_pats: string }>(
@@ -209,7 +216,7 @@ async function handler(request: NextRequest) {
       WHERE ${q.currentWhere} AND a.age_group IS NOT NULL
       GROUP BY a.age_group, a.patient_gender`,
       q.params
-    ));
+    ), "demographics");
 
     // Peak hours heatmap — consult_hour is back on agg_kpi, so we can compute
     // day-of-week × hour buckets directly. DOW: Sun=0 … Sat=6 to match dowToChart.
@@ -222,7 +229,7 @@ async function handler(request: NextRequest) {
       WHERE ${q.currentWhere} AND a.consult_hour IS NOT NULL
       GROUP BY day_of_week, hour_of_day`,
       q.params
-    ));
+    ), "peakHours");
 
     // Visit trends: period × stage. For unique_pats we only populate for the
     // Completed group (COUNT(DISTINCT uhid)); other stages report 0 and the
@@ -246,7 +253,7 @@ async function handler(request: NextRequest) {
       GROUP BY period, a.stage
       ORDER BY period`,
       q.params
-    ));
+    ), "visitTrends");
 
     // ── BATCH 4: Repeat trends ──
     // per_period_uhid aggregates Completed rows to one row per (period, uhid)
@@ -273,7 +280,7 @@ async function handler(request: NextRequest) {
       GROUP BY period
       ORDER BY period`,
       q.params
-    ));
+    ), "repeatTrends");
 
     // ── Bubble chart: specialty × location × ageGroup × gender ──
     const bubblePromise = safeQuery(() => dwQuery<{
@@ -286,7 +293,7 @@ async function handler(request: NextRequest) {
         AND a.facility_mapping IS NOT NULL AND a.age_group IS NOT NULL
       GROUP BY a.speciality_name, a.facility_mapping, a.age_group, a.patient_gender`,
       q.params
-    ));
+    ), "bubble");
 
     // ── Service Categories (from agg_service_kpi) ──
     const svcParams: unknown[] = [cugCode];
@@ -330,7 +337,7 @@ async function handler(request: NextRequest) {
        WHERE ${svcWhere} AND a."serviceType" IS NOT NULL
        GROUP BY a."serviceType" ORDER BY booked DESC`, svcParams,
       { statementTimeoutMs: 60000 }
-    ));
+    ), "serviceCategories");
 
     // ── Execute all in parallel ──
     const [
@@ -387,7 +394,7 @@ async function handler(request: NextRequest) {
           (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
           (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
         q.params
-      ));
+      ), "kpiYoY");
       const yoyPrevConsults = Number(yoyPrev[0]?.total_consults || 0);
 
       if (yoyPrevConsults >= YOY_MIN_PRIOR_CONSULTS) {
@@ -428,7 +435,7 @@ async function handler(request: NextRequest) {
             (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
             (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
           popParams
-        ));
+        ), "kpiPoP");
         const popPrevConsults = Number(popPrev[0]?.total_consults || 0);
 
         if (popPrevConsults >= YOY_MIN_PRIOR_CONSULTS) {
@@ -623,6 +630,10 @@ async function handler(request: NextRequest) {
         repeatTrends,
       },
       lastUpdated: new Date().toISOString(),
+      meta: {
+        hadErrors: failedQueries.length > 0,
+        failedQueries,
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

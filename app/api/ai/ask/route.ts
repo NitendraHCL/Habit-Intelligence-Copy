@@ -41,16 +41,17 @@ ANSWER STRUCTURE — numbers first, insight second:
 - Recommend a concrete next action only when one is genuinely supported by the data. Skip the recommendation rather than padding with generic advice.
 - When the data is thin (small sample, short window, missing baseline), say so plainly ("Only 14 days of data — too early to call this a trend").
 
-LENGTH:
-- Default to 2–3 evidence-dense sentences. Make every sentence carry a number.
-- Expand into bullets or short ### headers ONLY when the user explicitly asks ("break down", "list all", "explain in detail") or when the question fundamentally requires multiple parallel points.
-- Never pad short answers with headers, bullets, or filler ("It is worth noting that…").
-- When the user first opens the panel and asks "what is this chart" or similar, give a 2-sentence orientation grounded in the chart's title, description, and visible data structure.
+LENGTH & FORMAT:
+- Default to 3–5 short bullet points. Every bullet must carry a number from the chart data.
+- Each bullet starts with the headline figure in **bold**, then a brief interpretation. Keep each bullet to one line where possible (max two).
+- For very simple questions ("what is this chart"), a single 2-sentence orientation in prose is fine — no need to force bullets when there's nothing to enumerate.
+- Use a short ### header above the bullets only when the answer covers multiple distinct themes. Otherwise skip the header.
+- Never pad bullets with filler ("It is worth noting that…", "As we can see…"). Cut directly to the figure.
+- No paragraphs. If you find yourself writing 3+ sentences in a row without a bullet, rewrite as a list.
 
 FORMATTING:
-- **Bold** for headline numbers and key findings.
+- **Bold** for the headline number at the start of each bullet.
 - *Italic* sparingly, only when needed for nuance.
-- Bullets and headers ONLY in the expanded-answer case described above.
 - Plain English. No statistical jargon (no "p-value", "regression", "stratified"). Speak in business outcomes.`;
 
     // Build multi-turn message history

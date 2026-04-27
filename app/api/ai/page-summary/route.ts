@@ -25,7 +25,9 @@ Generate a 2-3 sentence summary of the data shown on the "${pageTitle}" page. Th
 
 Also generate 3-5 short metric chips (label: value format) that highlight the most important KPIs. Each chip should have a label and value.
 
-Respond in JSON format:
+Respond ONLY with a raw JSON object — no markdown, no code fences, no explanation. The first character of your response must be { and the last must be }.
+
+Schema:
 {
   "summary": "the summary text",
   "chips": [
@@ -47,11 +49,19 @@ Respond in JSON format:
       ],
     });
 
+    // Bedrock-hosted Claude sometimes wraps JSON in ```json … ``` fences.
+    // Strip them before parsing.
+    const cleaned = text
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```\s*$/, "")
+      .trim();
+
     try {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(cleaned);
       return NextResponse.json(parsed);
     } catch {
-      return NextResponse.json({ summary: text, chips: [] });
+      return NextResponse.json({ summary: cleaned, chips: [] });
     }
   } catch (error) {
     console.error("AI Page Summary error:", error);

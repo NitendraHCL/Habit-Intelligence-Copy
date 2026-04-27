@@ -87,7 +87,7 @@ function CVCard({
   const [expanded, setExpanded] = useState(false);
   return (
     <div
-      className={`bg-white rounded-2xl overflow-hidden transition-all ${expanded ? "col-span-full" : ""} ${className}`}
+      className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
       {(title || accentColor) && (
@@ -120,7 +120,7 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5">{children}</div>
+      <div className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
     </div>
   );
 }
@@ -135,10 +135,15 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 }
 
 // ─── Insight Box ───
+// mt-auto pushes the box to the bottom of its flex parent so every chart's
+// insight blob sits at the same height across a row, regardless of the
+// chart visualization above it.
 function InsightBox({ text }: { text: string }) {
   return (
-    <div className="rounded-[14px] px-4 py-3 mt-4 text-[12px] leading-relaxed" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
-      {text}
+    <div className="mt-auto pt-4">
+      <div className="rounded-[14px] px-4 py-3.5 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
+        {text}
+      </div>
     </div>
   );
 }
@@ -483,26 +488,36 @@ export default function ReferralAnalyticsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
 
           {/* Card 1 — Total Referrals (baseline) */}
-          {isChartVisible("totalReferrals") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Referrals</p>
-            <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalReferrals || 0)}</p>
-            <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
-              All specialist referrals issued — this is the <span className="font-semibold" style={{ color: T.textPrimary }}>baseline (100%)</span> from which the card below is calculated.
-            </p>
+          {isChartVisible("totalReferrals") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+            <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Referrals</p>
+              <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalReferrals || 0)}</p>
+              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>All specialist referrals issued in the selected date range</p>
+              <div className="mt-auto pt-4">
+                <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
+                  Baseline (100%) — every onward conversion or insight on this page is measured against this number.
+                </p>
+              </div>
+            </div>
           </div>}
 
           {/* Card 2 — Conversions */}
-          {isChartVisible("inClinicConversions") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Conversions</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.teal }}>{formatNum(kpis?.convertedCount || 0)}</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold" style={{ backgroundColor: "rgba(13,148,136,0.08)", color: T.teal }}>
-                {kpis?.conversionPct || 0}% conversion rate
-              </span>
+          {isChartVisible("inClinicConversions") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+            <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Conversions</p>
+              <div className="flex items-baseline gap-2 mt-2.5">
+                <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.teal }}>{formatNum(kpis?.convertedCount || 0)}</p>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold" style={{ backgroundColor: "rgba(13,148,136,0.08)", color: T.teal }}>
+                  {kpis?.conversionPct || 0}% conversion rate
+                </span>
+              </div>
+              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Referrals that converted into an actual consultation</p>
+              <div className="mt-auto pt-4">
+                <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
+                  Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> total referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were consulted — strong follow-through on the referral pipeline.
+                </p>
+              </div>
             </div>
-            <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
-              Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> total referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were converted into a consultation.
-            </p>
           </div>}
 
         </div>
@@ -544,6 +559,15 @@ export default function ReferralAnalyticsPage() {
             </ResponsiveContainer>
           </div>
           </div>
+          <InsightBox text={(() => {
+            const trends: any[] = charts?.referralTrends || [];
+            if (trends.length === 0) return "Referral trend data will appear once loaded.";
+            const peak = trends.reduce((a: any, b: any) => ((b.totalReferrals || 0) > (a.totalReferrals || 0) ? b : a));
+            const totalRefs = trends.reduce((s: number, t: any) => s + (t.totalReferrals || 0), 0);
+            const totalConv = trends.reduce((s: number, t: any) => s + (t.inClinicConversions || 0), 0);
+            const avgRate = totalRefs > 0 ? Math.round((totalConv / totalRefs) * 100) : 0;
+            return `Peak referral month: ${peak.period} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
+          })()} />
         </CVCard>}
       </WarmSection>
 
@@ -658,12 +682,10 @@ export default function ReferralAnalyticsPage() {
           </div>
         </div>
         {filteredSpecDetails.length > 0 && (
-          <div className="mt-4">
-            <InsightBox text={`${filteredSpecDetails.length} specialties are available in-clinic. ${(() => {
-              const top = filteredSpecDetails.find((s: any) => s.conversionRate > 0);
-              return top ? `${top.specialty} leads in-clinic conversions with ${formatNum(top.inClinicConsults)} consults.` : "";
-            })()}`} />
-          </div>
+          <InsightBox text={`${filteredSpecDetails.length} specialties are available in-clinic. ${(() => {
+            const top = filteredSpecDetails.find((s: any) => s.conversionRate > 0);
+            return top ? `${top.specialty} leads in-clinic conversions with ${formatNum(top.inClinicConsults)} consults.` : "";
+          })()}`} />
         )}
       </CVCard>}
 
@@ -744,9 +766,7 @@ export default function ReferralAnalyticsPage() {
             <div className="w-5 h-3 rounded-sm" style={{ backgroundColor: MATRIX_COLORS[7] }} /> <span>High</span>
           </div>
         </div>
-        <div className="mt-4">
-          <InsightBox text="The referral matrix reveals the strongest inter-specialty referral pathways. Use the year and view toggles to track how referral patterns evolve over time." />
-        </div>
+        <InsightBox text="The referral matrix reveals the strongest inter-specialty referral pathways. Use the year and view toggles to track how referral patterns evolve over time." />
       </CVCard>}
 
       {/* ── Demographics + Location Bar ── */}
@@ -837,9 +857,7 @@ export default function ReferralAnalyticsPage() {
               </div>
             </div>
           )}
-          <div className="mt-4">
-            <InsightBox text={demoStats ? `${demoStats.topAgeGroup?.ageGroup || ''} is the most referred age group with ${formatNum(demoStats.topAgeGroup?.total || 0)} referrals. ${demoStats.topGender?.gender || ''} patients account for the majority of referrals.` : 'Loading demographic insights...'} />
-          </div>
+          <InsightBox text={demoStats ? `${demoStats.topAgeGroup?.ageGroup || ''} is the most referred age group with ${formatNum(demoStats.topAgeGroup?.total || 0)} referrals. ${demoStats.topGender?.gender || ''} patients account for the majority of referrals.` : 'Loading demographic insights...'} />
         </CVCard>}
 
         {/* Referral Volume by Specialty & Location */}
@@ -961,9 +979,7 @@ export default function ReferralAnalyticsPage() {
               <span>Available in Clinic — dark = highest volume</span>
             </div>
           </div>
-          <div className="mt-4">
-            <InsightBox text="Compare in-clinic referral volumes across locations to identify high-demand areas. Within each bar, darker segments represent the specialties with highest referral volume at that location." />
-          </div>
+          <InsightBox text="Compare in-clinic referral volumes across locations to identify high-demand areas. Within each bar, darker segments represent the specialties with highest referral volume at that location." />
         </CVCard>}
       </div>}
     </div>

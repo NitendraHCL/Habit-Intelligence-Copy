@@ -469,7 +469,7 @@ export default function ReferralAnalyticsPage() {
       {/* ── Page Header + AI Summary (Blue Box) ── */}
       <PageGlanceBox
         pageTitle="Referral Analytics"
-        pageSubtitle="OHC referral patterns, specialist conversion rates and availability insights"
+        pageSubtitle="How specialist referrals flow through the OHC — issuance, conversion, and the cohorts driving demand"
         kpis={kpis || {}}
         fallbackSummary={`The OHC referral system has processed ${formatNum(kpis?.totalReferrals || 0)} referrals with a ${kpis?.conversionPct || 0}% conversion rate. In-clinic availability stands at ${kpis?.availableInClinicPct || 0}% of referrals. ${formatNum(kpis?.convertedCount || 0)} referrals have been successfully converted to specialist consultations.`}
         fallbackChips={[
@@ -483,7 +483,7 @@ export default function ReferralAnalyticsPage() {
       <WarmSection>
         <AccentBar color={"#4f46e5"} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Referral v/s Consumption</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Summary of referral volumes, in-clinic availability and conversion rates</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>How many referrals were issued and how many actually closed the loop with a consultation</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
 
@@ -492,10 +492,10 @@ export default function ReferralAnalyticsPage() {
             <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
               <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Referrals</p>
               <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalReferrals || 0)}</p>
-              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>All specialist referrals issued in the selected date range</p>
+              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Specialist referrals issued by OHC physicians in the selected window</p>
               <div className="mt-auto pt-4">
                 <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
-                  Baseline (100%) — every onward conversion or insight on this page is measured against this number.
+                  The 100% baseline. Every conversion rate, specialty ranking and demographic split on this page measures back to this number.
                 </p>
               </div>
             </div>
@@ -511,10 +511,10 @@ export default function ReferralAnalyticsPage() {
                   {kpis?.conversionPct || 0}% conversion rate
                 </span>
               </div>
-              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Referrals that converted into an actual consultation</p>
+              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Referrals that closed the loop with a real consultation</p>
               <div className="mt-auto pt-4">
                 <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
-                  Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> total referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were consulted — strong follow-through on the referral pipeline.
+                  <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> referrals issued were acted on — the share of physician recommendations the workforce actually followed through.
                 </p>
               </div>
             </div>
@@ -523,7 +523,7 @@ export default function ReferralAnalyticsPage() {
         </div>
 
         {/* ── Referral Trends (Area Chart) ── */}
-        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Monthly referral volumes and conversions" expandable={false} tooltipText="Area chart showing monthly referral volumes alongside actual in-clinic conversions. Tracks referral pipeline health over time." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volumes and conversions">
+        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="How referral demand and follow-through track month over month" expandable={false} tooltipText="Two stacked area lines per month: total referrals issued and how many converted into a consultation. Use it to spot demand spikes and any month where follow-through dipped." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volume vs. conversion trend">
           <div className="overflow-x-auto">
           <div style={{ height: 300, minWidth: Math.max(500, (charts?.referralTrends?.length || 0) * 60) }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -572,9 +572,10 @@ export default function ReferralAnalyticsPage() {
       </WarmSection>
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
-      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Referral volume and conversion rate for specialties available in-clinic" tooltipText="Table listing each referred specialty available in-clinic, with referral count and conversion progress bar."
+      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Which referred specialties are pulling weight — ranked by volume, scored by actual conversion"
+        tooltipText="Each row is a specialty patients were referred to. Volume bar shows relative referral demand; the colored conversion bar shows the share that became a real consult. Green ≥ 70%, amber 1-69%, red 0%."
         chartId="specialtyConversion"
-        chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Referral volume and conversion rate for specialties available in-clinic">
+        chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Specialty referral volume vs. real conversion rate">
         {/* Summary strip */}
         {filteredSpecDetails.length > 0 && (() => {
           const totalRefs = filteredSpecDetails.reduce((s: number, r: any) => s + (r.referrals || 0), 0);
@@ -690,7 +691,7 @@ export default function ReferralAnalyticsPage() {
       </CVCard>}
 
       {/* ── Who Refers to Whom (Heatmap Matrix) ── */}
-      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="See which specialties refer patients to each other most frequently" tooltipText="Heatmap matrix showing referral flows between specialties. Rows represent referring specialties and columns show receiving specialties. Darker cells indicate higher referral volumes." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="See which specialties refer patients to each other most frequently">
+      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The strongest cross-specialty handoff paths — read rows as the source, columns as the destination" tooltipText="Heatmap of cross-specialty referral flow. Rows are the originating specialty, columns are the destination — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap">
         <div className="flex items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>Year:</span>
@@ -772,7 +773,7 @@ export default function ReferralAnalyticsPage() {
       {/* ── Demographics + Location Bar ── */}
       {(isChartVisible("referralDemographics") || isChartVisible("locationBySpecialty")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Referral Demographics (Sunburst) */}
-        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Gender distribution across age groups for specialty referrals" tooltipText="Sunburst chart showing gender distribution across age groups for specialty referrals. Inner ring shows male/female split, outer ring breaks down by age." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Gender distribution across age groups for specialty referrals">
+        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Which workforce cohorts are pulling on specialist care the hardest" tooltipText="Sunburst showing the referred population. Inner ring is gender, outer ring is the age-group split within each gender. Surfaces which segments of the workforce drive the most onward referrals." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Age and gender split of the referred population">
           <div style={{ height: 340 }}>
             <ReactECharts style={{ height: "100%", width: "100%" }} option={{
               tooltip: {
@@ -864,12 +865,12 @@ export default function ReferralAnalyticsPage() {
         {isChartVisible("locationBySpecialty") && <CVCard
           accentColor={"#4f46e5"}
           title="Referral Volume by Specialty & Location"
-          subtitle="Per-location referral counts for specialties available in-clinic"
-          tooltipText="Stacked bar chart showing referral volume per location, segmented by specialty. Darker bar segments indicate higher referral volumes."
+          subtitle="Where referral demand concentrates — per-clinic volume broken down by destination specialty"
+          tooltipText="Stacked bar per clinic. Each colored segment is a destination specialty; darker segments inside a bar carry higher referral volume at that site. Useful for matching specialist allocation to the locations that actually need them."
           chartId="locationBySpecialty"
           chartData={charts?.locationBySpecialty}
           chartTitle="Referral Volume by Specialty & Location"
-          chartDescription="Stacked bar chart showing per-location referral counts broken down by in-clinic specialty."
+          chartDescription="Per-clinic referral volume by destination specialty"
 
         >
           {(() => {

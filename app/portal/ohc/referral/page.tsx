@@ -15,6 +15,8 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
@@ -35,6 +37,9 @@ import PageDownload from "@/components/shared/PageDownload";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  LabelList,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -70,6 +75,19 @@ function formatNum(n: number): string {
   if (n >= 1000) return n.toLocaleString("en-IN");
   return String(n);
 }
+
+// Shared specialty palette — matches Utilization page so the same specialty
+// renders in the same color across both pages.
+const SPECIALTY_COLORS: Record<string, string> = {
+  "General Physician": "#4f46e5", Dietetics: "#6366f1", "Internal Medicine": "#0d9488",
+  Dental: "#14b8a6", Physiotherapy: "#8b5cf6", Cardiology: "#a78bfa",
+  Dermatology: "#818cf8", ENT: "#7c3aed", Ophthalmology: "#c4b5fd",
+  Nutrition: "#34d399", Others: "#a1a1aa",
+};
+const TREEMAP_COLORS = [
+  "#4f46e5", "#6366f1", "#818cf8", "#0d9488", "#14b8a6", "#7c3aed",
+  "#8b5cf6", "#a78bfa", "#06b6d4", "#34d399", "#a1a1aa", "#c4b5fd",
+];
 
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
@@ -300,6 +318,8 @@ export default function ReferralAnalyticsPage() {
 
   const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData("ohc/referral", extraParams);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
+  const [othersModalOpen, setOthersModalOpen] = useState(false);
+  const [othersSearch, setOthersSearch] = useState("");
 
   const d = data as any;
   const kpis = d?.kpis;
@@ -363,6 +383,10 @@ export default function ReferralAnalyticsPage() {
   // Location stacked bar
   const topBarSpecs: string[] = charts?.topBarSpecialties || [];
   const specAvailability: Record<string, boolean> = charts?.specAvailability || {};
+  const locationBySpecialtyData = (charts?.locationBySpecialty || []).map((r: any) => ({
+    ...r,
+    __total: topBarSpecs.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
+  }));
 
   if (!d && isLoading) {
     return (
@@ -835,7 +859,19 @@ export default function ReferralAnalyticsPage() {
                 ],
               }],
               graphic: [
-                { type: "text", left: "center", top: "44%", style: { text: "Referrals", fontSize: 11, fontWeight: 500, fill: T.textMuted, textAlign: "center" } },
+                {
+                  type: "text",
+                  left: "center",
+                  top: "center",
+                  style: {
+                    text: "Referrals",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    fill: T.textMuted,
+                    textAlign: "center",
+                    textVerticalAlign: "middle",
+                  },
+                },
               ],
             }} />
           </div>
@@ -873,115 +909,147 @@ export default function ReferralAnalyticsPage() {
           chartDescription="Per-clinic referral volume by destination specialty"
 
         >
-          {(() => {
-            const locations = (charts?.locationBySpecialty || []).map((d: any) => d.location);
-            const locData = charts?.locationBySpecialty || [];
-
-            const clinicSpecs = topBarSpecs.filter((s) => specAvailability[s]);
-
-            // Interpolate hex colors for a dark→light gradient palette of n steps
-            const buildPalette = (darkHex: string, lightHex: string, n: number): string[] => {
-              if (n === 0) return [];
-              const parse = (h: string) => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
-              const toHex = (v: number) => v.toString(16).padStart(2,"0");
-              const [r1,g1,b1] = parse(darkHex);
-              const [r2,g2,b2] = parse(lightHex);
-              return Array.from({length:n}, (_,i) => {
-                const t = n===1 ? 0 : i/(n-1);
-                return `#${toHex(Math.round(r1+(r2-r1)*t))}${toHex(Math.round(g1+(g2-g1)*t))}${toHex(Math.round(b1+(b2-b1)*t))}`;
-              });
-            };
-
-            const CLINIC_PALETTE  = buildPalette("#3730A3", "#C7D2FE", clinicSpecs.length);
-
-            // Per-location sorted specialty lists: index 0 = highest volume = bottom of stack = darkest
-            const clinicByRank: string[][] = locData.map((d: any) =>
-              [...clinicSpecs].sort((a, b) => (d[b] || 0) - (d[a] || 0))
-            );
-
-            // Build rank-slot series: series[rank] carries the value of whichever specialty
-            // occupies that rank slot in each location — so physical position = volume rank
-            const series: any[] = Array.from({ length: clinicSpecs.length }, (_, rank) => ({
-              name: `clinic_r${rank}`,
-              type: "bar",
-              stack: "clinic",
-              barMaxWidth: 48,
-              barGap: "20%",
-              legendHoverLink: false,
-              emphasis: { disabled: true },
-              itemStyle: { color: CLINIC_PALETTE[rank] },
-              data: locData.map((d: any, j: number) => {
-                const spec = clinicByRank[j][rank];
-                return spec ? { value: d[spec] || 0, specName: spec } : { value: 0, specName: "" };
-              }),
-            }));
-
-            return (
-              <div className="overflow-x-auto">
-                <div style={{ height: 400, minWidth: Math.max(600, locations.length * 130) }}>
-                  <ReactECharts
-                    style={{ height: "100%", width: "100%" }}
-                    option={{
-                      tooltip: {
-                        trigger: "item",
-                        backgroundColor: "#fff",
-                        borderColor: T.border,
-                        borderWidth: 1,
-                        padding: [12, 16],
-                        textStyle: { fontSize: 12, fontFamily: "var(--font-inter), system-ui, sans-serif", color: T.textPrimary },
-                        extraCssText: "border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.10);",
-                        formatter: (params: any) => {
-                          const val = params?.data?.value ?? params?.value ?? 0;
-                          if (!params || val === 0) return "";
-                          const specName: string = params?.data?.specName || "";
-                          const accentColor = "#4338CA";
-                          // rank is encoded in series name as clinic_r0, clinic_r1, etc.
-                          const rank = parseInt(params.seriesName?.split("_r")[1] ?? "0", 10);
-                          const rankLabel = rank === 0 ? "Highest volume in location" : rank === clinicSpecs.length - 1 ? "Lowest volume in location" : `#${rank + 1} by volume`;
-                          return (
-                            `<div style="font-weight:700;font-size:13px;margin-bottom:6px;color:${T.textPrimary}">${params.name}</div>` +
-                            `<div style="color:${accentColor};margin-bottom:4px;font-weight:600">${specName}</div>` +
-                            `<div style="display:flex;justify-content:space-between;gap:16px">` +
-                            `<span style="color:${T.textMuted};font-size:11px">Available in Clinic</span>` +
-                            `<span style="font-weight:700;font-size:13px;color:${accentColor}">${formatNum(val)}</span>` +
-                            `</div>` +
-                            `<div style="font-size:10px;color:${T.textMuted};margin-top:4px">${rankLabel}</div>`
-                          );
-                        },
-                      },
-                      legend: { show: false },
-                      grid: { left: 60, right: 16, top: 16, bottom: 40 },
-                      xAxis: {
-                        type: "category",
-                        data: locations,
-                        axisLabel: { fontSize: 11, fontFamily: "var(--font-inter), system-ui, sans-serif", color: T.textSecondary, fontWeight: 500 },
-                        axisTick: { show: false },
-                        axisLine: { lineStyle: { color: T.border } },
-                      },
-                      yAxis: {
-                        type: "value",
-                        name: "Referral Count",
-                        nameTextStyle: { fontSize: 11, color: T.textMuted, fontFamily: "var(--font-inter), system-ui, sans-serif", padding: [0, 0, 8, 0] },
-                        axisLabel: { fontSize: 11, fontFamily: "var(--font-inter), system-ui, sans-serif", color: T.textMuted },
-                        splitLine: { lineStyle: { color: T.borderLight, type: "dashed" } },
-                        axisLine: { show: false },
-                        axisTick: { show: false },
-                      },
-                      series,
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
+            {topBarSpecs.map((spec: string, i: number) => (
+              <div key={spec} className="flex items-center gap-1">
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={locationBySpecialtyData} margin={{ top: 56, right: 10, left: 0, bottom: 45 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+                  <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 11, fill: T.textMuted }} domain={[0, (dataMax: number) => { const padded = dataMax * 1.1; const mag = Math.pow(10, Math.floor(Math.log10(padded))); return Math.ceil(padded / mag) * mag; }]} />
+                  <RechartsTooltip
+                    content={({ active, payload, label }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const isOthers = label === "Others";
+                      const breakdown = isOthers ? (charts?.othersBreakdown || []) : [];
+                      const othersTotal = breakdown.reduce((s: number, b: any) => s + (b.total || 0), 0);
+                      return (
+                        <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxWidth: 260 }}>
+                          <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                          {payload.filter((p: any) => p.value > 0).map((p: any) => (
+                            <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 2 }}>
+                              <span style={{ color: p.color }}>{p.name}</span>
+                              <span style={{ fontWeight: 600 }}>{formatNum(p.value)}</span>
+                            </div>
+                          ))}
+                          {isOthers && breakdown.length > 0 && (
+                            <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontSize: 11, color: T.textSecondary }}>
+                              <div><strong>{breakdown.length}</strong> locations · <strong>{formatNum(othersTotal)}</strong> referrals</div>
+                              <div style={{ marginTop: 4, color: T.textMuted }}>See breakdown panel below ↓</div>
+                            </div>
+                          )}
+                        </div>
+                      );
                     }}
                   />
-                </div>
-              </div>
-            );
-          })()}
-          <div className="flex items-center gap-6 mt-3 text-[12px] font-medium" style={{ color: T.textSecondary }}>
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-3 rounded-sm" style={{ background: "linear-gradient(90deg, #3730A3, #C7D2FE)" }} />
-              <span>Available in Clinic — dark = highest volume</span>
+                  {topBarSpecs.map((spec: string, i: number) => {
+                    const isLast = i === topBarSpecs.length - 1;
+                    return (
+                      <Bar
+                        key={spec}
+                        dataKey={spec}
+                        name={spec}
+                        stackId="a"
+                        fill={SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length]}
+                        maxBarSize={50}
+                        minPointSize={2}
+                        radius={isLast ? [3, 3, 0, 0] : undefined}
+                        onClick={(d: any) => { if (d?.location === "Others") { setOthersSearch(""); setOthersModalOpen(true); } }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {isLast && (
+                          <LabelList
+                            dataKey="__total"
+                            content={(props: any) => {
+                              const { x, y, width, value } = props;
+                              const n = Number(value);
+                              if (!n || n <= 0) return null;
+                              const text = formatNum(n);
+                              const cx = Number(x) + Number(width) / 2;
+                              const barTop = Number(y);
+                              const h = 18;
+                              const gap = 10;
+                              const w = Math.max(36, text.length * 6 + 14);
+                              const rectY = barTop - h - gap;
+                              const textY = rectY + h / 2 + 4;
+                              return (
+                                <g>
+                                  <rect x={cx - w / 2} y={rectY} width={w} height={h} rx={4} ry={4} fill="#fff" stroke={T.borderLight} />
+                                  <text x={cx} y={textY} textAnchor="middle" fontSize={11} fontWeight={700} fill={T.textPrimary}>{text}</text>
+                                </g>
+                              );
+                            }}
+                          />
+                        )}
+                      </Bar>
+                    );
+                  })}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-          <InsightBox text="Compare in-clinic referral volumes across locations to identify high-demand areas. Within each bar, darker segments represent the specialties with highest referral volume at that location." />
+          {(charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
+            const list = charts?.othersBreakdown || [];
+            const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+            return (
+              <button
+                onClick={() => { setOthersSearch(""); setOthersModalOpen(true); }}
+                className="mt-3 w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-left transition hover:shadow-sm hover:border-indigo-300"
+                style={{ borderColor: T.border, background: "#fafafa" }}
+              >
+                <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#a1a1aa" }} />
+                  <span>
+                    <strong style={{ color: T.textPrimary }}>Others:</strong> {list.length} smaller sites · <strong style={{ color: T.textPrimary }}>{formatNum(total)}</strong> referrals
+                  </span>
+                </div>
+                <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
+              </button>
+            );
+          })()}
+          <InsightBox text="Compare referral volumes across clinics to identify high-demand sites. Each bar segment is a destination specialty — total per clinic appears in the pill above the bar." />
         </CVCard>}
+        <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Others — Location Breakdown</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const list = charts?.othersBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              const q = othersSearch.trim().toLowerCase();
+              const filtered = q ? list.filter((b: any) => b.location.toLowerCase().includes(q)) : list;
+              return (
+                <>
+                  <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                    <strong>{list.length}</strong> smaller sites grouped · <strong>{formatNum(total)}</strong> total referrals
+                  </div>
+                  <Input placeholder="Search location…" value={othersSearch} onChange={(e) => setOthersSearch(e.target.value)} className="mb-3" />
+                  <ScrollArea className="h-[360px] pr-3">
+                    <div className="space-y-1">
+                      {filtered.map((b: any) => (
+                        <div key={b.location} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                          <span style={{ color: T.textSecondary }}>{b.location}</span>
+                          <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.total)}</span>
+                        </div>
+                      ))}
+                      {filtered.length === 0 && (
+                        <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No locations match &ldquo;{othersSearch}&rdquo;</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </div>}
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import { useCallback, useState } from "react";
 import { useFilters } from "@/lib/filter-context";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { format } from "date-fns";
@@ -60,5 +61,28 @@ export function useDashboardData<T = Record<string, unknown>>(
     keepPreviousData: true,
   });
 
-  return { data, error, isLoading, isValidating, mutate };
+  // Force-refresh helper: appends ?nocache=1 so the server cache layer
+  // (lib/cache/middleware) bypasses the cached blob and re-queries the
+  // warehouse, then stuffs the fresh data into SWR without re-fetching.
+  // Mirrors the inline pattern on /portal/ohc/utilization so every page
+  // using this hook gets the same behaviour from a single button click.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!url) return false;
+    setIsRefreshing(true);
+    try {
+      const fresh = url + (url.includes("?") ? "&" : "?") + "nocache=1";
+      const res = await fetch(fresh);
+      if (!res.ok) return false;
+      const fresh_data = await res.json();
+      await mutate(fresh_data, { revalidate: false });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [url, mutate]);
+
+  return { data, error, isLoading, isValidating, mutate, refresh, isRefreshing };
 }

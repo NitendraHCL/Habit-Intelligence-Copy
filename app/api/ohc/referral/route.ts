@@ -4,29 +4,52 @@ import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
 /* ────────────────────────────────────────────────────────────────────
- * OHC Referral API — powered by aggregated_table.agg_referral_matrix
+ * OHC Referral API — two-table fact model.
  *
- * Schema (one row per referral event):
- *   g_creation_time         (date)    — referral creation date
- *   uhid                    (text)    — patient identifier
- *   referral_count          (bigint)  — count for the row (typically 1)
- *   speciality_referred_from (text)   — origin specialty (nullable)
- *   speciality_referred_to   (text)   — target specialty
- *   speciality_conversion   (integer) — 0/1 flag, did the referral convert
- *   age                     (integer)
- *   gender                  (text)    — "Male" / "Female"
- *   facility                (text)    — long facility name
- *   facility_mapping        (text)    — short facility identifier ("Chennai SEZ")
- *   cug_code_mapped         (text)    — client tenant code
- *   relationship            (text)    — Employee / Others / etc.
+ * agg_referral_matrix (BASE_TABLE) is the dim-rich fact table that drives
+ *   filters, demographics, location, matrix and per-period/per-specialty
+ *   referral counts. One row per referral event.
  *
- * Demographic + facility attributes are now embedded in the row, so no
- * JOIN with agg_apptt is required. Conversion rate per specialty is real
- * (SUM(speciality_conversion) / SUM(referral_count)) instead of the
- * hard-coded 100% the old conversion-only table forced us into.
+ *   Columns: g_creation_time, uhid, referral_count, speciality_referred_from,
+ *   speciality_referred_to, speciality_conversion (LEGACY — superseded),
+ *   age, gender, facility, facility_mapping, cug_code_mapped, relationship.
+ *
+ * referral_conversion (CONV_TABLE) is the new authoritative source for
+ *   conversion outcomes. The legacy speciality_conversion flag on
+ *   agg_referral_matrix is no longer used.
+ *
+ *   Columns: uhid, speciality_name, stage, slotstarttime, g_creation_time,
+ *   difference_days, conversion (0/1 flag).
+ *
+ *   Verified UNIQUE on (uhid, g_creation_time, speciality_name); the
+ *   matrix table has up to 7 duplicates per same triple, so a JOIN would
+ *   inflate the conversion sum. We use IN-subquery scoping instead — see
+ *   convFilter() helper.
  * ──────────────────────────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_referral_matrix";
+const CONV_TABLE = "aggregated_table.referral_conversion";
+
+/**
+ * Conversion-fact lookup: filters are expressed against agg_referral_matrix
+ * (where the dim columns live), so any conversion query needs to scope itself
+ * to the (uhid, g_creation_time, speciality) keys that survive the filters.
+ *
+ * IN-subquery (not JOIN) on purpose: agg_referral_matrix has up to 7 duplicate
+ * rows per (uhid, time, spec) triple, so a JOIN would inflate the conversion
+ * sum. referral_conversion is verified-unique on the same triple, so the
+ * IN-subquery gives the true conversion count.
+ *
+ * Pass the filter SQL fragment as `whereR` (referencing alias `r`) and the
+ * matching params; the helper inlines them into the inner subquery.
+ */
+function convFilter(whereR: string): string {
+  return `(rc.uhid, rc.g_creation_time, rc.speciality_name) IN (
+    SELECT r.uhid, r.g_creation_time, r.speciality_referred_to
+    FROM ${BASE_TABLE} r
+    WHERE ${whereR} AND r.speciality_referred_to IS NOT NULL
+  )`;
+}
 
 const AGE_GROUP_CASE = `CASE
   WHEN r.age < 20 THEN '<20'
@@ -122,38 +145,65 @@ async function handler(request: NextRequest) {
     }
 
     // ── KPIs ──
-    const kpiRows = await safeQuery(
-      () => dwQuery<{ total_referrals: string; converted_count: string }>(
-        `SELECT
-           COALESCE(SUM(r.referral_count), 0)::bigint        AS total_referrals,
-           COALESCE(SUM(r.speciality_conversion), 0)::bigint AS converted_count
-         FROM ${BASE_TABLE} r
-         WHERE ${q.where}`,
-        q.params
+    // total_referrals comes from agg_referral_matrix (dim-rich fact table);
+    // converted_count comes from referral_conversion (the new authoritative
+    // source of truth for conversions). Both queries respect the same filter
+    // context — see convFilter() comment for why we use IN-subquery vs JOIN.
+    const [refsRows, convRows] = await Promise.all([
+      safeQuery(
+        () => dwQuery<{ total_referrals: string }>(
+          `SELECT COALESCE(SUM(r.referral_count), 0)::bigint AS total_referrals
+           FROM ${BASE_TABLE} r WHERE ${q.where}`,
+          q.params
+        ),
+        "kpiRefs"
       ),
-      "kpi"
-    );
-    const totalReferrals = Number(kpiRows[0]?.total_referrals || 0);
-    const convertedCount = Number(kpiRows[0]?.converted_count || 0);
+      safeQuery(
+        () => dwQuery<{ converted_count: string }>(
+          `SELECT COALESCE(SUM(rc.conversion), 0)::bigint AS converted_count
+           FROM ${CONV_TABLE} rc
+           WHERE ${convFilter(q.where)}`,
+          q.params
+        ),
+        "kpiConv"
+      ),
+    ]);
+    const totalReferrals = Number(refsRows[0]?.total_referrals || 0);
+    const convertedCount = Number(convRows[0]?.converted_count || 0);
     const conversionPct = totalReferrals > 0 ? Math.round((convertedCount / totalReferrals) * 100) : 0;
 
     // ── Concurrent batch: trends, matrix, specialty, demographics, location ──
-    const [trendRows, matrixRows, specRows, demoRows, locSpecRows] = await Promise.all([
-      // Monthly trends — totalReferrals + actual conversions per month.
+    // Trends and per-specialty conversion data are split between two tables
+    // — referrals from agg_referral_matrix, conversions from referral_conversion
+    // — and merged in JS below.
+    const [trendRefRows, trendConvRows, matrixRows, specRefRows, specConvRows, demoRows, locSpecRows] = await Promise.all([
+      // Monthly referral volume (from agg_referral_matrix)
       safeQuery(
-        () => dwQuery<{ period: string; bucket: string; total: string; conversions: string }>(
+        () => dwQuery<{ period: string; bucket: string; total: string }>(
           `SELECT
              to_char(date_trunc('month', r.g_creation_time), 'Mon YYYY') AS period,
              to_char(date_trunc('month', r.g_creation_time), 'YYYY-MM')   AS bucket,
-             COALESCE(SUM(r.referral_count), 0)::bigint        AS total,
-             COALESCE(SUM(r.speciality_conversion), 0)::bigint AS conversions
+             COALESCE(SUM(r.referral_count), 0)::bigint AS total
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
            GROUP BY 1, 2
            ORDER BY bucket`,
           q.params
         ),
-        "trends"
+        "trendRefs"
+      ),
+      // Monthly conversion count (from referral_conversion, scoped via filter)
+      safeQuery(
+        () => dwQuery<{ bucket: string; conversions: string }>(
+          `SELECT
+             to_char(date_trunc('month', rc.g_creation_time), 'YYYY-MM') AS bucket,
+             COALESCE(SUM(rc.conversion), 0)::bigint AS conversions
+           FROM ${CONV_TABLE} rc
+           WHERE ${convFilter(q.where)}
+           GROUP BY bucket`,
+          q.params
+        ),
+        "trendConv"
       ),
       // Year × from-spec → to-spec matrix.
       safeQuery(
@@ -172,20 +222,32 @@ async function handler(request: NextRequest) {
         ),
         "matrix"
       ),
-      // Per-specialty referrals + conversions (real rate).
+      // Per-specialty referral volume (from agg_referral_matrix)
       safeQuery(
-        () => dwQuery<{ specialty: string; referrals: string; conversions: string }>(
+        () => dwQuery<{ specialty: string; referrals: string }>(
           `SELECT
-             r.speciality_referred_to                       AS specialty,
-             COALESCE(SUM(r.referral_count), 0)::bigint        AS referrals,
-             COALESCE(SUM(r.speciality_conversion), 0)::bigint AS conversions
+             r.speciality_referred_to                  AS specialty,
+             COALESCE(SUM(r.referral_count), 0)::bigint AS referrals
            FROM ${BASE_TABLE} r
            WHERE ${q.where} AND r.speciality_referred_to IS NOT NULL
            GROUP BY r.speciality_referred_to
            ORDER BY referrals DESC`,
           q.params
         ),
-        "specialty"
+        "specialtyRefs"
+      ),
+      // Per-specialty conversion count (from referral_conversion)
+      safeQuery(
+        () => dwQuery<{ specialty: string; conversions: string }>(
+          `SELECT
+             rc.speciality_name                     AS specialty,
+             COALESCE(SUM(rc.conversion), 0)::bigint AS conversions
+           FROM ${CONV_TABLE} rc
+           WHERE ${convFilter(q.where)}
+           GROUP BY rc.speciality_name`,
+          q.params
+        ),
+        "specialtyConv"
       ),
       // Demographics: age_group × gender, weighted by referral_count.
       safeQuery(
@@ -220,13 +282,17 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── Trends ──
-    const referralTrends = trendRows.map((row) => ({
+    // Merge monthly referrals (agg_referral_matrix) with monthly conversions
+    // (referral_conversion) by their YYYY-MM bucket.
+    const convByBucket: Record<string, number> = {};
+    for (const row of trendConvRows) convByBucket[row.bucket] = Number(row.conversions);
+    const referralTrends = trendRefRows.map((row) => ({
       period: row.period,
       totalReferrals: Number(row.total),
       // Kept for backward compat with the chart's data contract; not rendered
       // anymore but the response shape stays stable.
       availableInClinic: Number(row.total),
-      inClinicConversions: Number(row.conversions),
+      inClinicConversions: convByBucket[row.bucket] || 0,
     }));
 
     // ── Matrix by year ──
@@ -244,9 +310,13 @@ async function handler(request: NextRequest) {
     const matrixYears = Array.from(matrixYearsSet).sort();
 
     // ── Specialty details — REAL conversion rates ──
-    const specialtyDetails = specRows.map((r) => {
+    // Merge per-specialty referrals (agg_referral_matrix) with per-specialty
+    // conversions (referral_conversion) by specialty name.
+    const convBySpec: Record<string, number> = {};
+    for (const row of specConvRows) convBySpec[row.specialty] = Number(row.conversions);
+    const specialtyDetails = specRefRows.map((r) => {
       const referrals = Number(r.referrals);
-      const conversions = Number(r.conversions);
+      const conversions = convBySpec[r.specialty] || 0;
       return {
         specialty: r.specialty,
         referrals,
@@ -318,15 +388,34 @@ async function handler(request: NextRequest) {
       if (!locMap[row.location]) locMap[row.location] = {};
       locMap[row.location][row.specialty] = Number(row.cnt);
     }
-    const locationBySpecialty = Object.entries(locMap)
+    const sumSpecs = (o: Record<string, unknown>) =>
+      Object.entries(o)
+        .filter(([k]) => k !== "location")
+        .reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
+
+    const allLocationsSorted = Object.entries(locMap)
       .map(([location, specs]) => ({ location, ...specs }))
-      .sort((a, b) => {
-        const sum = (o: Record<string, unknown>) =>
-          Object.entries(o)
-            .filter(([k]) => k !== "location")
-            .reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
-        return sum(b) - sum(a);
-      });
+      .sort((a, b) => sumSpecs(b) - sumSpecs(a));
+
+    // Roll smaller clinics into a synthetic "Others" bar — same TOP_N pattern
+    // the OHC Utilization location chart uses. othersBreakdown lets the UI
+    // render a clickable footer + breakdown modal.
+    const TOP_N = 15;
+    const topLocations = allLocationsSorted.slice(0, TOP_N);
+    const restLocations = allLocationsSorted.slice(TOP_N);
+    const othersEntry: Record<string, unknown> = { location: "Others" };
+    const othersBreakdown: { location: string; total: number }[] = [];
+    for (const loc of restLocations) {
+      const locTotal = sumSpecs(loc);
+      if (locTotal > 0) othersBreakdown.push({ location: loc.location as string, total: locTotal });
+      for (const spec of topBarSpecialties) {
+        othersEntry[spec] = ((othersEntry[spec] as number) || 0) + ((loc as any)[spec] || 0);
+      }
+    }
+    othersBreakdown.sort((a, b) => b.total - a.total);
+    const locationBySpecialty = restLocations.length > 0
+      ? [...topLocations, othersEntry as any]
+      : topLocations;
 
     return NextResponse.json({
       kpis: {
@@ -349,6 +438,7 @@ async function handler(request: NextRequest) {
         locationBySpecialty,
         topBarSpecialties,
         specAvailability,
+        othersBreakdown,
       },
       lastUpdated: new Date().toISOString(),
       meta: {

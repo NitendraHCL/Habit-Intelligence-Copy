@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { dataSources } from "@/lib/config/data-sources";
 import { chartPresets } from "@/lib/config/chart-presets";
+import { invokeBedrock, BEDROCK_MODEL_IDS } from "@/lib/ai/bedrock";
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,51 +73,23 @@ Respond ONLY with a valid JSON object matching this schema:
 
 No explanation, no markdown — just the JSON object.`;
 
-    // Try Gemini first (already configured in the project)
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const { text } = await invokeBedrock({
+      model: BEDROCK_MODEL_IDS.chartConfig,
+      system: systemPrompt,
+      maxTokens: 1024,
+      temperature: 0.3,
+      messages: [{ role: "user", content: prompt }],
+    });
 
+    // Strip code fences if the model wraps JSON in markdown
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
     let chartConfig: Record<string, unknown>;
-
-    if (geminiKey) {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.3,
-              responseMimeType: "application/json",
-            },
-          }),
-        }
-      );
-
-      if (!res.ok) throw new Error("Gemini API error");
-      const data = await res.json();
-      const text =
-        data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      chartConfig = JSON.parse(text);
-    } else if (anthropicKey) {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey: anthropicKey });
-      const message = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: "user", content: prompt }],
-      });
-
-      const text =
-        message.content[0].type === "text" ? message.content[0].text : "{}";
-      chartConfig = JSON.parse(text);
-    } else {
+    try {
+      chartConfig = JSON.parse(cleaned);
+    } catch {
       return NextResponse.json(
-        { error: "No AI provider configured. Set GEMINI_API_KEY or ANTHROPIC_API_KEY." },
-        { status: 400 }
+        { error: "AI returned invalid JSON", raw: text },
+        { status: 502 }
       );
     }
 

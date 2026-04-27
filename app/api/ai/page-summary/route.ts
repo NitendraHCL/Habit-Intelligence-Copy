@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic();
+import { invokeBedrock, BEDROCK_MODEL_IDS } from "@/lib/ai/bedrock";
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,10 +34,11 @@ Respond in JSON format:
   ]
 }`;
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
+    const { text } = await invokeBedrock({
+      model: BEDROCK_MODEL_IDS.pageSummary,
       system: systemPrompt,
+      maxTokens: 512,
+      temperature: 0.5,
       messages: [
         {
           role: "user",
@@ -48,17 +47,11 @@ Respond in JSON format:
       ],
     });
 
-    const text =
-      message.content[0].type === "text" ? message.content[0].text : "{}";
-
     try {
       const parsed = JSON.parse(text);
       return NextResponse.json(parsed);
     } catch {
-      return NextResponse.json({
-        summary: text,
-        chips: [],
-      });
+      return NextResponse.json({ summary: text, chips: [] });
     }
   } catch (error) {
     console.error("AI Page Summary error:", error);

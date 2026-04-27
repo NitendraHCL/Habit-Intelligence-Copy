@@ -189,21 +189,21 @@ function FilterMultiSelect({ label, options, selected, onChange }: {
           <ChevronDown size={13} style={{ color: T.textMuted }} />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-2" align="start">
+      <PopoverContent className="w-64 max-w-[280px] p-2 overflow-hidden" align="start">
         <div className="flex items-center justify-between mb-1.5 px-1">
           <span className="text-[12px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>{label}</span>
           {selected.length > 0 && (
             <button onClick={() => onChange([])} className="text-[10px] font-medium hover:underline" style={{ color: T.coral }}>Clear</button>
           )}
         </div>
-        <ScrollArea className="max-h-52">
-          <div className="space-y-0.5">
+        <ScrollArea className="h-52 overflow-hidden">
+          <div className="space-y-0.5 pr-2">
             {options.map((opt) => (
-              <label key={opt} className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-[12px]" style={{ color: T.textPrimary }}>
+              <label key={opt} className="flex items-start gap-2 px-1.5 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-[12px]" style={{ color: T.textPrimary }}>
                 <Checkbox checked={selected.includes(opt)} onCheckedChange={() =>
                   onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt])
-                } className="h-3.5 w-3.5" />
-                {opt}
+                } className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span className="break-words leading-snug min-w-0 flex-1">{opt}</span>
               </label>
             ))}
           </div>
@@ -334,6 +334,22 @@ export default function ReferralAnalyticsPage() {
   const d = data as any;
   const kpis = d?.kpis;
   const charts = d?.charts;
+
+  // The /api/ohc/referral response now ships its own filterOptions for
+  // locations + specialties (sourced from agg_referral_matrix so dropdown
+  // values always match what's actually filterable). When those arrive,
+  // overlay them on top of whatever /api/filters provided — without
+  // disturbing genders/ageGroups, which still come from /api/filters.
+  useEffect(() => {
+    const apiLocs: string[] | undefined = d?.filterOptions?.locations;
+    const apiSpecs: string[] | undefined = d?.filterOptions?.specialties;
+    if (!apiLocs && !apiSpecs) return;
+    setFilterOptions((prev) => ({
+      ...prev,
+      ...(apiLocs && apiLocs.length ? { locations: apiLocs } : {}),
+      ...(apiSpecs && apiSpecs.length ? { specialties: apiSpecs } : {}),
+    }));
+  }, [d?.filterOptions?.locations, d?.filterOptions?.specialties]);
 
   // Roll the per-period referral trends into per-year totals + YoY % deltas.
   // Period from the API is now machine format ("YYYY-MM" or "YYYY-MM-DD"),

@@ -157,12 +157,39 @@ async function handler(request: NextRequest) {
       }
     }
 
+    // ── Filter options (unfiltered, scoped to the client tenant only) ──
+    // Sourced from agg_referral_matrix so the dropdown values are always
+    // present in the data this page actually queries — no orphan filter
+    // values that return empty results.
+    const filterPromise = Promise.all([
+      safeQuery(
+        () => dwQuery<{ v: string }>(
+          `SELECT DISTINCT r.facility_mapping AS v
+           FROM ${BASE_TABLE} r
+           WHERE r.cug_code_mapped = $1 AND r.facility_mapping IS NOT NULL AND TRIM(r.facility_mapping) <> ''
+           ORDER BY 1`,
+          [cugCode]
+        ),
+        "filterLocations"
+      ),
+      safeQuery(
+        () => dwQuery<{ v: string }>(
+          `SELECT DISTINCT r.speciality_referred_to AS v
+           FROM ${BASE_TABLE} r
+           WHERE r.cug_code_mapped = $1 AND r.speciality_referred_to IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
+           ORDER BY 1`,
+          [cugCode]
+        ),
+        "filterSpecialties"
+      ),
+    ]);
+
     // ── KPIs ──
     // total_referrals comes from agg_referral_matrix (dim-rich fact table);
     // converted_count comes from referral_conversion (the new authoritative
     // source of truth for conversions). Both queries respect the same filter
     // context — see convFilter() comment for why we use IN-subquery vs JOIN.
-    const [refsRows, convRows] = await Promise.all([
+    const [refsRows, convRows, [filterLocations, filterSpecialties]] = await Promise.all([
       safeQuery(
         () => dwQuery<{ total_referrals: string }>(
           `SELECT COALESCE(SUM(r.referral_count), 0)::bigint AS total_referrals
@@ -180,6 +207,7 @@ async function handler(request: NextRequest) {
         ),
         "kpiConv"
       ),
+      filterPromise,
     ]);
     const totalReferrals = Number(refsRows[0]?.total_referrals || 0);
     const convertedCount = Number(convRows[0]?.converted_count || 0);
@@ -440,6 +468,10 @@ async function handler(request: NextRequest) {
         availableInClinicPct: totalReferrals > 0 ? 100 : 0,
         convertedCount,
         conversionPct,
+      },
+      filterOptions: {
+        locations: filterLocations.map((r) => r.v),
+        specialties: filterSpecialties.map((r) => r.v),
       },
       charts: {
         referralTrends,

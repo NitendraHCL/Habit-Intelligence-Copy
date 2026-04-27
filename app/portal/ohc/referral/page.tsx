@@ -293,7 +293,8 @@ export default function ReferralAnalyticsPage() {
     return p;
   }, [appliedDateRange, appliedFilters]);
 
-  const { data, isLoading, isValidating, mutate } = useDashboardData("ohc/referral", extraParams);
+  const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData("ohc/referral", extraParams);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
 
   const d = data as any;
   const kpis = d?.kpis;
@@ -339,8 +340,16 @@ export default function ReferralAnalyticsPage() {
   // specialties available in-clinic.
   const filteredSpecDetails = useMemo(() => {
     const details: any[] = charts?.specialtyDetails || [];
-    return details.filter((s: any) => s.isAvailableInClinic);
+    return details
+      .filter((s: any) => s.isAvailableInClinic)
+      .sort((a: any, b: any) => (b.referrals || 0) - (a.referrals || 0));
   }, [charts?.specialtyDetails]);
+
+  // Max referrals — drives the relative-volume mini bar in the table
+  const maxSpecRefs = useMemo(
+    () => filteredSpecDetails.reduce((m: number, s: any) => Math.max(m, s.referrals || 0), 0) || 1,
+    [filteredSpecDetails]
+  );
 
   // Demographics data for polar radial
   const demoData: Array<{ ageGroup: string; male: number; female: number }> = charts?.demographics || [];
@@ -388,21 +397,40 @@ export default function ReferralAnalyticsPage() {
 
         <div className="flex-1" />
         <PageDownload pageTitle="OHC Referral Analytics" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
-              <RotateCcw className={`size-4 text-gray-600${isValidating ? " animate-spin" : ""}`} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Refresh data</TooltipContent>
-        </Tooltip>
+        <div className="relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={async () => {
+                  const ok = await refresh();
+                  if (ok) {
+                    setShowRefreshToast(true);
+                    setTimeout(() => setShowRefreshToast(false), 3000);
+                  }
+                }}
+                disabled={isRefreshing}
+                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+              >
+                <RotateCcw className={`size-4 text-gray-600${isRefreshing || isValidating ? " animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh data</TooltipContent>
+          </Tooltip>
+          {showRefreshToast && (
+            <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <span className="text-[12px] font-medium">Data refreshed</span>
+              </div>
+            </div>
+          )}
+        </div>
         <ConfigurePanel
           pageSlug="/portal/ohc/referral"
           pageTitle="Referral Analytics"
           charts={[
             { id: "totalReferrals", label: "Total Referrals KPI" },
-            { id: "availableInClinic", label: "Available In-Clinic KPI" },
-            { id: "inClinicConversions", label: "In-Clinic Conversions KPI" },
+            { id: "inClinicConversions", label: "Conversions KPI" },
             { id: "referralTrends", label: "Referral Trends" },
             { id: "specialtyConversion", label: "Referral Availability & Conversion by Specialty" },
             { id: "referralMatrix", label: "Referral Matrix: Who Refers to Whom?" },
@@ -452,34 +480,20 @@ export default function ReferralAnalyticsPage() {
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Referral v/s Consumption</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Summary of referral volumes, in-clinic availability and conversion rates</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
 
           {/* Card 1 — Total Referrals (baseline) */}
           {isChartVisible("totalReferrals") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
             <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Referrals</p>
             <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalReferrals || 0)}</p>
             <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
-              All specialist referrals issued — this is the <span className="font-semibold" style={{ color: T.textPrimary }}>baseline (100%)</span> from which the cards below are calculated.
+              All specialist referrals issued — this is the <span className="font-semibold" style={{ color: T.textPrimary }}>baseline (100%)</span> from which the card below is calculated.
             </p>
           </div>}
 
-          {/* Card 2 — In-Clinic Available */}
-          {isChartVisible("availableInClinic") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Referred to an In-Clinic Specialty</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.availableInClinicCount || 0)}</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold" style={{ backgroundColor: "rgba(79,70,229,0.08)", color: "#4f46e5" }}>
-                {kpis?.availableInClinicPct || 0}% of total referrals
-              </span>
-            </div>
-            <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
-              Out of {formatNum(kpis?.totalReferrals || 0)} referrals, <span className="font-semibold" style={{ color: T.textPrimary }}>{kpis?.availableInClinicPct || 0}%</span> were referred to a specialty that is available within the OHC facility.
-            </p>
-          </div>}
-
-          {/* Card 3 — In-Clinic Conversions */}
+          {/* Card 2 — Conversions */}
           {isChartVisible("inClinicConversions") && <div className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-2" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>In-Clinic Conversions</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Conversions</p>
             <div className="flex items-baseline gap-2">
               <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.teal }}>{formatNum(kpis?.convertedCount || 0)}</p>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold" style={{ backgroundColor: "rgba(13,148,136,0.08)", color: T.teal }}>
@@ -487,14 +501,14 @@ export default function ReferralAnalyticsPage() {
               </span>
             </div>
             <p className="text-[12px] leading-snug" style={{ color: T.textSecondary }}>
-              Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.availableInClinicCount || 0)}</span> in-clinic-available referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were actually consulted in-clinic.
+              Of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> total referrals, <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> were converted into a consultation.
             </p>
           </div>}
 
         </div>
 
         {/* ── Referral Trends (Area Chart) ── */}
-        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Monthly referral volumes with in-clinic availability and conversions" expandable={false} tooltipText="Area chart showing monthly referral volumes split by total referrals, in-clinic available specialties, and actual conversions. Tracks referral pipeline health over time." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volumes with in-clinic availability and conversions">
+        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Monthly referral volumes and conversions" expandable={false} tooltipText="Area chart showing monthly referral volumes alongside actual in-clinic conversions. Tracks referral pipeline health over time." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volumes and conversions">
           <div className="overflow-x-auto">
           <div style={{ height: 300, minWidth: Math.max(500, (charts?.referralTrends?.length || 0) * 60) }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -503,10 +517,6 @@ export default function ReferralAnalyticsPage() {
                   <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={"#4f46e5"} stopOpacity={0.28} />
                     <stop offset="100%" stopColor={"#4f46e5"} stopOpacity={0.03} />
-                  </linearGradient>
-                  <linearGradient id="gradAvailable" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={"#0891b2"} stopOpacity={0.28} />
-                    <stop offset="100%" stopColor={"#0891b2"} stopOpacity={0.03} />
                   </linearGradient>
                   <linearGradient id="gradConversions" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={"#059669"} stopOpacity={0.28} />
@@ -523,15 +533,13 @@ export default function ReferralAnalyticsPage() {
                     <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
                       <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
                       <p style={{ color: "#4f46e5" }}>Total Referrals : <strong>{formatNum(dd?.totalReferrals)}</strong></p>
-                      <p style={{ color: "#0891b2" }}>Referrals for specialty available in clinic : <strong>{formatNum(dd?.availableInClinic)}</strong></p>
-                      <p style={{ color: "#059669" }}>In-Clinic Conversions (for available specialties) : <strong>{formatNum(dd?.inClinicConversions)}</strong></p>
+                      <p style={{ color: "#059669" }}>Conversions : <strong>{formatNum(dd?.inClinicConversions)}</strong></p>
                     </div>
                   );
                 }} />
                 <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" iconSize={7} />
                 <Area type="monotone" dataKey="totalReferrals" name="Total Referrals" stroke={"#4f46e5"} fill="url(#gradTotal)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} />
-                <Area type="monotone" dataKey="availableInClinic" name="Referrals for specialty available in clinic" stroke={"#0891b2"} fill="url(#gradAvailable)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#0891b2", strokeWidth: 2 }} />
-                <Area type="monotone" dataKey="inClinicConversions" name="In-Clinic Conversions (for available specialties)" stroke={"#059669"} fill="url(#gradConversions)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#059669", strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="inClinicConversions" name="Conversions" stroke={"#059669"} fill="url(#gradConversions)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#059669", strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -540,65 +548,111 @@ export default function ReferralAnalyticsPage() {
       </WarmSection>
 
       {/* ── Referral Availability & Conversion by Specialty ── */}
-      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Referral volume and conversion rate for specialties available in-clinic" tooltipText="Table listing each referred specialty available in-clinic, with referral count, conversion progress bar, and in-clinic consult counts."
+      {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Referral volume and conversion rate for specialties available in-clinic" tooltipText="Table listing each referred specialty available in-clinic, with referral count and conversion progress bar."
         chartId="specialtyConversion"
         chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Referral volume and conversion rate for specialties available in-clinic">
-        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}`, backgroundColor: T.white }}>
+        {/* Summary strip */}
+        {filteredSpecDetails.length > 0 && (() => {
+          const totalRefs = filteredSpecDetails.reduce((s: number, r: any) => s + (r.referrals || 0), 0);
+          const avgConv = Math.round(filteredSpecDetails.reduce((s: number, r: any) => s + (r.conversionRate || 0), 0) / filteredSpecDetails.length);
+          const stats = [
+            { label: "Specialties", value: formatNum(filteredSpecDetails.length) },
+            { label: "Total Referrals", value: formatNum(totalRefs) },
+            { label: "Avg Conversion", value: `${avgConv}%`, accent: avgConv >= 70 ? T.teal : avgConv > 0 ? T.amber : T.coral },
+          ];
+          return (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {stats.map((st) => (
+                <div key={st.label} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ backgroundColor: "#F5F6FB", border: `1px solid ${T.borderLight}` }}>
+                  <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>{st.label}</span>
+                  <span className="text-[12.5px] font-bold tabular-nums" style={{ color: st.accent || T.textPrimary }}>{st.value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
+        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}`, backgroundColor: T.white, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
           <div className="overflow-x-auto">
-          {/* Table Header */}
-          <div className="grid items-center py-3 px-5" style={{ gridTemplateColumns: "1.8fr 1.2fr 1fr 1.4fr 1fr 0.9fr", borderBottom: `2px solid ${T.border}`, backgroundColor: "#FAFBFC", minWidth: 700 }}>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textSecondary }}>Referred Specialty</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textSecondary }}>Availability</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-center" style={{ color: T.textSecondary }}>Referrals</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-center" style={{ color: T.textSecondary }}>Conversion</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-center" style={{ color: T.textSecondary }}>In-clinic Consults</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-center" style={{ color: T.textSecondary }}>Rate</span>
+          {/* Table Header — sticky within the scroll container */}
+          <div className="grid items-center py-3 px-5 sticky top-0 z-10" style={{ gridTemplateColumns: "0.5fr 1.7fr 1.3fr 1.6fr", borderBottom: `1px solid ${T.border}`, background: "linear-gradient(180deg, #FAFBFC 0%, #F3F4F8 100%)", minWidth: 520 }}>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>#</span>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Referred Specialty</span>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Referral Volume</span>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Conversion</span>
           </div>
           {/* Rows */}
-          <div className="overflow-y-auto max-h-[400px]">
-          {filteredSpecDetails.map((s: any) => {
+          <div className="overflow-y-auto max-h-[440px]">
+          {filteredSpecDetails.map((s: any, idx: number) => {
             const barColor = s.conversionRate >= 70 ? T.teal : s.conversionRate > 0 ? T.amber : T.coral;
             const barBg = s.conversionRate >= 70 ? "#E6F9F5" : s.conversionRate > 0 ? "#FFF6E6" : "#FDE8E8";
+            const barColorEnd = s.conversionRate >= 70 ? "#0D9488" : s.conversionRate > 0 ? "#D97706" : "#DC2626";
+            const volumePct = Math.max(2, Math.round(((s.referrals || 0) / maxSpecRefs) * 100));
+            const isMedal = idx < 3;
+            const medalBg = idx === 0 ? "#FEF3C7" : idx === 1 ? "#E5E7EB" : idx === 2 ? "#FED7AA" : "transparent";
+            const medalRing = idx === 0 ? "#F59E0B" : idx === 1 ? "#9CA3AF" : idx === 2 ? "#F97316" : "transparent";
+            const medalText = idx === 0 ? "#92400E" : idx === 1 ? "#374151" : idx === 2 ? "#9A3412" : T.textMuted;
+            const zebra = idx % 2 === 1 ? "#FBFCFD" : T.white;
             return (
-              <div key={s.specialty} className="grid items-center py-4 px-5" style={{ gridTemplateColumns: "1.8fr 1.2fr 1fr 1.4fr 1fr 0.9fr", borderBottom: `1px solid ${T.borderLight}`, minWidth: 700 }}>
+              <div
+                key={s.specialty}
+                className="group grid items-center py-3.5 px-5 transition-all duration-150 hover:bg-[#F4F6FB] relative"
+                style={{ gridTemplateColumns: "0.5fr 1.7fr 1.3fr 1.6fr", borderBottom: `1px solid ${T.borderLight}`, minWidth: 520, backgroundColor: zebra }}
+              >
+                {/* Hover left-edge accent */}
+                <span className="absolute left-0 top-0 bottom-0 w-[3px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: "#4f46e5" }} />
+                {/* Rank */}
                 <div>
-                  <p className="text-[14px] font-semibold" style={{ color: T.textPrimary }}>{s.specialty}</p>
-                </div>
-                <div>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                    Available in Clinic
+                  <span
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[11.5px] font-bold tabular-nums"
+                    style={{
+                      backgroundColor: isMedal ? medalBg : "#F5F6FB",
+                      color: isMedal ? medalText : T.textMuted,
+                      boxShadow: isMedal ? `inset 0 0 0 1.5px ${medalRing}` : "none",
+                    }}
+                  >
+                    {idx + 1}
                   </span>
                 </div>
-                <div className="text-center">
-                  <span className="text-[16px] font-bold" style={{ color: T.textPrimary }}>{formatNum(s.referrals)}</span>
+                {/* Specialty name */}
+                <div className="pr-3">
+                  <p className="text-[13.5px] font-semibold leading-tight" style={{ color: T.textPrimary }}>{s.specialty}</p>
                 </div>
-                <div className="flex items-center gap-2.5 px-1">
-                  <div className="flex-1 h-[7px] rounded-full overflow-hidden" style={{ backgroundColor: barBg }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(s.conversionRate, 100)}%`, backgroundColor: barColor }} />
+                {/* Referral volume — number + gradient bar */}
+                <div className="flex items-center gap-3 pr-4">
+                  <span className="text-[15px] font-bold tabular-nums w-14 text-right" style={{ color: T.textPrimary }}>{formatNum(s.referrals)}</span>
+                  <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ backgroundColor: "#EEF1F8" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${volumePct}%`, background: "linear-gradient(90deg, #6366f1 0%, #4f46e5 100%)" }}
+                    />
                   </div>
-                  <span className="text-[12px] font-bold w-10 text-right" style={{ color: barColor }}>{s.conversionRate}%</span>
                 </div>
-                <div className="text-center">
-                  <span className="inline-flex items-center justify-center min-w-[36px] h-[26px] px-2 rounded-full text-[13px] font-bold" style={{
-                    backgroundColor: s.inClinicConsults > 0 ? "#E6F9F5" : "#FDE8E8",
-                    color: s.inClinicConsults > 0 ? T.teal : T.coral,
-                  }}>
-                    {formatNum(s.inClinicConsults)}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="inline-flex items-center justify-center min-w-[36px] h-[26px] px-2 rounded-full text-[13px] font-bold" style={{
-                    backgroundColor: s.conversionRate >= 70 ? "#E6F9F5" : s.conversionRate > 0 ? "#FFF6E6" : "#FDE8E8",
-                    color: s.conversionRate >= 70 ? T.teal : s.conversionRate > 0 ? T.amber : T.coral,
-                  }}>
-                    {s.conversionRate > 0 ? `${s.conversionRate}%` : "0%"}
+                {/* Conversion — gradient bar + colored pill */}
+                <div className="flex items-center gap-3 pr-1">
+                  <div className="flex-1 h-[8px] rounded-full overflow-hidden" style={{ backgroundColor: barBg }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(s.conversionRate, 100)}%`, background: `linear-gradient(90deg, ${barColor} 0%, ${barColorEnd} 100%)` }}
+                    />
+                  </div>
+                  <span
+                    className="inline-flex items-center justify-center min-w-[46px] h-[24px] px-2.5 rounded-full text-[11.5px] font-bold tabular-nums"
+                    style={{ backgroundColor: barBg, color: barColor, boxShadow: `inset 0 0 0 1px ${barColor}22` }}
+                  >
+                    {s.conversionRate}%
                   </span>
                 </div>
               </div>
             );
           })}
           {filteredSpecDetails.length === 0 && (
-            <div className="py-10 text-center text-[13px]" style={{ color: T.textMuted }}>No specialties found</div>
+            <div className="py-12 flex flex-col items-center justify-center gap-2">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: "#F5F6FB" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+              </div>
+              <p className="text-[13px] font-medium" style={{ color: T.textMuted }}>No specialties match the current filters</p>
+            </div>
           )}
           </div>
           </div>

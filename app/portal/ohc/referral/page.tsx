@@ -39,6 +39,8 @@ import {
   Area,
   BarChart,
   Bar,
+  ComposedChart,
+  Line,
   LabelList,
   XAxis,
   YAxis,
@@ -320,10 +322,51 @@ export default function ReferralAnalyticsPage() {
   const [showRefreshToast, setShowRefreshToast] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
+  const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
 
   const d = data as any;
   const kpis = d?.kpis;
   const charts = d?.charts;
+
+  // Roll the monthly referral trends into per-year totals + YoY % deltas.
+  // Period from the API is "Mon YYYY" (e.g. "Apr 2026") — last 4 chars = year.
+  const referralYearlyTrends = useMemo(() => {
+    const trends = (charts?.referralTrends || []) as Array<{ period: string; totalReferrals?: number; inClinicConversions?: number }>;
+    if (trends.length === 0) {
+      return [] as Array<{ period: string; totalReferrals: number; conversions: number; conversionRate: number; yoy: number | null; convYoy: number | null; isYtd: boolean }>;
+    }
+    const byYear: Record<string, { totalReferrals: number; conversions: number }> = {};
+    for (const t of trends) {
+      const yr = String(t.period || "").slice(-4);
+      if (!/^\d{4}$/.test(yr)) continue;
+      if (!byYear[yr]) byYear[yr] = { totalReferrals: 0, conversions: 0 };
+      byYear[yr].totalReferrals += t.totalReferrals || 0;
+      byYear[yr].conversions += t.inClinicConversions || 0;
+    }
+    const currentYear = String(new Date().getFullYear());
+    const years = Object.keys(byYear).sort();
+    return years.map((yr, i) => {
+      const prev = i > 0 ? byYear[years[i - 1]] : null;
+      const yoy = prev && prev.totalReferrals > 0
+        ? Math.round(((byYear[yr].totalReferrals - prev.totalReferrals) / prev.totalReferrals) * 100)
+        : null;
+      const convYoy = prev && prev.conversions > 0
+        ? Math.round(((byYear[yr].conversions - prev.conversions) / prev.conversions) * 100)
+        : null;
+      const conversionRate = byYear[yr].totalReferrals > 0
+        ? Math.round((byYear[yr].conversions / byYear[yr].totalReferrals) * 100)
+        : 0;
+      return {
+        period: yr,
+        totalReferrals: byYear[yr].totalReferrals,
+        conversions: byYear[yr].conversions,
+        conversionRate,
+        yoy,
+        convYoy,
+        isYtd: yr === currentYear,
+      };
+    });
+  }, [charts?.referralTrends]);
 
   const handleRemoveChip = (key: string, value: string) => {
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
@@ -546,52 +589,142 @@ export default function ReferralAnalyticsPage() {
 
         </div>
 
-        {/* ── Referral Trends (Area Chart) ── */}
-        {isChartVisible("referralTrends") && <CVCard accentColor={"#4f46e5"} title="Referral Trends" subtitle="Whether referral demand is rising — and whether follow-through is keeping pace" expandable={false} tooltipText="Two stacked area lines per month: total referrals issued and how many converted into a consultation. Use it to spot demand spikes and any month where follow-through dipped." chartId="referralTrends" chartData={charts?.referralTrends} chartTitle="Referral Trends" chartDescription="Monthly referral volume vs. conversion trend">
-          <div className="overflow-x-auto">
-          <div style={{ height: 300, minWidth: Math.max(500, (charts?.referralTrends?.length || 0) * 60) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts?.referralTrends || []} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
-                <defs>
-                  <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={"#4f46e5"} stopOpacity={0.28} />
-                    <stop offset="100%" stopColor={"#4f46e5"} stopOpacity={0.03} />
-                  </linearGradient>
-                  <linearGradient id="gradConversions" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={"#059669"} stopOpacity={0.28} />
-                    <stop offset="100%" stopColor={"#059669"} stopOpacity={0.03} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
-                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-                <RechartsTooltip content={({ active, payload, label }: any) => {
-                  if (!active || !payload?.length) return null;
-                  const dd = payload[0]?.payload;
-                  return (
-                    <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                      <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
-                      <p style={{ color: "#4f46e5" }}>Total Referrals : <strong>{formatNum(dd?.totalReferrals)}</strong></p>
-                      <p style={{ color: "#059669" }}>Conversions : <strong>{formatNum(dd?.inClinicConversions)}</strong></p>
-                    </div>
-                  );
-                }} />
-                <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" iconSize={7} />
-                <Area type="monotone" dataKey="totalReferrals" name="Total Referrals" stroke={"#4f46e5"} fill="url(#gradTotal)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} />
-                <Area type="monotone" dataKey="inClinicConversions" name="Conversions" stroke={"#059669"} fill="url(#gradConversions)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#059669", strokeWidth: 2 }} />
-              </AreaChart>
-            </ResponsiveContainer>
+        {/* ── Referral Trends (Monthly area / Yearly bar+line) ── */}
+        {isChartVisible("referralTrends") && <CVCard
+          accentColor={"#4f46e5"}
+          title="Referral Trends"
+          subtitle={trendView === "monthly"
+            ? "Whether referral demand is rising — and whether follow-through is keeping pace, month over month"
+            : "Year-over-year referral volume + conversions, with the conversion rate trend overlaid"}
+          expandable={false}
+          tooltipText={trendView === "monthly"
+            ? "Two stacked area lines per month: total referrals issued and how many converted into a consultation. Use it to spot demand spikes and any month where follow-through dipped."
+            : "Bars show total referrals + actual conversions for each year; the line traces the conversion rate (%). YoY change in referrals appears above each bar."}
+          chartId="referralTrends"
+          chartData={trendView === "yearly" ? referralYearlyTrends : charts?.referralTrends}
+          chartTitle="Referral Trends"
+          chartDescription={`${trendView} view of referral volume vs. conversion`}>
+          <div className="flex justify-end mb-2">
+            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
+              {(["monthly", "yearly"] as const).map((v) => (
+                <button key={v} onClick={() => setTrendView(v)} className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${trendView === v ? "bg-white shadow-sm" : ""}`} style={{ color: trendView === v ? T.textPrimary : T.textMuted }}>
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+            <ResetFilter visible={trendView !== "monthly"} onClick={() => setTrendView("monthly")} />
           </div>
-          </div>
-          <InsightBox text={(() => {
-            const trends: any[] = charts?.referralTrends || [];
-            if (trends.length === 0) return "Referral trend data will appear once loaded.";
-            const peak = trends.reduce((a: any, b: any) => ((b.totalReferrals || 0) > (a.totalReferrals || 0) ? b : a));
-            const totalRefs = trends.reduce((s: number, t: any) => s + (t.totalReferrals || 0), 0);
-            const totalConv = trends.reduce((s: number, t: any) => s + (t.inClinicConversions || 0), 0);
-            const avgRate = totalRefs > 0 ? Math.round((totalConv / totalRefs) * 100) : 0;
-            return `Peak referral month: ${peak.period} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
-          })()} />
+          {trendView === "yearly" ? (
+            <div style={{ height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={referralYearlyTrends} margin={{ top: 40, right: 20, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
+                  <XAxis
+                    dataKey="period"
+                    tick={{ fontSize: 11, fill: T.textMuted }}
+                    tickFormatter={(v: string) => {
+                      const d = referralYearlyTrends.find((y) => y.period === v);
+                      return d?.isYtd ? `${v} (YTD)` : v;
+                    }}
+                  />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: T.textMuted }} unit="%" />
+                  <RechartsTooltip content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const dd = payload[0]?.payload;
+                    return (
+                      <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}{dd?.isYtd ? " (YTD)" : ""}</p>
+                        <p style={{ color: "#4f46e5" }}>Total Referrals: <strong>{formatNum(dd?.totalReferrals)}</strong>{dd?.yoy != null ? <span className="ml-2 text-[10px]" style={{ color: dd.yoy >= 0 ? "#16a34a" : "#dc2626" }}>{dd.yoy >= 0 ? "+" : ""}{dd.yoy}% YoY</span> : null}</p>
+                        <p style={{ color: "#059669" }}>Conversions: <strong>{formatNum(dd?.conversions)}</strong>{dd?.convYoy != null ? <span className="ml-2 text-[10px]" style={{ color: dd.convYoy >= 0 ? "#16a34a" : "#dc2626" }}>{dd.convYoy >= 0 ? "+" : ""}{dd.convYoy}% YoY</span> : null}</p>
+                        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
+                          <p style={{ color: "#f59e0b" }}>Conversion Rate: <strong>{dd?.conversionRate}%</strong></p>
+                        </div>
+                      </div>
+                    );
+                  }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar yAxisId="left" dataKey="totalReferrals" name="Total Referrals" fill="#4f46e5" radius={[4, 4, 0, 0]} minPointSize={4}>
+                    <LabelList content={(props: any) => {
+                      const { x, y, width, index } = props;
+                      const d = referralYearlyTrends[index];
+                      if (!d) return null;
+                      const yoyPart = d.yoy != null ? ` ${d.yoy >= 0 ? "+" : ""}${d.yoy}%` : "";
+                      const yoyColor = d.yoy != null && d.yoy >= 0 ? "#16a34a" : "#dc2626";
+                      return (
+                        <text x={Number(x) + Number(width) / 2} y={Number(y) - 6} textAnchor="middle" fontSize={11} fontWeight={600}>
+                          <tspan fill={T.textPrimary}>{formatNum(d.totalReferrals)}</tspan>
+                          {yoyPart && <tspan fill={yoyColor} dx={4}>{yoyPart.trim()}</tspan>}
+                        </text>
+                      );
+                    }} />
+                  </Bar>
+                  <Bar yAxisId="left" dataKey="conversions" name="Conversions" fill="#059669" radius={[4, 4, 0, 0]} minPointSize={4}>
+                    <LabelList dataKey="conversions" position="top" fontSize={10} fontWeight={600} fill={T.textSecondary} formatter={(v: any) => (Number(v) > 0 ? formatNum(Number(v)) : "")} />
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="conversionRate" name="Conversion Rate" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 4, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#f59e0b" }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <div style={{ height: 300, minWidth: Math.max(500, (charts?.referralTrends?.length || 0) * 60) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={charts?.referralTrends || []} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={"#4f46e5"} stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={"#4f46e5"} stopOpacity={0.03} />
+                      </linearGradient>
+                      <linearGradient id="gradConversions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={"#059669"} stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={"#059669"} stopOpacity={0.03} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
+                    <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                    <RechartsTooltip content={({ active, payload, label }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const dd = payload[0]?.payload;
+                      return (
+                        <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                          <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
+                          <p style={{ color: "#4f46e5" }}>Total Referrals : <strong>{formatNum(dd?.totalReferrals)}</strong></p>
+                          <p style={{ color: "#059669" }}>Conversions : <strong>{formatNum(dd?.inClinicConversions)}</strong></p>
+                        </div>
+                      );
+                    }} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" iconSize={7} />
+                    <Area type="monotone" dataKey="totalReferrals" name="Total Referrals" stroke={"#4f46e5"} fill="url(#gradTotal)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} />
+                    <Area type="monotone" dataKey="inClinicConversions" name="Conversions" stroke={"#059669"} fill="url(#gradConversions)" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#059669", strokeWidth: 2 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          <InsightBox text={trendView === "yearly"
+            ? (() => {
+                if (referralYearlyTrends.length === 0) return "No yearly referral data available for the selected period.";
+                if (referralYearlyTrends.length === 1) {
+                  const y = referralYearlyTrends[0];
+                  return `${y.period}${y.isYtd ? " (YTD)" : ""}: ${formatNum(y.totalReferrals)} referrals at a ${y.conversionRate}% conversion rate. Widen the date range to compare year over year.`;
+                }
+                const lastFull = [...referralYearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
+                const ytd = referralYearlyTrends.find((y) => y.isYtd);
+                const base = lastFull ? `Referrals ${lastFull.yoy! >= 0 ? "grew" : "declined"} ${Math.abs(lastFull.yoy!)}% YoY in ${lastFull.period} at a ${lastFull.conversionRate}% conversion rate.` : "";
+                const ytdPart = ytd ? ` ${ytd.period} is currently at ${formatNum(ytd.totalReferrals)} referrals (YTD), converting at ${ytd.conversionRate}%.` : "";
+                return (base + ytdPart).trim() || "Insufficient history for a year-over-year comparison.";
+              })()
+            : (() => {
+                const trends: any[] = charts?.referralTrends || [];
+                if (trends.length === 0) return "Referral trend data will appear once loaded.";
+                const peak = trends.reduce((a: any, b: any) => ((b.totalReferrals || 0) > (a.totalReferrals || 0) ? b : a));
+                const totalRefs = trends.reduce((s: number, t: any) => s + (t.totalReferrals || 0), 0);
+                const totalConv = trends.reduce((s: number, t: any) => s + (t.inClinicConversions || 0), 0);
+                const avgRate = totalRefs > 0 ? Math.round((totalConv / totalRefs) * 100) : 0;
+                return `Peak referral month: ${peak.period} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
+              })()} />
         </CVCard>}
       </WarmSection>
 

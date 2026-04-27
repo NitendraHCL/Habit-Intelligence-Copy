@@ -250,7 +250,6 @@ export default function ReferralAnalyticsPage() {
     from: new Date(2024, 0, 1),
     to: new Date(2026, 2, 31),
   });
-  const [dateOpen, setDateOpen] = useState(false);
 
   const [pageFilters, setPageFilters] = useState({
     ageGroups: [] as string[],
@@ -324,12 +323,21 @@ export default function ReferralAnalyticsPage() {
   const [othersSearch, setOthersSearch] = useState("");
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
 
+  // When the applied date range is ≤ 31 days, the API returns trend points
+  // bucketed by day (YYYY-MM-DD) instead of month (YYYY-MM). Mirror the same
+  // toggle behaviour Visit Trends uses on /portal/ohc/utilization.
+  const isDailyView = useMemo(() => {
+    const days = Math.round((appliedDateRange.to.getTime() - appliedDateRange.from.getTime()) / 86400000) + 1;
+    return days > 0 && days <= 31;
+  }, [appliedDateRange]);
+
   const d = data as any;
   const kpis = d?.kpis;
   const charts = d?.charts;
 
-  // Roll the monthly referral trends into per-year totals + YoY % deltas.
-  // Period from the API is "Mon YYYY" (e.g. "Apr 2026") — last 4 chars = year.
+  // Roll the per-period referral trends into per-year totals + YoY % deltas.
+  // Period from the API is now machine format ("YYYY-MM" or "YYYY-MM-DD"),
+  // so year is the first 4 chars regardless of bucket size.
   const referralYearlyTrends = useMemo(() => {
     const trends = (charts?.referralTrends || []) as Array<{ period: string; totalReferrals?: number; inClinicConversions?: number }>;
     if (trends.length === 0) {
@@ -337,7 +345,7 @@ export default function ReferralAnalyticsPage() {
     }
     const byYear: Record<string, { totalReferrals: number; conversions: number }> = {};
     for (const t of trends) {
-      const yr = String(t.period || "").slice(-4);
+      const yr = String(t.period || "").slice(0, 4);
       if (!/^\d{4}$/.test(yr)) continue;
       if (!byYear[yr]) byYear[yr] = { totalReferrals: 0, conversions: 0 };
       byYear[yr].totalReferrals += t.totalReferrals || 0;
@@ -448,20 +456,46 @@ export default function ReferralAnalyticsPage() {
         className="flex items-center gap-2 flex-wrap px-5 py-3.5 rounded-2xl"
         style={{ backgroundColor: T.white, border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
       >
-          <Popover open={dateOpen} onOpenChange={setDateOpen}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-medium border hover:border-gray-300 transition-colors"
-                style={{ borderColor: T.border, color: T.textPrimary, backgroundColor: T.white }}>
-                <CalendarDays size={14} style={{ color: T.textMuted }} />
-                {format(dateRange.from, "dd-MM-yyyy")} &mdash; {format(dateRange.to, "dd-MM-yyyy")}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-3" align="start">
-              <Calendar mode="range" selected={{ from: dateRange.from, to: dateRange.to }}
-                onSelect={(range) => { if (range?.from && range?.to) setDateRange({ from: range.from, to: range.to }); }}
-                numberOfMonths={2} defaultMonth={dateRange.from} />
-            </PopoverContent>
-          </Popover>
+          <div className="inline-flex items-center gap-1">
+            <div className="inline-flex items-center gap-1 h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+              <CalendarDays size={13} style={{ color: T.textMuted }} />
+              <input
+                type="date"
+                value={format(dateRange.from, "yyyy-MM-dd")}
+                max={format(dateRange.to, "yyyy-MM-dd")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  const dt = new Date(v + "T00:00:00");
+                  if (isNaN(dt.getTime())) return;
+                  const to = dt > dateRange.to ? dt : dateRange.to;
+                  setDateRange({ from: dt, to });
+                }}
+                aria-label="Start date"
+                className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+                style={{ color: T.textPrimary }}
+              />
+            </div>
+            <span className="text-[12.5px]" style={{ color: T.textMuted }}>–</span>
+            <div className="inline-flex items-center h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+              <input
+                type="date"
+                value={format(dateRange.to, "yyyy-MM-dd")}
+                min={format(dateRange.from, "yyyy-MM-dd")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  const dt = new Date(v + "T00:00:00");
+                  if (isNaN(dt.getTime())) return;
+                  const from = dt < dateRange.from ? dt : dateRange.from;
+                  setDateRange({ from, to: dt });
+                }}
+                aria-label="End date"
+                className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+                style={{ color: T.textPrimary }}
+              />
+            </div>
+          </div>
           <FilterMultiSelect label="Location" options={filterOptions.locations} selected={pageFilters.locations} onChange={(v) => setPageFilters((p) => ({ ...p, locations: v }))} />
           <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />
           <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
@@ -594,11 +628,15 @@ export default function ReferralAnalyticsPage() {
           accentColor={"#4f46e5"}
           title="Referral Trends"
           subtitle={trendView === "monthly"
-            ? "Whether referral demand is rising — and whether follow-through is keeping pace, month over month"
+            ? (isDailyView
+                ? "Day-by-day referral demand and follow-through across the selected window"
+                : "Whether referral demand is rising — and whether follow-through is keeping pace, month over month")
             : "Year-over-year referral volume + conversions, with the conversion rate trend overlaid"}
           expandable={false}
           tooltipText={trendView === "monthly"
-            ? "Two stacked area lines per month: total referrals issued and how many converted into a consultation. Use it to spot demand spikes and any month where follow-through dipped."
+            ? (isDailyView
+                ? "Two stacked area lines per day: referrals issued and conversions. Spot which day in the window saw the most demand or biggest follow-through gap."
+                : "Two stacked area lines per month: referrals issued and conversions. Spot demand spikes and any month where follow-through dipped.")
             : "Bars show total referrals + actual conversions for each year; the line traces the conversion rate (%). YoY change in referrals appears above each bar."}
           chartId="referralTrends"
           chartData={trendView === "yearly" ? referralYearlyTrends : charts?.referralTrends}
@@ -608,7 +646,7 @@ export default function ReferralAnalyticsPage() {
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (
                 <button key={v} onClick={() => setTrendView(v)} className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${trendView === v ? "bg-white shadow-sm" : ""}`} style={{ color: trendView === v ? T.textPrimary : T.textMuted }}>
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                  {v === "monthly" && isDailyView ? "Daily" : v.charAt(0).toUpperCase() + v.slice(1)}
                 </button>
               ))}
             </div>
@@ -682,14 +720,30 @@ export default function ReferralAnalyticsPage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
+                    <XAxis
+                      dataKey="period"
+                      tick={{ fontSize: 10, fill: T.textMuted }}
+                      tickFormatter={(v: string) => {
+                        const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, day] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${day}`; }
+                        if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; }
+                        return v;
+                      }}
+                    />
                     <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
                     <RechartsTooltip content={({ active, payload, label }: any) => {
                       if (!active || !payload?.length) return null;
                       const dd = payload[0]?.payload;
+                      const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                      const v = String(label);
+                      const prettyLabel = /^\d{4}-\d{2}-\d{2}$/.test(v)
+                        ? (() => { const [y, m, day] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${day}, ${y}`; })()
+                        : /^\d{4}-\d{2}$/.test(v)
+                          ? (() => { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${y}`; })()
+                          : v;
                       return (
                         <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                          <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
+                          <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{prettyLabel}</p>
                           <p style={{ color: "#4f46e5" }}>Total Referrals : <strong>{formatNum(dd?.totalReferrals)}</strong></p>
                           <p style={{ color: "#059669" }}>Conversions : <strong>{formatNum(dd?.inClinicConversions)}</strong></p>
                         </div>
@@ -723,7 +777,15 @@ export default function ReferralAnalyticsPage() {
                 const totalRefs = trends.reduce((s: number, t: any) => s + (t.totalReferrals || 0), 0);
                 const totalConv = trends.reduce((s: number, t: any) => s + (t.inClinicConversions || 0), 0);
                 const avgRate = totalRefs > 0 ? Math.round((totalConv / totalRefs) * 100) : 0;
-                return `Peak referral month: ${peak.period} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
+                const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                const v = String(peak.period || "");
+                const peakLabel = /^\d{4}-\d{2}-\d{2}$/.test(v)
+                  ? (() => { const [y, m, day] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${day}, ${y}`; })()
+                  : /^\d{4}-\d{2}$/.test(v)
+                    ? (() => { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${y}`; })()
+                    : v;
+                const peakWord = isDailyView ? "Peak referral day" : "Peak referral month";
+                return `${peakWord}: ${peakLabel} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
               })()} />
         </CVCard>}
       </WarmSection>

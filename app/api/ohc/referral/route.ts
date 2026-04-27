@@ -133,6 +133,19 @@ async function handler(request: NextRequest) {
 
     const q = buildQueryParts(searchParams, cugCode);
 
+    // Trend bucketing: when the selected window is ≤ 31 days the trend chart
+    // groups by day instead of month. Same pattern the OHC Utilization API
+    // uses for Visit Trends. period is emitted in machine format
+    // (YYYY-MM-DD or YYYY-MM) so the client can format on display.
+    const dateFromParam = searchParams.get("dateFrom");
+    const dateToParam = searchParams.get("dateTo");
+    let trendBucket: "day" | "month" = "month";
+    if (dateFromParam && dateToParam) {
+      const days = Math.round((Date.parse(dateToParam) - Date.parse(dateFromParam)) / 86400000) + 1;
+      if (days > 0 && days <= 31) trendBucket = "day";
+    }
+    const periodFormat = trendBucket === "day" ? "YYYY-MM-DD" : "YYYY-MM";
+
     // Track per-query failures so the cache layer can skip writes when the
     // warehouse is degraded (same pattern as ohc/utilization).
     const failedQueries: string[] = [];
@@ -177,30 +190,29 @@ async function handler(request: NextRequest) {
     // — referrals from agg_referral_matrix, conversions from referral_conversion
     // — and merged in JS below.
     const [trendRefRows, trendConvRows, matrixRows, specRefRows, specConvRows, demoRows, locSpecRows] = await Promise.all([
-      // Monthly referral volume (from agg_referral_matrix)
+      // Per-period referral volume (from agg_referral_matrix)
       safeQuery(
-        () => dwQuery<{ period: string; bucket: string; total: string }>(
+        () => dwQuery<{ period: string; total: string }>(
           `SELECT
-             to_char(date_trunc('month', r.g_creation_time), 'Mon YYYY') AS period,
-             to_char(date_trunc('month', r.g_creation_time), 'YYYY-MM')   AS bucket,
+             to_char(date_trunc('${trendBucket}', r.g_creation_time), '${periodFormat}') AS period,
              COALESCE(SUM(r.referral_count), 0)::bigint AS total
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
-           GROUP BY 1, 2
-           ORDER BY bucket`,
+           GROUP BY 1
+           ORDER BY 1`,
           q.params
         ),
         "trendRefs"
       ),
-      // Monthly conversion count (from referral_conversion, scoped via filter)
+      // Per-period conversion count (from referral_conversion, scoped via filter)
       safeQuery(
-        () => dwQuery<{ bucket: string; conversions: string }>(
+        () => dwQuery<{ period: string; conversions: string }>(
           `SELECT
-             to_char(date_trunc('month', rc.g_creation_time), 'YYYY-MM') AS bucket,
+             to_char(date_trunc('${trendBucket}', rc.g_creation_time), '${periodFormat}') AS period,
              COALESCE(SUM(rc.conversion), 0)::bigint AS conversions
            FROM ${CONV_TABLE} rc
            WHERE ${convFilter(q.where)}
-           GROUP BY bucket`,
+           GROUP BY 1`,
           q.params
         ),
         "trendConv"
@@ -282,17 +294,18 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── Trends ──
-    // Merge monthly referrals (agg_referral_matrix) with monthly conversions
-    // (referral_conversion) by their YYYY-MM bucket.
-    const convByBucket: Record<string, number> = {};
-    for (const row of trendConvRows) convByBucket[row.bucket] = Number(row.conversions);
+    // Merge per-period referrals (agg_referral_matrix) with per-period
+    // conversions (referral_conversion) by the shared period key
+    // (YYYY-MM-DD when daily-bucketed, YYYY-MM when monthly).
+    const convByPeriod: Record<string, number> = {};
+    for (const row of trendConvRows) convByPeriod[row.period] = Number(row.conversions);
     const referralTrends = trendRefRows.map((row) => ({
       period: row.period,
       totalReferrals: Number(row.total),
       // Kept for backward compat with the chart's data contract; not rendered
       // anymore but the response shape stays stable.
       availableInClinic: Number(row.total),
-      inClinicConversions: convByBucket[row.bucket] || 0,
+      inClinicConversions: convByPeriod[row.period] || 0,
     }));
 
     // ── Matrix by year ──

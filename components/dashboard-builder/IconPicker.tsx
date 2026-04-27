@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, createElement } from "react";
 import {
   BarChart3,
   LineChart,
@@ -99,7 +99,6 @@ interface IconPickerProps {
 
 export default function IconPicker({ value, onChange }: IconPickerProps) {
   const [open, setOpen] = useState(false);
-  const SelectedIcon = getIconByName(value);
 
   return (
     <div className="relative">
@@ -108,7 +107,7 @@ export default function IconPicker({ value, onChange }: IconPickerProps) {
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm hover:border-gray-300 transition-colors w-full"
       >
-        <SelectedIcon className="size-4 text-indigo-600" />
+        {createElement(getIconByName(value), { className: "size-4 text-indigo-600" })}
         <span className="text-gray-700 flex-1 text-left">
           {DASHBOARD_ICONS.find((i) => i.name === value)?.label ?? value}
         </span>

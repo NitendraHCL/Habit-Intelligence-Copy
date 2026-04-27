@@ -73,19 +73,16 @@ export function ChartComments({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Don't render for CLIENT_VIEWER
-  if (!user || user.role === "CLIENT_VIEWER") return null;
-
-  const canPost = ["SUPER_ADMIN", "KAM", "CLIENT_ADMIN"].includes(user.role);
-
+  // Keep SWR above the early return to satisfy rules-of-hooks. The key is
+  // null when the user shouldn't fetch comments, so SWR issues no request.
+  const canFetch = !!user && user.role !== "CLIENT_VIEWER" && !!activeClientId;
   const { data, mutate } = useSWR<{ comments: CommentData[] }>(
-    activeClientId
+    canFetch
       ? `/api/comments?chartId=${encodeURIComponent(chartId)}&clientId=${activeClientId}&pageSlug=${encodeURIComponent(pageSlug)}`
       : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-
   const comments = data?.comments ?? [];
 
   useEffect(() => {
@@ -93,6 +90,11 @@ export function ChartComments({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [open, comments.length]);
+
+  // Don't render for CLIENT_VIEWER (after all hooks are declared)
+  if (!user || user.role === "CLIENT_VIEWER") return null;
+
+  const canPost = ["SUPER_ADMIN", "KAM", "CLIENT_ADMIN"].includes(user.role);
 
   const handleSend = async () => {
     const trimmed = input.trim();

@@ -304,21 +304,8 @@ export default function DynamicChart({
   // Accent color based on chart type
   const accentColor = (chart.visualization?.colors as string[])?.[0] ?? CHART_PALETTE[0];
 
-  // KPI cards get a dedicated premium layout
-  if (chart.type === "kpi" || chart.type === "stat_card") {
-    return (
-      <KPICardPremium
-        chart={chart}
-        data={response?.data}
-        isLoading={isLoading && !error}
-        error={!!error}
-        clientId={clientId}
-        filters={filters}
-      />
-    );
-  }
-
-  // Comment anchor picking: when active, the next chart click is captured as an anchor
+  // Comment anchor picking: when active, the next chart click is captured as an anchor.
+  // Hooks must stay above the early return below to satisfy rules-of-hooks.
   const [anchorClickHandler, setAnchorClickHandler] = useState<((params: Record<string, unknown>) => void) | null>(null);
 
   const handleChartClickForAnchor = useCallback((handler: ((params: Record<string, unknown>) => void) | null) => {
@@ -333,6 +320,20 @@ export default function DynamicChart({
     }
     handleClick(params);
   }, [anchorClickHandler, handleClick]);
+
+  // KPI cards get a dedicated premium layout
+  if (chart.type === "kpi" || chart.type === "stat_card") {
+    return (
+      <KPICardPremium
+        chart={chart}
+        data={response?.data}
+        isLoading={isLoading && !error}
+        error={!!error}
+        clientId={clientId}
+        filters={filters}
+      />
+    );
+  }
 
   return (
     <CVCardDynamic

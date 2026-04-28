@@ -10,6 +10,7 @@ import {
   aggregateEmotionalWellbeing,
 } from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
@@ -351,8 +352,58 @@ export default function EmotionalWellbeingPage() {
     () => allRows.length ? aggregateEmotionalWellbeing(allRows, appliedOHCFilters) : null,
     [allRows, appliedOHCFilters]
   );
-  const kpis = aggregated?.kpis;
-  const charts = aggregated?.charts;
+
+  // The new /api/ohc/emotional-wellbeing endpoint sources from agg_kpi
+  // (the same fact table /portal/ohc/utilization uses) with
+  // speciality_name='Psychologist' baked in. We use it for the five
+  // things sourced from agg_kpi — KPIs, Demographics (age / gender /
+  // location), and Consult Trends. The EWB-specific charts (sleep,
+  // anxiety, depression, critical risk, substance use) keep falling
+  // back to the client-side aggregator since those screening fields
+  // aren't in agg_kpi.
+  const { data: ewbApi } = useDashboardData<{
+    kpis?: { totalConsults?: number; uniquePatients?: number; repeatPatients?: number };
+    charts?: {
+      demographics?: {
+        age?: Array<{ label: string; count: number }>;
+        gender?: Array<{ label: string; count: number }>;
+        location?: Array<{ label: string; count: number }>;
+        shift?: Array<{ label: string; count: number }>;
+      };
+      consultTrends?: Array<{ period: string; totalConsults: number; uniquePatients: number }>;
+    };
+  }>("ohc/emotional-wellbeing", {
+    dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
+    dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
+    ...(appliedFilters.locations.length ? { locations: appliedFilters.locations.join(",") } : {}),
+    ...(appliedFilters.genders.length ? { genders: appliedFilters.genders.join(",") } : {}),
+    ...(appliedFilters.ageGroups.length ? { ageGroups: appliedFilters.ageGroups.join(",") } : {}),
+    ...(appliedFilters.relations.length ? { relations: appliedFilters.relations.join(",") } : {}),
+  });
+
+  const kpis = useMemo(() => ({
+    ...(aggregated?.kpis || {}),
+    ...(ewbApi?.kpis ? {
+      totalConsults: ewbApi.kpis.totalConsults ?? 0,
+      uniquePatients: ewbApi.kpis.uniquePatients ?? 0,
+      repeatPatients: ewbApi.kpis.repeatPatients ?? 0,
+    } : {}),
+  }), [aggregated?.kpis, ewbApi?.kpis]);
+
+  const charts = useMemo(() => {
+    const base = aggregated?.charts || ({} as NonNullable<typeof aggregated>["charts"]);
+    if (!ewbApi?.charts) return base;
+    return {
+      ...base,
+      demographics: {
+        ...(base?.demographics || { age: [], gender: [], location: [], shift: [] }),
+        ...(ewbApi.charts.demographics?.age?.length ? { age: ewbApi.charts.demographics.age } : {}),
+        ...(ewbApi.charts.demographics?.gender?.length ? { gender: ewbApi.charts.demographics.gender } : {}),
+        ...(ewbApi.charts.demographics?.location?.length ? { location: ewbApi.charts.demographics.location } : {}),
+      },
+      ...(ewbApi.charts.consultTrends?.length ? { consultTrends: ewbApi.charts.consultTrends } : {}),
+    };
+  }, [aggregated?.charts, ewbApi?.charts]);
 
   const handleRemoveChip = (key: string, value: string) => {
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));

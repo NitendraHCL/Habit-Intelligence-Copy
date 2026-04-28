@@ -1,7 +1,7 @@
 "use client";
 
 import { T, HEATMAP_GRADIENT } from "@/lib/ui/theme";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -322,6 +322,18 @@ export default function ReferralAnalyticsPage() {
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
+
+  // Referral Demographics sunburst — drill+reset (mirrors the OHC
+  // Utilization Demographic Consult Breakdown chart).
+  const referralSunburstRef = useRef<any>(null);
+  const [referralSunburstDrilled, setReferralSunburstDrilled] = useState(false);
+  const handleReferralSunburstReset = useCallback(() => {
+    const instance = referralSunburstRef.current?.getEchartsInstance();
+    if (instance) {
+      instance.dispatchAction({ type: "sunburstRootToNode", targetNodeId: undefined });
+    }
+    setReferralSunburstDrilled(false);
+  }, []);
 
   // When the applied date range is ≤ 31 days, the API returns trend points
   // bucketed by day (YYYY-MM-DD) instead of month (YYYY-MM). Mirror the same
@@ -1009,8 +1021,12 @@ export default function ReferralAnalyticsPage() {
       {(isChartVisible("referralDemographics") || isChartVisible("locationBySpecialty")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Referral Demographics (Sunburst) */}
         {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Which age and gender cohorts are drawing the most specialist care" tooltipText="Sunburst showing the referred population. Inner ring is gender, outer ring is the age-group split within each gender. Surfaces which segments of the workforce drive the most onward referrals." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Age and gender split of the referred population">
-          <div style={{ height: 340 }}>
-            <ReactECharts style={{ height: "100%", width: "100%" }} option={{
+          <div style={{ height: 340, position: "relative" }}>
+            <ReactECharts
+              ref={referralSunburstRef}
+              onEvents={{ click: () => setReferralSunburstDrilled(true) }}
+              style={{ height: "100%", width: "100%" }}
+              option={{
               tooltip: {
                 trigger: "item",
                 backgroundColor: "#fff",
@@ -1056,7 +1072,29 @@ export default function ReferralAnalyticsPage() {
                   minAngle: 15,
                 },
                 levels: [
-                  {},
+                  // Drill-up "back" node (ECharts synthetic root shown after a click).
+                  // Soft indigo wash + "← Back" label matches the OHC Utilization
+                  // Demographic Consult Breakdown chart.
+                  {
+                    itemStyle: {
+                      color: "#eef2ff",
+                      borderColor: "#c7d2fe",
+                      borderWidth: 2,
+                    },
+                    label: {
+                      show: true,
+                      rotate: 0,
+                      color: "#4f46e5",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      formatter: "← Back",
+                    },
+                    emphasis: {
+                      itemStyle: {
+                        color: "#e0e7ff",
+                      },
+                    },
+                  },
                   {
                     r0: "18%", r: "48%",
                     label: { fontSize: 13, fontWeight: 700, rotate: 0 },
@@ -1070,7 +1108,10 @@ export default function ReferralAnalyticsPage() {
                 ],
               }],
               graphic: [
-                {
+                // "Referrals" caption in the inner hole — only when not drilled.
+                // When drilled, ECharts' level-0 takes over the center with
+                // the "← Back" affordance.
+                ...(referralSunburstDrilled ? [] : [{
                   type: "text",
                   left: "center",
                   top: "center",
@@ -1082,9 +1123,23 @@ export default function ReferralAnalyticsPage() {
                     textAlign: "center",
                     textVerticalAlign: "middle",
                   },
-                },
+                }]),
               ],
             }} />
+            {referralSunburstDrilled && (
+              <button
+                onClick={handleReferralSunburstReset}
+                className="absolute top-2 right-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
+                style={{
+                  background: "linear-gradient(135deg, #4f46e5, #6366f1)",
+                  color: "#fff",
+                  boxShadow: "0 2px 8px rgba(79,70,229,0.25)",
+                }}
+              >
+                <RotateCcw size={12} />
+                Reset
+              </button>
+            )}
           </div>
           {demoStats && (
             <div className="grid grid-cols-3 gap-3 mt-3">

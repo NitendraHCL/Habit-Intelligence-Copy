@@ -4,22 +4,29 @@ import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
 /* ────────────────────────────────────────────────────────────────────
- * OHC Emotional Wellbeing API — sourced from aggregated_table.agg_kpi,
- * the same fact table that powers /portal/ohc/utilization.
+ * OHC Emotional Wellbeing API — two-source fact model.
  *
- * Forced filter: speciality_name = 'Psychologist'. Every metric below
- * is the Psychologist-only slice of OHC consults.
+ * agg_kpi (BASE_TABLE) — same fact table /portal/ohc/utilization uses.
+ *   Powers KPIs (Total Consults / Unique Patients / Repeat Patients),
+ *   Patient Demographics (age / gender / location), and Consult Trends.
+ *   Forced filter: speciality_name = 'Psychologist'.
  *
- * Standard page filters (date range, location, gender, age-group,
- * relationship) are honoured against the same agg_kpi columns the
- * utilization route uses, so dropdown picks behave identically.
+ * hra_kpi_summary (HRA_TABLE) — Health Risk Assessment summary.
+ *   Powers EWB-specific surfaces — Critical Risk, Substance Use, Sleep
+ *   Quality, Alcohol Habit, Smoking Habit, Anxiety Scale, Visit Pattern,
+ *   Impressions. assessment_status = 'final' always applied.
  *
- * EWB-specific surfaces (sleep, anxiety, depression, critical risk,
- * substance use, etc.) are not derivable from agg_kpi and stay at
- * the empty-defaults the UI already renders gracefully.
+ * Sleep Duration, Self Esteem Scale, and Depression Scale don't have
+ * source columns in hra_kpi_summary — those stay at empty defaults
+ * until the warehouse grows the columns.
+ *
+ * Page filters honoured: date range (consult_date / report_month),
+ * gender, age-group, relationship. Location filter applies only to
+ * agg_kpi queries — hra_kpi_summary has no facility column.
  * ──────────────────────────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
+const HRA_TABLE = "aggregated_table.hra_kpi_summary";
 const PSYCH_FILTER = "a.speciality_name = 'Psychologist'";
 const COMPLETED = "a.stage = 'Completed'";
 
@@ -75,6 +82,60 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   return { params, where: conditions.join(" AND ") };
 }
 
+/**
+ * Where-builder for hra_kpi_summary. Different column names + no
+ * facility column, so we can't honour a location filter — but every
+ * other dimension (date, gender, age-group, relationship) maps cleanly.
+ * Always restricts to assessment_status = 'final' so draft assessments
+ * don't pollute the counts.
+ */
+function buildHraWhere(searchParams: URLSearchParams, cugCode: string) {
+  const dateFrom = searchParams.get("dateFrom");
+  const dateTo = searchParams.get("dateTo");
+  const genders = searchParams.get("genders")?.split(",").filter(Boolean);
+  const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
+  const relations = searchParams.get("relations")?.split(",").filter(Boolean);
+
+  const conditions: string[] = [
+    `h.cug_code_mapped = $1`,
+    `h.assessment_status = 'final'`,
+  ];
+  const params: unknown[] = [cugCode];
+  let idx = 2;
+
+  if (dateFrom) {
+    conditions.push(`h.report_month >= $${idx}::date`);
+    params.push(dateFrom);
+    idx++;
+  }
+  if (dateTo) {
+    conditions.push(`h.report_month <= $${idx}::date`);
+    params.push(dateTo);
+    idx++;
+  }
+  if (genders?.length) {
+    const gc = genders.map((g) => {
+      const l = g.toLowerCase();
+      if (l === "male") return "LOWER(TRIM(h.patient_gender)) IN ('male', 'm')";
+      if (l === "female") return "LOWER(TRIM(h.patient_gender)) IN ('female', 'f')";
+      return "(LOWER(TRIM(h.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR h.patient_gender IS NULL OR TRIM(h.patient_gender) = '')";
+    });
+    conditions.push(`(${gc.join(" OR ")})`);
+  }
+  if (ageGroups?.length) {
+    conditions.push(`h.age_group = ANY($${idx})`);
+    params.push(ageGroups);
+    idx++;
+  }
+  if (relations?.length) {
+    conditions.push(`h.relationship = ANY($${idx})`);
+    params.push(relations);
+    idx++;
+  }
+
+  return { params, where: conditions.join(" AND ") };
+}
+
 async function handler(request: NextRequest) {
   try {
     await requireAuth();
@@ -120,6 +181,22 @@ async function handler(request: NextRequest) {
     const totalConsults = Number(kpiRows[0]?.total_consults || 0);
     const uniquePatients = Number(kpiRows[0]?.unique_patients || 0);
     const repeatPatients = Number(kpiRows[0]?.repeat_patients || 0);
+
+    // ── HRA queries: Critical Risk, Substance Use, Sleep, Alcohol,
+    // Smoking, Anxiety, Visit Pattern, Impressions ──
+    const hra = buildHraWhere(searchParams, cugCode);
+    const SLEEP_LABELS = ["Good", "Poor", "Not Reported"];
+    const SMOKE_LABELS = ["Yes", "No", "Ex-Smoker", "Not Reported"];
+    const ALCOHOL_LABELS = ["Yes", "No", "Not Reported"];
+    const ANXIETY_LABELS = ["Anxious", "Not Anxious", "Not Reported"];
+    const EXERCISE_LABELS = ["Yes", "No", "Not Reported"];
+    // Normalise nulls/empty strings into a "Not Reported" bucket so the UI
+    // doesn't render mystery blank labels.
+    const norm = (col: string, allowed: string[]) => `CASE
+      WHEN ${col} IS NULL OR TRIM(${col}) = '' THEN 'Not Reported'
+      WHEN ${col} = ANY(ARRAY[${allowed.map((s) => `'${s}'`).join(",")}]) THEN ${col}
+      ELSE 'Not Reported'
+    END`;
 
     // ── Demographics: age × gender × location, plus monthly trends ──
     const [ageRows, genderRows, locationRows, trendRows] = await Promise.all([
@@ -184,6 +261,132 @@ async function handler(request: NextRequest) {
       .filter((ag) => ageMap[ag])
       .map((ag) => ({ label: ag, count: ageMap[ag] }));
 
+    // ── HRA aggregates ──
+    const [
+      criticalRiskRow, substanceRow,
+      sleepRows, alcoholRows, smokingRows, anxietyRows, exerciseRows,
+      impressionsRow,
+    ] = await Promise.all([
+      // Critical Risk — total High Risk patients
+      safeQuery(
+        () => dwQuery<{ total_cases: string }>(
+          `SELECT COALESCE(SUM(h.unique_patients), 0)::bigint AS total_cases
+           FROM ${HRA_TABLE} h
+           WHERE ${hra.where} AND h.risk_category = 'High Risk'`,
+          hra.params
+        ),
+        "criticalRisk"
+      ),
+      // Substance Use — % patients with smoking='Yes' OR alcohol='Yes'
+      safeQuery(
+        () => dwQuery<{ substance_pct: string }>(
+          `SELECT
+             CASE WHEN COALESCE(SUM(h.unique_patients), 0) = 0 THEN 0
+               ELSE ROUND(
+                 100.0 * COALESCE(SUM(h.unique_patients) FILTER (WHERE h.smoking_status = 'Yes' OR h.alcohol_status = 'Yes'), 0)
+                       / NULLIF(SUM(h.unique_patients), 0)
+               , 0)
+             END AS substance_pct
+           FROM ${HRA_TABLE} h
+           WHERE ${hra.where}`,
+          hra.params
+        ),
+        "substanceUse"
+      ),
+      // Sleep Quality
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `SELECT ${norm("h.sleep_quality", SLEEP_LABELS)} AS label,
+                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
+           FROM ${HRA_TABLE} h WHERE ${hra.where}
+           GROUP BY 1`,
+          hra.params
+        ),
+        "sleepQuality"
+      ),
+      // Alcohol Habit
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `SELECT ${norm("h.alcohol_status", ALCOHOL_LABELS)} AS label,
+                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
+           FROM ${HRA_TABLE} h WHERE ${hra.where}
+           GROUP BY 1`,
+          hra.params
+        ),
+        "alcoholHabit"
+      ),
+      // Smoking Habit
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `SELECT ${norm("h.smoking_status", SMOKE_LABELS)} AS label,
+                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
+           FROM ${HRA_TABLE} h WHERE ${hra.where}
+           GROUP BY 1`,
+          hra.params
+        ),
+        "smokingHabit"
+      ),
+      // Anxiety Scale
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `SELECT ${norm("h.anxiety_flag", ANXIETY_LABELS)} AS label,
+                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
+           FROM ${HRA_TABLE} h WHERE ${hra.where}
+           GROUP BY 1`,
+          hra.params
+        ),
+        "anxietyScale"
+      ),
+      // Visit Pattern — repurposed from exercise_status (Yes / No / Not Reported)
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `SELECT ${norm("h.exercise_status", EXERCISE_LABELS)} AS label,
+                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
+           FROM ${HRA_TABLE} h WHERE ${hra.where}
+           GROUP BY 1`,
+          hra.params
+        ),
+        "visitPattern"
+      ),
+      // Impressions Analysis — chronic-condition counts as four "impressions"
+      safeQuery(
+        () => dwQuery<{ diabetes: string; hypertension: string; heart_disease: string; thyroid: string }>(
+          `SELECT
+             COALESCE(SUM(h.count_diabetes), 0)::bigint      AS diabetes,
+             COALESCE(SUM(h.count_hypertension), 0)::bigint  AS hypertension,
+             COALESCE(SUM(h.count_heart_disease), 0)::bigint AS heart_disease,
+             COALESCE(SUM(h.count_thyroid), 0)::bigint       AS thyroid
+           FROM ${HRA_TABLE} h
+           WHERE ${hra.where}`,
+          hra.params
+        ),
+        "impressions"
+      ),
+    ]);
+
+    const sortBuckets = (rows: { label: string; count: string }[], order: string[]) => {
+      const map: Record<string, number> = {};
+      for (const r of rows) map[r.label] = Number(r.count);
+      return order.filter((l) => map[l] != null).map((l) => ({ label: l, count: map[l] }));
+    };
+
+    const sleepQuality = sortBuckets(sleepRows, SLEEP_LABELS);
+    const alcoholHabit = sortBuckets(alcoholRows, ALCOHOL_LABELS);
+    const smokingHabit = sortBuckets(smokingRows, SMOKE_LABELS);
+    const anxietyScale = sortBuckets(anxietyRows, ANXIETY_LABELS);
+    const visitPattern = sortBuckets(exerciseRows, EXERCISE_LABELS);
+
+    const criticalTotal = Number(criticalRiskRow[0]?.total_cases || 0);
+    const substanceUsePct = Number(substanceRow[0]?.substance_pct || 0);
+
+    const imp = impressionsRow[0] || ({} as Record<string, string>);
+    const impressions = [
+      { label: "Diabetes", count: Number(imp.diabetes || 0) },
+      { label: "Hypertension", count: Number(imp.hypertension || 0) },
+      { label: "Heart Disease", count: Number(imp.heart_disease || 0) },
+      { label: "Thyroid", count: Number(imp.thyroid || 0) },
+    ].filter((i) => i.count > 0);
+
     return NextResponse.json({
       kpis: {
         totalConsults,
@@ -203,19 +406,29 @@ async function handler(request: NextRequest) {
           totalConsults: Number(r.total_consults),
           uniquePatients: Number(r.unique_patients),
         })),
-        // EWB-specific surfaces — not derivable from agg_kpi. Return empty
-        // defaults so the UI renders the cards in their no-data state.
-        criticalRisk: { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 },
-        substanceUsePct: 0,
-        sleepQuality: [],
+        // EWB surfaces sourced from hra_kpi_summary. Sub-categories of
+        // Critical Risk (suicidalThoughts / attemptedSelfHarm /
+        // previousAttempts) aren't broken out in the table, so the totalCases
+        // pill is derived from risk_category='High Risk' and the breakdown
+        // pills stay at zero.
+        criticalRisk: {
+          suicidalThoughts: 0,
+          attemptedSelfHarm: 0,
+          previousAttempts: 0,
+          totalCases: criticalTotal,
+        },
+        substanceUsePct,
+        sleepQuality,
+        // sleepDuration, depressionScale, selfEsteemScale don't have source
+        // columns in hra_kpi_summary — empty until the table grows them.
         sleepDuration: [],
-        alcoholHabit: [],
-        smokingHabit: [],
-        visitPattern: [],
-        impressions: [],
+        alcoholHabit,
+        smokingHabit,
+        visitPattern,
+        impressions,
         impressionSubcategories: {},
         impressionsByVisitBucket: {},
-        anxietyScale: [],
+        anxietyScale,
         depressionScale: [],
         selfEsteemScale: [],
       },

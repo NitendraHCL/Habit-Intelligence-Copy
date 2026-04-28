@@ -3,12 +3,6 @@
 import { T } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
-import useSWR from "swr";
-import {
-  type RawAppointment,
-  type OHCFilters,
-  aggregateEmotionalWellbeing,
-} from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
@@ -310,58 +304,21 @@ export default function EmotionalWellbeingPage() {
       .catch(() => setIndiaMapReady(true));
   }, []);
 
-  // Fetch raw appointment data (shared with utilization page via SWR cache)
-  const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading, mutate, isValidating: isSWRValidating } = useSWR<{ rows: RawAppointment[] }>(
-    rawUrl,
-    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
-  );
-  const allRows = rawData?.rows || [];
-  const isValidating = false;
-
-  // Derive filter options from raw data (Psychologist rows only)
-  const filterOptions = useMemo(() => {
-    const psychRows = allRows.filter((r) => r.speciality_name === "Psychologist");
-    const locations = new Set<string>();
-    const relations = new Set<string>();
-    for (const r of psychRows) {
-      if (r.facility_name?.trim()) locations.add(r.facility_name);
-      if (r.relationship?.trim()) relations.add(r.relationship);
-    }
-    return {
-      locations: Array.from(locations).sort(),
-      genders: ["Male", "Female", "Others"],
-      ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
-      specialties: [] as string[],
-      relations: Array.from(relations).sort(),
-    };
-  }, [allRows]);
-
-  const appliedOHCFilters = useMemo((): OHCFilters => ({
+  // Use the dedicated /api/ohc/emotional-wellbeing route — sourced from
+  // agg_kpi with speciality_name='Psychologist' baked in. One round-trip
+  // per filter/date combo, cached by withCache server-side and SWR
+  // client-side. This replaced a heavy /api/ohc/appointments fetch that
+  // returned 1.4M rolled-up rows and was triggering perpetual loading.
+  const ewbExtraParams = useMemo(() => ({
     dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
     dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
-    locations: appliedFilters.locations,
-    genders: appliedFilters.genders,
-    ageGroups: appliedFilters.ageGroups,
-    specialties: [],
-    relations: appliedFilters.relations,
+    ...(appliedFilters.locations.length ? { locations: appliedFilters.locations.join(",") } : {}),
+    ...(appliedFilters.genders.length ? { genders: appliedFilters.genders.join(",") } : {}),
+    ...(appliedFilters.ageGroups.length ? { ageGroups: appliedFilters.ageGroups.join(",") } : {}),
+    ...(appliedFilters.relations.length ? { relations: appliedFilters.relations.join(",") } : {}),
   }), [appliedDateRange, appliedFilters]);
 
-  const aggregated = useMemo(
-    () => allRows.length ? aggregateEmotionalWellbeing(allRows, appliedOHCFilters) : null,
-    [allRows, appliedOHCFilters]
-  );
-
-  // The new /api/ohc/emotional-wellbeing endpoint sources from agg_kpi
-  // (the same fact table /portal/ohc/utilization uses) with
-  // speciality_name='Psychologist' baked in. We use it for the five
-  // things sourced from agg_kpi — KPIs, Demographics (age / gender /
-  // location), and Consult Trends. The EWB-specific charts (sleep,
-  // anxiety, depression, critical risk, substance use) keep falling
-  // back to the client-side aggregator since those screening fields
-  // aren't in agg_kpi.
-  const { data: ewbApi } = useDashboardData<{
+  const { data: ewbApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<{
     kpis?: { totalConsults?: number; uniquePatients?: number; repeatPatients?: number };
     charts?: {
       demographics?: {
@@ -371,39 +328,82 @@ export default function EmotionalWellbeingPage() {
         shift?: Array<{ label: string; count: number }>;
       };
       consultTrends?: Array<{ period: string; totalConsults: number; uniquePatients: number }>;
+      criticalRisk?: { suicidalThoughts: number; attemptedSelfHarm: number; previousAttempts: number; totalCases: number };
+      substanceUsePct?: number;
+      sleepQuality?: Array<{ label: string; count: number }>;
+      alcoholHabit?: Array<{ label: string; count: number }>;
+      smokingHabit?: Array<{ label: string; count: number }>;
+      visitPattern?: Array<{ label: string; count: number }>;
+      impressions?: Array<{ label: string; count: number }>;
+      anxietyScale?: Array<{ label: string; count: number }>;
     };
-  }>("ohc/emotional-wellbeing", {
-    dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
-    dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
-    ...(appliedFilters.locations.length ? { locations: appliedFilters.locations.join(",") } : {}),
-    ...(appliedFilters.genders.length ? { genders: appliedFilters.genders.join(",") } : {}),
-    ...(appliedFilters.ageGroups.length ? { ageGroups: appliedFilters.ageGroups.join(",") } : {}),
-    ...(appliedFilters.relations.length ? { relations: appliedFilters.relations.join(",") } : {}),
+  }>("ohc/emotional-wellbeing", ewbExtraParams);
+
+  // Fetch filter options once (Psychologist-aware via agg_kpi). The shared
+  // /api/filters route returns global lists; the page narrows them as needed.
+  const [filterOptions, setFilterOptions] = useState<{
+    locations: string[]; genders: string[]; ageGroups: string[]; specialties: string[]; relations: string[];
+  }>({
+    locations: [],
+    genders: ["Male", "Female", "Others"],
+    ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
+    specialties: [],
+    relations: [],
   });
+  useEffect(() => {
+    if (!activeClientId) return;
+    fetch(`/api/filters?clientId=${activeClientId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.locations || data?.relationships) {
+          setFilterOptions((prev) => ({
+            ...prev,
+            ...(data.locations ? { locations: data.locations } : {}),
+            ...(data.relationships ? { relations: data.relationships } : {}),
+          }));
+        }
+      })
+      .catch(() => {});
+  }, [activeClientId]);
+
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
 
   const kpis = useMemo(() => ({
-    ...(aggregated?.kpis || {}),
-    ...(ewbApi?.kpis ? {
-      totalConsults: ewbApi.kpis.totalConsults ?? 0,
-      uniquePatients: ewbApi.kpis.uniquePatients ?? 0,
-      repeatPatients: ewbApi.kpis.repeatPatients ?? 0,
-    } : {}),
-  }), [aggregated?.kpis, ewbApi?.kpis]);
+    totalConsults: ewbApi?.kpis?.totalConsults ?? 0,
+    uniquePatients: ewbApi?.kpis?.uniquePatients ?? 0,
+    repeatPatients: ewbApi?.kpis?.repeatPatients ?? 0,
+  }), [ewbApi?.kpis]);
 
   const charts = useMemo(() => {
-    const base = aggregated?.charts || ({} as NonNullable<typeof aggregated>["charts"]);
-    if (!ewbApi?.charts) return base;
+    // KPI / Demographics / Consult Trends → from agg_kpi (Psychologist slice).
+    // Critical Risk / Substance Use / Sleep / Alcohol / Smoking / Anxiety /
+    // Visit Pattern / Impressions → from hra_kpi_summary.
+    // Sleep Duration / Self Esteem / Depression Scale don't have source
+    // columns yet — empty defaults until the warehouse grows them.
+    const c = ewbApi?.charts;
     return {
-      ...base,
       demographics: {
-        ...(base?.demographics || { age: [], gender: [], location: [], shift: [] }),
-        ...(ewbApi.charts.demographics?.age?.length ? { age: ewbApi.charts.demographics.age } : {}),
-        ...(ewbApi.charts.demographics?.gender?.length ? { gender: ewbApi.charts.demographics.gender } : {}),
-        ...(ewbApi.charts.demographics?.location?.length ? { location: ewbApi.charts.demographics.location } : {}),
+        age: c?.demographics?.age ?? [],
+        gender: c?.demographics?.gender ?? [],
+        location: c?.demographics?.location ?? [],
+        shift: [] as Array<{ label: string; count: number }>,
       },
-      ...(ewbApi.charts.consultTrends?.length ? { consultTrends: ewbApi.charts.consultTrends } : {}),
+      consultTrends: c?.consultTrends ?? [],
+      criticalRisk: c?.criticalRisk ?? { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 },
+      substanceUsePct: c?.substanceUsePct ?? 0,
+      sleepQuality: c?.sleepQuality ?? [],
+      sleepDuration: [] as Array<{ label: string; count: number }>,
+      alcoholHabit: c?.alcoholHabit ?? [],
+      smokingHabit: c?.smokingHabit ?? [],
+      visitPattern: c?.visitPattern ?? [],
+      impressions: c?.impressions ?? [],
+      impressionSubcategories: {} as Record<string, Array<{ label: string; count: number }>>,
+      impressionsByVisitBucket: {} as Record<string, Array<{ label: string; count: number }>>,
+      anxietyScale: c?.anxietyScale ?? [],
+      depressionScale: [] as Array<{ label: string; count: number }>,
+      selfEsteemScale: [] as Array<{ label: string; count: number }>,
     };
-  }, [aggregated?.charts, ewbApi?.charts]);
+  }, [ewbApi?.charts]);
 
   const handleRemoveChip = (key: string, value: string) => {
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
@@ -482,7 +482,7 @@ export default function EmotionalWellbeingPage() {
     .map((label) => sleepQuality.find((s) => s.label === label))
     .filter(Boolean) as Array<{ label: string; count: number }>;
 
-  if (!aggregated && isLoading) {
+  if (!ewbApi && isLoading) {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="space-y-2"><div className="h-8 w-48 bg-gray-200 rounded animate-pulse" /><div className="h-4 w-96 bg-gray-100 rounded animate-pulse" /></div>
@@ -517,14 +517,34 @@ export default function EmotionalWellbeingPage() {
         <FilterMultiSelect label="Relationship" options={filterOptions.relations} selected={pageFilters.relations} onChange={(v) => setPageFilters((p) => ({ ...p, relations: v }))} />
         <div className="flex-1" />
         <PageDownload pageTitle="Emotional Wellbeing" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
-              <RotateCcw className={`size-4 text-gray-600${isSWRValidating ? " animate-spin" : ""}`} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Refresh data</TooltipContent>
-        </Tooltip>
+        <div className="relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={async () => {
+                  const ok = await refresh();
+                  if (ok) {
+                    setShowRefreshToast(true);
+                    setTimeout(() => setShowRefreshToast(false), 3000);
+                  }
+                }}
+                disabled={isRefreshing}
+                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+              >
+                <RotateCcw className={`size-4 text-gray-600${isRefreshing || isValidating ? " animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh data</TooltipContent>
+          </Tooltip>
+          {showRefreshToast && (
+            <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <span className="text-[12px] font-medium">Data refreshed</span>
+              </div>
+            </div>
+          )}
+        </div>
         <ConfigurePanel
           pageSlug="/portal/ohc/emotional-wellbeing"
           pageTitle="Emotional Wellbeing"

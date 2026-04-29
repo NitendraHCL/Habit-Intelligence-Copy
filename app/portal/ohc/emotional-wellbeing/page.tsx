@@ -447,8 +447,13 @@ export default function EmotionalWellbeingPage() {
   // Demographics data
   const demoData: Array<{ label: string; count: number }> = charts?.demographics?.[demoTab] || [];
 
-  // Impressions — filtered by selected visit bucket
-  const allImpressions: Array<{ category: string; count: number }> = charts?.impressions || [];
+  // Impressions — filtered by selected visit bucket. Normalise either field
+  // name (the API returns `label`, the legacy aggregator returned `category`)
+  // to a single `category` shape so downstream colour maps + renderers work.
+  const allImpressions: Array<{ category: string; count: number }> = (charts?.impressions || []).map((i: { label?: string; category?: string; count: number }) => ({
+    category: i.category ?? i.label ?? "Unknown",
+    count: i.count,
+  }));
   const impressionsByBucket: Record<string, Array<{ category: string; count: number }>> = charts?.impressionsByVisitBucket || {};
   const impressions = selectedVisitBucket && impressionsByBucket[selectedVisitBucket]
     ? impressionsByBucket[selectedVisitBucket]
@@ -1236,25 +1241,70 @@ export default function EmotionalWellbeingPage() {
             <InsightBox text="Patients with higher visit frequencies may have more complex or persistent emotional health issues. Click a visit bucket to explore which problem categories dominate for that group and allocate specialist resources accordingly." />
           </CVCard>
 
-          {/* Impressions Analysis Pie */}
-          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} expandable={false} tooltipText="Pie chart displaying the proportion of impressions (problem categories) across all consults. When a visit bucket is selected, it filters to show only impressions for that visit frequency group." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category distribution">
-            <div className="overflow-x-auto">
-              <div style={{ minWidth: 320, height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={impressions.map((i) => ({ name: i.category, value: i.count }))} cx="50%" cy="50%"
-                      outerRadius={90} paddingAngle={1} dataKey="value"
-                      label={({ value, percent }: any) => `${formatK(value)} (${((percent || 0) * 100).toFixed(1)}%)`}
-                      labelLine={{ stroke: T.textMuted, strokeWidth: 1 }}>
-                      {impressions.map((im) => <Cell key={im.category} fill={impressionColorMap[im.category] || "#9399AB"} />)}
-                    </Pie>
-                    <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" iconSize={7} />
-                    <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <InsightBox text="The largest pie slice reveals the most common problem category among patients. Use this distribution to allocate counselling specializations and design targeted wellbeing programs for the dominant categories." />
+          {/* Impressions Analysis — horizontal ranked bars */}
+          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} expandable={false} tooltipText="Ranked breakdown of chronic-condition prevalence among assessed employees. Conditions are sorted by patient count, biggest at top — at-a-glance view of which condition is most prevalent." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
+            {(() => {
+              const sorted = [...impressions].sort((a, b) => b.count - a.count);
+              const total = sorted.reduce((s, i) => s + i.count, 0);
+              const max = sorted[0]?.count || 1;
+              // Heat-graded palette: deepest red for the most prevalent,
+              // tapering to amber for the smallest. Draws the eye to the
+              // biggest concern without fully alarming everything.
+              const RANK_COLORS = ["#dc2626", "#ea580c", "#d97706", "#ca8a04"];
+              const rowFor = (im: { category: string; count: number }, idx: number) => {
+                const pct = total > 0 ? Math.round((im.count / total) * 100) : 0;
+                const widthPct = max > 0 ? Math.max(2, Math.round((im.count / max) * 100)) : 2;
+                const color = RANK_COLORS[idx] || RANK_COLORS[RANK_COLORS.length - 1];
+                return (
+                  <div
+                    key={im.category}
+                    className="grid items-center gap-3 py-2.5"
+                    style={{ gridTemplateColumns: "20px minmax(120px, max-content) 1fr 14ch" }}
+                  >
+                    {/* Rank pill */}
+                    <span
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold tabular-nums"
+                      style={{ backgroundColor: idx === 0 ? color : "#F5F6FB", color: idx === 0 ? "#fff" : T.textMuted }}
+                    >
+                      {idx + 1}
+                    </span>
+                    {/* Condition name — sized to its own content so labels never truncate */}
+                    <span className="text-[12.5px] font-semibold whitespace-nowrap" style={{ color: T.textPrimary }}>
+                      {im.category}
+                    </span>
+                    {/* Bar */}
+                    <div className="h-[12px] rounded-full overflow-hidden" style={{ backgroundColor: "#F5F6FB" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${widthPct}%`, background: `linear-gradient(90deg, ${color} 0%, ${color}cc 100%)` }}
+                      />
+                    </div>
+                    {/* Count + % */}
+                    <div className="text-right tabular-nums">
+                      <span className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{formatNum(im.count)}</span>
+                      <span className="text-[11px] ml-1.5" style={{ color: T.textMuted }}>{pct}%</span>
+                    </div>
+                  </div>
+                );
+              };
+              return (
+                <div className="mt-2">
+                  {sorted.length === 0 ? (
+                    <div className="py-12 text-center text-[12.5px]" style={{ color: T.textMuted }}>No impressions data in the selected window.</div>
+                  ) : (
+                    <>
+                      {sorted.map(rowFor)}
+                      {/* Footer: total */}
+                      <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Total flagged</span>
+                        <span className="text-[12.5px] font-bold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(total)} patients</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+            <InsightBox text="The condition at the top is the most prevalent chronic concern among assessed employees — prioritise screening, awareness campaigns, and care-management referrals there. Watch how this ranking shifts over time to gauge whether prevention efforts are working." />
           </CVCard>
         </div>
       </WarmSection>}

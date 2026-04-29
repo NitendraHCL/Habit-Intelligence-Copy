@@ -104,7 +104,7 @@ function CVCard({
   const [expanded, setExpanded] = useState(false);
   return (
     <div
-      className={`bg-white rounded-2xl overflow-hidden transition-all ${expanded ? "col-span-full" : ""} ${className}`}
+      className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
       {(title || accentColor) && (
@@ -138,7 +138,7 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5">{children}</div>
+      <div className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
     </div>
   );
 }
@@ -149,10 +149,15 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 }
 
 // ─── Insight Box ───
+// mt-auto pushes the box to the bottom of its flex parent so every chart's
+// insight blob sits at the same y-coordinate across a row, regardless of the
+// chart visualisation above it.
 function InsightBox({ text }: { text: string }) {
   return (
-    <div className="rounded-[14px] px-4 py-3 mt-4 text-[12px] leading-relaxed" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
-      {text}
+    <div className="mt-auto pt-4">
+      <div className="rounded-[14px] px-4 py-3.5 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
+        {text}
+      </div>
     </div>
   );
 }
@@ -604,16 +609,45 @@ export default function EmotionalWellbeingPage() {
       {/* ══════════════════════════════════════════ */}
       {isChartVisible("ewbKpis") && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: "Total Consults", value: kpis?.totalConsults || 0, icon: <TrendingUp size={18} />, color: T.teal },
-          { label: "Unique Patients", value: kpis?.uniquePatients || 0, icon: <Users size={18} />, color: "#4f46e5" },
-          { label: "Repeat Patients", value: kpis?.repeatPatients || 0, icon: <Repeat size={18} />, color: T.teal },
+          {
+            label: "Total Consults",
+            value: kpis?.totalConsults || 0,
+            icon: <TrendingUp size={18} />,
+            color: T.teal,
+            descriptor: "Psychologist consultations in the selected window",
+            insight: "Every recorded Psychologist session for the workforce. Watch this trend month-over-month — sustained growth indicates the program is gaining traction.",
+          },
+          {
+            label: "Unique Patients",
+            value: kpis?.uniquePatients || 0,
+            icon: <Users size={18} />,
+            color: "#4f46e5",
+            descriptor: "Distinct employees who saw a Psychologist",
+            insight: "The unduplicated reach of the program. Compare against the workforce headcount to gauge what % of employees are engaging with mental-health support.",
+          },
+          {
+            label: "Repeat Patients",
+            value: kpis?.repeatPatients || 0,
+            icon: <Repeat size={18} />,
+            color: T.teal,
+            descriptor: "Employees with 2+ Psychologist visits",
+            insight: "Returning patients usually signal trust in the program — but a high count in any single cohort can flag unresolved cases or chronic concerns worth exploring.",
+          },
         ].map((k) => (
-          <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[11px] font-medium tracking-[0.08em]" style={{ color: T.textSecondary }}>{k.label}</p>
-              <span style={{ color: T.textMuted }}>{k.icon}</span>
+          <div key={k.label} className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+            <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[11px] font-medium tracking-[0.08em]" style={{ color: T.textSecondary }}>{k.label}</p>
+                <span style={{ color: T.textMuted }}>{k.icon}</span>
+              </div>
+              <p className="text-[34px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: k.color }}>{formatNum(k.value)}</p>
+              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>{k.descriptor}</p>
+              <div className="mt-auto pt-4">
+                <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
+                  {k.insight}
+                </p>
+              </div>
             </div>
-            <p className="text-[34px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: k.color }}>{formatNum(k.value)}</p>
           </div>
         ))}
       </div>}

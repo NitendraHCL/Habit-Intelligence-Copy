@@ -1001,23 +1001,80 @@ export default function EmotionalWellbeingPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
-        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Alcohol Habit Analysis" tooltipText="Donut chart showing the distribution of alcohol consumption habits (e.g., Never, Occasional, Regular). Larger slices for frequent use categories may indicate a need for alcohol awareness programs." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Alcohol Habit Analysis">
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: 300, height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={alcoholHabit.map((d) => ({ name: d.label, value: d.count }))} cx="50%" cy="50%"
-                    innerRadius={55} outerRadius={90} paddingAngle={2} dataKey="value"
-                    label={({ percent }: any) => `${((percent || 0) * 100).toFixed(1)}%`} labelLine={{ stroke: T.textMuted, strokeWidth: 1 }}>
-                    {alcoholHabit.map((_, i) => <Cell key={i} fill={ALCOHOL_COLORS[i % ALCOHOL_COLORS.length]} />)}
-                  </Pie>
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <InsightBox text="Regular or heavy alcohol consumption often co-occurs with anxiety and depression. Cross-reference alcohol habit data with mental health scale results to identify high-risk groups for integrated intervention." />
+        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="How many of your employees consume alcohol — at a glance" tooltipText="Pictograph of 100 dots, each representing 1% of assessed employees. Amber = drinkers, teal = non-drinkers, grey = not reported. Headline shows the '1 in X' framing for quick communication." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
+          {(() => {
+            const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
+            const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
+            const nr = alcoholHabit.find((d) => d.label === "Not Reported")?.count || 0;
+            const total = yes + no + nr;
+            const yesPct = total > 0 ? Math.round((yes / total) * 100) : 0;
+            const noPct = total > 0 ? Math.round((no / total) * 100) : 0;
+            const nrPct = total > 0 ? Math.max(0, 100 - yesPct - noPct) : 0;
+            const COLORS = { yes: "#d97706", no: "#0d9488", nr: "#cbd5e1" };
+            // Allocate the 100 cells in order: drinkers first, then non-drinkers,
+            // then not-reported. Each cell = exactly 1% of the assessed population.
+            const cells: ("yes" | "no" | "nr")[] = [];
+            for (let i = 0; i < yesPct; i++) cells.push("yes");
+            for (let i = 0; i < noPct; i++) cells.push("no");
+            while (cells.length < 100) cells.push("nr");
+            const oneInX = yesPct >= 2 ? Math.max(2, Math.round(100 / yesPct)) : null;
+            return (
+              <div className="flex flex-col items-center mt-2">
+                {/* Hero stat */}
+                <p className="text-[44px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: COLORS.yes }}>
+                  {oneInX ? `1 in ${oneInX}` : `${yesPct}%`}
+                </p>
+                <p className="text-[12.5px] mt-2 text-center" style={{ color: T.textSecondary }}>
+                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(total)}</span> assessed employees consume alcohol
+                </p>
+
+                {/* Waffle: 10 × 10 grid, each cell = 1% */}
+                <div
+                  className="mt-5 grid"
+                  style={{
+                    gridTemplateColumns: "repeat(10, minmax(0, 1fr))",
+                    gap: 4,
+                    width: "100%",
+                    maxWidth: 240,
+                  }}
+                  aria-label={`Pictograph: ${yesPct}% drinkers, ${noPct}% non-drinkers, ${nrPct}% not reported`}
+                >
+                  {cells.map((c, i) => (
+                    <div
+                      key={i}
+                      className="aspect-square rounded-[3px] transition-transform"
+                      style={{
+                        backgroundColor: c === "yes" ? COLORS.yes : c === "no" ? COLORS.no : COLORS.nr,
+                      }}
+                      title={c === "yes" ? `Drinker (${yesPct}% of assessed)` : c === "no" ? `Non-drinker (${noPct}% of assessed)` : `Not reported (${nrPct}% of assessed)`}
+                    />
+                  ))}
+                </div>
+
+                {/* Legend with raw counts */}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 mt-5 text-[11.5px]" style={{ color: T.textSecondary }}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.yes }} />
+                    Drinks <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(yes)}</span>
+                    <span className="tabular-nums" style={{ color: T.textMuted }}>({yesPct}%)</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.no }} />
+                    Doesn&apos;t <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(no)}</span>
+                    <span className="tabular-nums" style={{ color: T.textMuted }}>({noPct}%)</span>
+                  </span>
+                  {nr > 0 && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.nr }} />
+                      Not reported <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(nr)}</span>
+                      <span className="tabular-nums" style={{ color: T.textMuted }}>({nrPct}%)</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          <InsightBox text="Regular alcohol consumption often co-occurs with anxiety and depression. Cross-reference this percentage with the mental-health scales to identify high-risk groups for integrated intervention." />
         </CVCard>}
 
         {/* Smoking Habit */}

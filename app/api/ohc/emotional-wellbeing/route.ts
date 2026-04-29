@@ -189,7 +189,6 @@ async function handler(request: NextRequest) {
     const SMOKE_LABELS = ["Yes", "No", "Ex-Smoker", "Not Reported"];
     const ALCOHOL_LABELS = ["Yes", "No", "Not Reported"];
     const ANXIETY_LABELS = ["Anxious", "Not Anxious", "Not Reported"];
-    const EXERCISE_LABELS = ["Yes", "No", "Not Reported"];
     // Normalise nulls/empty strings into a "Not Reported" bucket so the UI
     // doesn't render mystery blank labels.
     const norm = (col: string, allowed: string[]) => `CASE
@@ -264,8 +263,8 @@ async function handler(request: NextRequest) {
     // ── HRA aggregates ──
     const [
       criticalRiskRow, substanceRow,
-      sleepRows, alcoholRows, smokingRows, anxietyRows, exerciseRows,
-      impressionsRow,
+      sleepRows, alcoholRows, smokingRows, anxietyRows,
+      visitPatternBucketRows, impressionsBucketRows,
       smokingTrendRows,
     ] = await Promise.all([
       // Critical Risk — total High Risk patients
@@ -338,30 +337,80 @@ async function handler(request: NextRequest) {
         ),
         "anxietyScale"
       ),
-      // Visit Pattern — repurposed from exercise_status (Yes / No / Not Reported)
+      // Visit Pattern — patients bucketed by their total Psychologist visit
+      // count (1 / 2 / 3 / 4 / 5+). Sourced from agg_kpi.
       safeQuery(
-        () => dwQuery<{ label: string; count: string }>(
-          `SELECT ${norm("h.exercise_status", EXERCISE_LABELS)} AS label,
-                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
-           FROM ${HRA_TABLE} h WHERE ${hra.where}
+        () => dwQuery<{ bucket: string; patients: string }>(
+          `WITH visit_counts AS (
+             SELECT a.uhid, SUM(a.total_consult_count)::int AS visit_count
+             FROM ${BASE_TABLE} a
+             WHERE ${q.where}
+             GROUP BY a.uhid
+           )
+           SELECT
+             CASE
+               WHEN visit_count >= 5 THEN '5+ Visits'
+               WHEN visit_count = 4 THEN '4 Visits'
+               WHEN visit_count = 3 THEN '3 Visits'
+               WHEN visit_count = 2 THEN '2 Visits'
+               WHEN visit_count = 1 THEN '1 Visit'
+             END AS bucket,
+             COUNT(*)::bigint AS patients
+           FROM visit_counts
+           WHERE visit_count >= 1
            GROUP BY 1`,
-          hra.params
+          q.params
         ),
-        "visitPattern"
+        "visitPatternBuckets"
       ),
-      // Impressions Analysis — chronic-condition counts as four "impressions"
+      // Impressions per visit-frequency bucket — JOINs the visit_counts cohort
+      // with agg_diagnosis (Psychologist diagnoses), categorising the free-text
+      // diagnosis_text into ~9 broad buckets (Anxiety, Depression, Stress/PTSD,
+      // OCD, Adjustment, Personality, Substance Use, Insomnia, General
+      // Counseling, Other). The diagnosis table has no date column, so date
+      // filters apply only to the visit_counts cohort upstream.
       safeQuery(
-        () => dwQuery<{ diabetes: string; hypertension: string; heart_disease: string; thyroid: string }>(
-          `SELECT
-             COALESCE(SUM(h.count_diabetes), 0)::bigint      AS diabetes,
-             COALESCE(SUM(h.count_hypertension), 0)::bigint  AS hypertension,
-             COALESCE(SUM(h.count_heart_disease), 0)::bigint AS heart_disease,
-             COALESCE(SUM(h.count_thyroid), 0)::bigint       AS thyroid
-           FROM ${HRA_TABLE} h
-           WHERE ${hra.where}`,
-          hra.params
+        () => dwQuery<{ bucket: string; category: string; n: string }>(
+          `WITH visit_counts AS (
+             SELECT a.uhid, SUM(a.total_consult_count)::int AS visit_count
+             FROM ${BASE_TABLE} a
+             WHERE ${q.where}
+             GROUP BY a.uhid
+           ),
+           diag_categorized AS (
+             SELECT d.uhid,
+               CASE
+                 WHEN LOWER(d.diagnosis_text) LIKE '%anxiety%' THEN 'Anxiety'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%depress%' OR LOWER(d.diagnosis_text) LIKE '%dysthymic%' THEN 'Depression'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%ptsd%' OR LOWER(d.diagnosis_text) LIKE '%stress%' THEN 'Stress / PTSD'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%obsessive%' OR LOWER(d.diagnosis_text) LIKE '%ocd%' THEN 'OCD'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%adjustment%' THEN 'Adjustment'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%personality%' THEN 'Personality Disorder'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%alcohol%' OR LOWER(d.diagnosis_text) LIKE '%substance%' THEN 'Substance Use'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%insomnia%' OR LOWER(d.diagnosis_text) LIKE '%sleep%' THEN 'Insomnia'
+                 WHEN LOWER(d.diagnosis_text) LIKE '%counsel%' OR d.diagnosis_text = '' OR d.diagnosis_text IS NULL THEN 'General Counseling'
+                 ELSE 'Other'
+               END AS category
+             FROM aggregated_table.agg_diagnosis d
+             WHERE d.cug_code_mapped = $1
+               AND d.treating_doctor_speciality = 'Psychologist'
+           )
+           SELECT
+             CASE
+               WHEN v.visit_count >= 5 THEN '5+ Visits'
+               WHEN v.visit_count = 4 THEN '4 Visits'
+               WHEN v.visit_count = 3 THEN '3 Visits'
+               WHEN v.visit_count = 2 THEN '2 Visits'
+               WHEN v.visit_count = 1 THEN '1 Visit'
+             END AS bucket,
+             d.category,
+             COUNT(*)::bigint AS n
+           FROM visit_counts v
+           JOIN diag_categorized d ON d.uhid = v.uhid
+           GROUP BY 1, 2`,
+          q.params
         ),
-        "impressions"
+        "impressionsByVisitBucket"
       ),
       // Smoking trend — current-smoker share per month for the sparkline.
       // current = SUM(unique_patients WHERE smoking_status='Yes')
@@ -392,18 +441,36 @@ async function handler(request: NextRequest) {
     const alcoholHabit = sortBuckets(alcoholRows, ALCOHOL_LABELS);
     const smokingHabit = sortBuckets(smokingRows, SMOKE_LABELS);
     const anxietyScale = sortBuckets(anxietyRows, ANXIETY_LABELS);
-    const visitPattern = sortBuckets(exerciseRows, EXERCISE_LABELS);
 
     const criticalTotal = Number(criticalRiskRow[0]?.total_cases || 0);
     const substanceUsePct = Number(substanceRow[0]?.substance_pct || 0);
 
-    const imp = impressionsRow[0] || ({} as Record<string, string>);
-    const impressions = [
-      { label: "Diabetes", count: Number(imp.diabetes || 0) },
-      { label: "Hypertension", count: Number(imp.hypertension || 0) },
-      { label: "Heart Disease", count: Number(imp.heart_disease || 0) },
-      { label: "Thyroid", count: Number(imp.thyroid || 0) },
-    ].filter((i) => i.count > 0);
+    // ── Visit Pattern (real visit counts from agg_kpi) ──
+    const VISIT_BUCKET_ORDER = ["1 Visit", "2 Visits", "3 Visits", "4 Visits", "5+ Visits"];
+    const visitMap: Record<string, number> = {};
+    for (const r of visitPatternBucketRows) visitMap[r.bucket] = Number(r.patients);
+    const visitPattern = VISIT_BUCKET_ORDER
+      .filter((b) => visitMap[b] > 0)
+      .map((b) => ({ label: b, count: visitMap[b] }));
+
+    // ── Impressions Analysis (mental-health diagnoses, bucketed by visit count) ──
+    // Build both the global breakdown (sum across buckets) and the per-bucket
+    // map the chart consumes when a bucket is clicked.
+    const impressionsByVisitBucket: Record<string, Array<{ category: string; count: number }>> = {};
+    const globalImpressionMap: Record<string, number> = {};
+    for (const row of impressionsBucketRows) {
+      const cnt = Number(row.n);
+      if (!impressionsByVisitBucket[row.bucket]) impressionsByVisitBucket[row.bucket] = [];
+      impressionsByVisitBucket[row.bucket].push({ category: row.category, count: cnt });
+      globalImpressionMap[row.category] = (globalImpressionMap[row.category] || 0) + cnt;
+    }
+    for (const b of Object.keys(impressionsByVisitBucket)) {
+      impressionsByVisitBucket[b].sort((a, b2) => b2.count - a.count);
+    }
+    const impressions = Object.entries(globalImpressionMap)
+      .map(([category, count]) => ({ category, count }))
+      .filter((i) => i.count > 0)
+      .sort((a, b) => b.count - a.count);
 
     // Smoking trend — last 12 monthly points within the filter window.
     // Each point carries the share of assessed patients flagged as current
@@ -457,7 +524,7 @@ async function handler(request: NextRequest) {
         visitPattern,
         impressions,
         impressionSubcategories: {},
-        impressionsByVisitBucket: {},
+        impressionsByVisitBucket,
         anxietyScale,
         depressionScale: [],
         selfEsteemScale: [],

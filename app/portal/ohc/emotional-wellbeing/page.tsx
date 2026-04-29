@@ -338,6 +338,7 @@ export default function EmotionalWellbeingPage() {
       sleepQuality?: Array<{ label: string; count: number }>;
       alcoholHabit?: Array<{ label: string; count: number }>;
       smokingHabit?: Array<{ label: string; count: number }>;
+      smokingTrend?: Array<{ period: string; pct: number }>;
       visitPattern?: Array<{ label: string; count: number }>;
       impressions?: Array<{ label: string; count: number }>;
       anxietyScale?: Array<{ label: string; count: number }>;
@@ -400,6 +401,7 @@ export default function EmotionalWellbeingPage() {
       sleepDuration: [] as Array<{ label: string; count: number }>,
       alcoholHabit: c?.alcoholHabit ?? [],
       smokingHabit: c?.smokingHabit ?? [],
+      smokingTrend: c?.smokingTrend ?? [],
       visitPattern: c?.visitPattern ?? [],
       impressions: c?.impressions ?? [],
       impressionSubcategories: {} as Record<string, Array<{ label: string; count: number }>>,
@@ -470,6 +472,7 @@ export default function EmotionalWellbeingPage() {
   const sleepDuration: Array<{ label: string; count: number }> = charts?.sleepDuration || [];
   const alcoholHabit: Array<{ label: string; count: number }> = charts?.alcoholHabit || [];
   const smokingHabit: Array<{ label: string; count: number }> = charts?.smokingHabit || [];
+  const smokingTrend: Array<{ period: string; pct: number }> = (charts as any)?.smokingTrend || [];
   const visitPattern: Array<{ label: string; count: number }> = charts?.visitPattern || [];
   const criticalRisk = charts?.criticalRisk || { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 };
   const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
@@ -1078,22 +1081,115 @@ export default function EmotionalWellbeingPage() {
         </CVCard>}
 
         {/* Smoking Habit */}
-        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Smoking frequency distribution" tooltipText="Line chart showing patient counts across smoking frequency categories. Peaks at higher frequency labels suggest a significant smoking population. Use this to prioritize cessation programs." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Smoking frequency distribution">
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: Math.max(smokingHabit.length * 80, 300), height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={smokingHabit} margin={{ top: 20, right: 20, left: 0, bottom: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} angle={-20} textAnchor="end" height={55} />
-                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                  <Bar dataKey="count" fill={"#6366f1"} maxBarSize={56} radius={[4, 4, 0, 0]}
-                    label={{ position: "top", fontSize: 11, fontWeight: 700, fill: T.textPrimary }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <InsightBox text="Smoking is a modifiable lifestyle factor that impacts both physical and emotional health. A high count of daily or frequent smokers warrants targeted smoking cessation support and nicotine replacement therapy programs." />
+        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Current smokers, ex-smokers, and never-smokers — at a glance" tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
+          {(() => {
+            const current = smokingHabit.find((d) => d.label === "Yes")?.count || 0;
+            const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
+            const ex = smokingHabit.find((d) => d.label === "Ex-Smoker")?.count || 0;
+            const nr = smokingHabit.find((d) => d.label === "Not Reported")?.count || 0;
+            const total = current + never + ex + nr;
+            const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+            const currentPct = pct(current);
+            const neverPct = pct(never);
+            const exPct = pct(ex);
+            const nrPct = total > 0 ? Math.max(0, 100 - currentPct - neverPct - exPct) : 0;
+            const COLORS = {
+              current: { bg: "#FEF3C7", fg: "#92400E", border: "#FDE68A" },   // amber
+              ex: { bg: "#E0E7FF", fg: "#3730A3", border: "#C7D2FE" },        // indigo (positive — they quit)
+              never: { bg: "#D1FAE5", fg: "#065F46", border: "#A7F3D0" },     // emerald
+            };
+            return (
+              <div className="flex flex-col items-center mt-2">
+                {/* Hero stat */}
+                <p className="text-[44px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#d97706" }}>
+                  {currentPct}%
+                </p>
+                <p className="text-[12.5px] mt-2 text-center" style={{ color: T.textSecondary }}>
+                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(total)}</span> assessed employees currently smoke
+                </p>
+
+                {/* Three mini-tiles */}
+                <div className="grid grid-cols-3 gap-2.5 w-full mt-5">
+                  <div className="rounded-xl px-3 py-3 text-center" style={{ backgroundColor: COLORS.current.bg, border: `1px solid ${COLORS.current.border}` }}>
+                    <p className="text-[20px] font-extrabold tabular-nums leading-none" style={{ color: COLORS.current.fg }}>{currentPct}%</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.06em] mt-1.5" style={{ color: COLORS.current.fg, opacity: 0.85 }}>Current</p>
+                    <p className="text-[10.5px] mt-0.5 tabular-nums" style={{ color: T.textMuted }}>{formatNum(current)}</p>
+                  </div>
+                  <div className="rounded-xl px-3 py-3 text-center" style={{ backgroundColor: COLORS.ex.bg, border: `1px solid ${COLORS.ex.border}` }}>
+                    <p className="text-[20px] font-extrabold tabular-nums leading-none" style={{ color: COLORS.ex.fg }}>{exPct}%</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.06em] mt-1.5" style={{ color: COLORS.ex.fg, opacity: 0.85 }}>Ex-Smoker</p>
+                    <p className="text-[10.5px] mt-0.5 tabular-nums" style={{ color: T.textMuted }}>{formatNum(ex)}</p>
+                  </div>
+                  <div className="rounded-xl px-3 py-3 text-center" style={{ backgroundColor: COLORS.never.bg, border: `1px solid ${COLORS.never.border}` }}>
+                    <p className="text-[20px] font-extrabold tabular-nums leading-none" style={{ color: COLORS.never.fg }}>{neverPct}%</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.06em] mt-1.5" style={{ color: COLORS.never.fg, opacity: 0.85 }}>Never</p>
+                    <p className="text-[10.5px] mt-0.5 tabular-nums" style={{ color: T.textMuted }}>{formatNum(never)}</p>
+                  </div>
+                </div>
+
+                {nrPct > 0 && (
+                  <p className="text-[10.5px] mt-3 tabular-nums" style={{ color: T.textMuted }}>
+                    {formatNum(nr)} not reported ({nrPct}% of assessed)
+                  </p>
+                )}
+
+                {/* Sparkline: trailing-12-month current-smoker share. Surfaces the
+                    'is it getting better?' question the snapshot tiles can't answer. */}
+                {smokingTrend.length >= 2 && (() => {
+                  const first = smokingTrend[0].pct;
+                  const last = smokingTrend[smokingTrend.length - 1].pct;
+                  const delta = last - first;
+                  const trendColor = delta > 0 ? "#dc2626" : delta < 0 ? "#16a34a" : T.textMuted;
+                  const trendWord = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+                  const monthsLabel = smokingTrend.length === 1 ? "1 month" : `${smokingTrend.length} months`;
+                  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                  const formatPeriod = (p: string) => {
+                    const m = /^(\d{4})-(\d{2})$/.exec(p);
+                    if (!m) return p;
+                    return `${MONTHS[Number(m[2]) - 1]} '${m[1].slice(2)}`;
+                  };
+                  return (
+                    <div className="w-full mt-6 pt-4" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>
+                          Trend over last {monthsLabel}
+                        </p>
+                        <p className="text-[11.5px] font-bold tabular-nums" style={{ color: trendColor }}>
+                          {trendWord === "flat" ? "flat" : `${trendWord} ${Math.abs(delta)} pt${Math.abs(delta) === 1 ? "" : "s"}`}
+                        </p>
+                      </div>
+                      <div style={{ height: 56, width: "100%" }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={smokingTrend} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                            <RechartsTooltip
+                              cursor={{ stroke: T.borderLight, strokeWidth: 1 }}
+                              contentStyle={{ borderRadius: 10, border: `1px solid ${T.border}`, fontSize: 11, padding: "6px 10px" }}
+                              labelFormatter={(v: any) => formatPeriod(String(v))}
+                              formatter={(v: any) => [`${v}%`, "Current smokers"]}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="pct"
+                              stroke="#d97706"
+                              strokeWidth={2}
+                              dot={{ r: 2.5, fill: "#d97706", stroke: "#d97706" }}
+                              activeDot={{ r: 4, fill: "#d97706" }}
+                              isAnimationActive={false}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex justify-between text-[10px] tabular-nums mt-0.5" style={{ color: T.textMuted }}>
+                        <span>{formatPeriod(smokingTrend[0].period)}</span>
+                        <span>{formatPeriod(smokingTrend[smokingTrend.length - 1].period)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+          <InsightBox text="Current smokers warrant targeted cessation support — nicotine replacement, counselling, peer groups. Track the Ex-Smoker share over time as a positive program signal: a growing Ex-Smoker count means the workforce is quitting and the program is working." />
         </CVCard>}
       </div>
 

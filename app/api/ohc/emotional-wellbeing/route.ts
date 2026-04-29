@@ -266,6 +266,7 @@ async function handler(request: NextRequest) {
       criticalRiskRow, substanceRow,
       sleepRows, alcoholRows, smokingRows, anxietyRows, exerciseRows,
       impressionsRow,
+      smokingTrendRows,
     ] = await Promise.all([
       // Critical Risk — total High Risk patients
       safeQuery(
@@ -362,6 +363,23 @@ async function handler(request: NextRequest) {
         ),
         "impressions"
       ),
+      // Smoking trend — current-smoker share per month for the sparkline.
+      // current = SUM(unique_patients WHERE smoking_status='Yes')
+      // total   = SUM(unique_patients) over all rows in the month
+      safeQuery(
+        () => dwQuery<{ period: string; current: string; total: string }>(
+          `SELECT
+             to_char(date_trunc('month', h.report_month), 'YYYY-MM') AS period,
+             COALESCE(SUM(h.unique_patients) FILTER (WHERE h.smoking_status = 'Yes'), 0)::bigint AS current,
+             COALESCE(SUM(h.unique_patients), 0)::bigint AS total
+           FROM ${HRA_TABLE} h
+           WHERE ${hra.where}
+           GROUP BY 1
+           ORDER BY 1`,
+          hra.params
+        ),
+        "smokingTrend"
+      ),
     ]);
 
     const sortBuckets = (rows: { label: string; count: string }[], order: string[]) => {
@@ -386,6 +404,17 @@ async function handler(request: NextRequest) {
       { label: "Heart Disease", count: Number(imp.heart_disease || 0) },
       { label: "Thyroid", count: Number(imp.thyroid || 0) },
     ].filter((i) => i.count > 0);
+
+    // Smoking trend — last 12 monthly points within the filter window.
+    // Each point carries the share of assessed patients flagged as current
+    // smokers (rounded to a whole percent, same as the tile figure).
+    const smokingTrend = smokingTrendRows
+      .map((r) => {
+        const cur = Number(r.current || 0);
+        const tot = Number(r.total || 0);
+        return { period: r.period, pct: tot > 0 ? Math.round((cur / tot) * 100) : 0 };
+      })
+      .slice(-12);
 
     return NextResponse.json({
       kpis: {
@@ -424,6 +453,7 @@ async function handler(request: NextRequest) {
         sleepDuration: [],
         alcoholHabit,
         smokingHabit,
+        smokingTrend,
         visitPattern,
         impressions,
         impressionSubcategories: {},

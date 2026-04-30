@@ -3,13 +3,8 @@
 import { T, CHART_PALETTE } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
-import useSWR from "swr";
-import {
-  type RawAppointment,
-  type OHCFilters,
-  aggregateRepeatVisits,
-} from "@/lib/aggregation/ohc-utilization";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { Button } from "@/components/ui/button";
 import {
@@ -293,32 +288,22 @@ export default function RepeatVisitsPage() {
     return cc.visible;
   };
 
-  // Fetch raw appointment data (shared with utilization page via SWR cache)
-  const rawUrl = activeClientId ? `/api/ohc/appointments?clientId=${activeClientId}` : null;
-  const { data: rawData, isLoading, mutate, isValidating: isSWRValidating } = useSWR<{ rows: RawAppointment[] }>(
-    rawUrl,
-    (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); }),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
-  );
-  const allRows = rawData?.rows || [];
-  const isValidating = false;
+  // Sourced from /api/ohc/repeat-visits → agg_diagnosis. The previous flow
+  // (raw appointments → client-side aggregateRepeatVisits) was scanning a
+  // 1.4M-row payload on every filter change; this single round-trip computes
+  // everything server-side from the diagnosis fact table.
+  const repeatExtraParams = useMemo(() => ({
+    minVisits: String(minVisits),
+    ...(appliedLocations.length ? { locations: appliedLocations.join(",") } : {}),
+    ...(appliedGenders.length ? { genders: appliedGenders.join(",") } : {}),
+    ...(appliedAgeGroups.length ? { ageGroups: appliedAgeGroups.join(",") } : {}),
+  }), [minVisits, appliedLocations, appliedGenders, appliedAgeGroups]);
 
-  const appliedOHCFilters = useMemo((): OHCFilters => ({
-    dateFrom: dateRange.from ? dateRange.from.toISOString().slice(0, 10) : "",
-    dateTo: dateRange.to ? dateRange.to.toISOString().slice(0, 10) : "",
-    locations: appliedLocations,
-    genders: appliedGenders,
-    ageGroups: appliedAgeGroups,
-    specialties: [],
-    relations: [],
-  }), [dateRange, appliedLocations, appliedGenders, appliedAgeGroups]);
+  const { data: repeatApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/repeat-visits", repeatExtraParams);
 
-  const aggregated = useMemo(
-    () => allRows.length ? aggregateRepeatVisits(allRows, appliedOHCFilters, minVisits) : null,
-    [allRows, appliedOHCFilters, minVisits]
-  );
-  const kpis = aggregated?.kpis;
-  const charts = aggregated?.charts;
+  const kpis = repeatApi?.kpis;
+  const charts = repeatApi?.charts;
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
 
   // Set default treemap year when data loads
   useEffect(() => {
@@ -436,14 +421,34 @@ export default function RepeatVisitsPage() {
           </div>
           <div className="flex-1" />
           <PageDownload pageTitle="Repeat Visit Analysis" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
-                <RotateCcw className={`size-4 text-gray-600${isSWRValidating ? " animate-spin" : ""}`} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh data</TooltipContent>
-          </Tooltip>
+          <div className="relative">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={async () => {
+                    const ok = await refresh();
+                    if (ok) {
+                      setShowRefreshToast(true);
+                      setTimeout(() => setShowRefreshToast(false), 3000);
+                    }
+                  }}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <RotateCcw className={`size-4 text-gray-600${isRefreshing || isValidating ? " animate-spin" : ""}`} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh data</TooltipContent>
+            </Tooltip>
+            {showRefreshToast && (
+              <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                  <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <span className="text-[12px] font-medium">Data refreshed</span>
+                </div>
+              </div>
+            )}
+          </div>
           <ConfigurePanel
             pageSlug="/portal/ohc/repeat-visits"
             pageTitle="Repeat Visits"
@@ -911,14 +916,19 @@ export default function RepeatVisitsPage() {
             {(charts?.repeatUserSegments || []).map((rawSeg: any, i: number) => {
               const segColors = ["#818cf8", "#0d9488", "#a78bfa"];
               const segColor = segColors[i % segColors.length];
-              const tenureLabel = rawSeg.label === "3+ years" ? "\u22653 yr" : rawSeg.label === "2 years" ? "=2 yr" : "=1 yr";
+              const tenureLabel = rawSeg?.label === "3+ years" ? "\u22653 yr" : rawSeg?.label === "2 years" ? "=2 yr" : "=1 yr";
               // Ensure NPS hierarchy: 3yr highest > 2yr > 1yr lowest
-              const npsOffset = rawSeg.label === "3+ years" ? 0.5 : rawSeg.label === "2 years" ? 0.2 : -0.2;
+              const npsOffset = rawSeg?.label === "3+ years" ? 0.5 : rawSeg?.label === "2 years" ? 0.2 : -0.2;
+              const rawChronic = rawSeg?.chronic ?? { count: 0, pct: 0, nps: 0 };
+              const rawAcute   = rawSeg?.acute   ?? { count: 0, pct: 0, nps: 0 };
               const seg = {
-                ...rawSeg,
-                avgNps: Math.round((rawSeg.avgNps + npsOffset) * 10) / 10,
-                chronic: { ...rawSeg.chronic, nps: Math.round(((rawSeg.chronic.nps || 0) + npsOffset) * 10) / 10 },
-                acute: { ...rawSeg.acute, nps: Math.round(((rawSeg.acute.nps || 0) + npsOffset) * 10) / 10 },
+                label: rawSeg?.label ?? "",
+                patients: rawSeg?.patients ?? 0,
+                visitsPerYear: rawSeg?.visitsPerYear ?? 0,
+                responseRate: rawSeg?.responseRate ?? 0,
+                avgNps: Math.round(((rawSeg?.avgNps ?? 0) + npsOffset) * 10) / 10,
+                chronic: { ...rawChronic, nps: Math.round(((rawChronic.nps || 0) + npsOffset) * 10) / 10 },
+                acute:   { ...rawAcute,   nps: Math.round(((rawAcute.nps   || 0) + npsOffset) * 10) / 10 },
               };
               return (
                 <div key={seg.label} className="rounded-2xl p-5" style={{ border: `2px solid ${segColor}30`, backgroundColor: `${segColor}08` }}>

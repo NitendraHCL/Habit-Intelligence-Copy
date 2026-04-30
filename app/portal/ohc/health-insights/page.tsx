@@ -406,7 +406,9 @@ export default function HealthInsightsPage() {
   }, [activeClientId]);
 
   const apiUrl = useMemo(() => {
+    if (!activeClientId) return null;
     const p = new URLSearchParams();
+    p.set("clientId", activeClientId);
     p.set("year", String(selectedYear));
     p.set("dateFrom", format(appliedDateRange.from, "yyyy-MM-dd"));
     p.set("dateTo", format(appliedDateRange.to, "yyyy-MM-dd"));
@@ -418,7 +420,7 @@ export default function HealthInsightsPage() {
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange]);
+  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange]);
 
   const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,

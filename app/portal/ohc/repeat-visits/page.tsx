@@ -471,12 +471,13 @@ export default function RepeatVisitsPage() {
                     }
                   }}
                   disabled={isRefreshing}
-                  className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors disabled:opacity-60"
+                  style={{ borderColor: T.border, color: T.textMuted }}
                 >
-                  <RotateCcw className={`size-4 text-gray-600${isRefreshing || isValidating ? " animate-spin" : ""}`} />
+                  <RotateCcw size={15} className={isRefreshing ? "animate-spin" : ""} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Refresh data</TooltipContent>
+              <TooltipContent side="bottom">Refresh data</TooltipContent>
             </Tooltip>
             {showRefreshToast && (
               <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">

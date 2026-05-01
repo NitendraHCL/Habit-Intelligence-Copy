@@ -427,6 +427,28 @@ export default function HealthInsightsPage() {
   });
   const d = raw as any;
 
+  // Refresh button — mirrors the /portal/ohc/utilization pattern.
+  // Force a `?nocache=1` fetch, write the fresh payload into SWR via
+  // `mutate(data, { revalidate: false })`, then flash a "Data refreshed" toast.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
+  const onRefresh = async () => {
+    if (!apiUrl) return;
+    setIsRefreshing(true);
+    try {
+      const freshUrl = apiUrl + (apiUrl.includes("?") ? "&" : "?") + "nocache=1";
+      const res = await fetch(freshUrl);
+      if (res.ok) {
+        const fresh = await res.json();
+        mutate(fresh, { revalidate: false });
+        setShowRefreshToast(true);
+        setTimeout(() => setShowRefreshToast(false), 3000);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Set initial category when data loads
   const categories: string[] = d?.categories || [];
   const years: number[] = d?.years || [2024, 2025, 2026];
@@ -572,14 +594,29 @@ export default function HealthInsightsPage() {
 
         <div className="flex-1" />
         <PageDownload pageTitle="Health Insights" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button onClick={() => mutate()} className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50">
-              <RotateCcw className={`size-4 text-gray-600${isValidating ? " animate-spin" : ""}`} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Refresh data</TooltipContent>
-        </Tooltip>
+        <div className="relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg border hover:bg-[#F5F6FA] transition-colors disabled:opacity-60"
+                style={{ borderColor: T.border, color: T.textMuted }}
+              >
+                <RotateCcw size={15} className={isRefreshing ? "animate-spin" : ""} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Refresh data</TooltipContent>
+          </Tooltip>
+          {showRefreshToast && (
+            <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <span className="text-[12px] font-medium">Data refreshed</span>
+              </div>
+            </div>
+          )}
+        </div>
         <ConfigurePanel
           pageSlug="/portal/ohc/health-insights"
           pageTitle="Health Insights"

@@ -22,6 +22,9 @@ export type ChartTypeId =
   | "grouped_bar"
   | "horizontal_bar"
   | "stacked_bar_100"
+  | "horizontal_stacked_bar_100"
+  | "population_pyramid"
+  | "lollipop_top_n_others"
   | "bullet"
   | "pictorial_bar"
   // Trends

@@ -8,6 +8,7 @@ import {
   GitFork, Type, Table, Circle, AreaChart, Filter, LayoutGrid, Sun,
   Grid3x3, Radar, Share2, Hash, Minus, Image, Flower2, CircleDashed,
   CircleDot, BoxSelect, Calendar, Droplet, Columns2, Table2, BarChart2,
+  ArrowLeftRight, Layers,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ComponentType<{ size?: number }>> = {
@@ -15,6 +16,7 @@ const iconMap: Record<string, React.ComponentType<{ size?: number }>> = {
   GitFork, Type, Table, Circle, AreaChart, Filter, LayoutGrid, Sun,
   Grid3x3, Radar, Share2, Hash, Minus, Image, Flower2, CircleDashed,
   CircleDot, BoxSelect, Calendar, Droplet, Columns2, Table2, BarChart2,
+  ArrowLeftRight, Layers,
   BarChartHorizontal: BarChart3,
   CandlestickChart: BarChart3,
   AlignVerticalSpaceAround: Columns2,

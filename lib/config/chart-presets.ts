@@ -150,6 +150,71 @@ export const chartPresets: ChartPreset[] = [
     requiredFields: { groupBy: true, metrics: true },
   },
   {
+    id: "horizontal_stacked_bar_100",
+    label: "100% Horizontal Stacked Bar",
+    description: "Single horizontal bar split into proportional segments — ideal for binary/ternary splits like gender or chronic vs acute",
+    category: "comparison",
+    renderer: "echarts",
+    icon: "Columns2",
+    defaults: {
+      echartsType: "bar",
+      echartsOverrides: {
+        yAxis: { type: "category", show: false },
+        xAxis: { type: "value", max: 100, show: false },
+        grid: { top: 8, bottom: 8, left: 8, right: 8 },
+        series: [
+          { type: "bar", stack: "total", barWidth: 56, label: { show: true, position: "inside", formatter: "{c}%", color: "#fff", fontWeight: "bold" } },
+        ],
+      },
+    },
+    requiredFields: { groupBy: true, metrics: true },
+  },
+  {
+    id: "population_pyramid",
+    label: "Population Pyramid",
+    description: "Mirrored bars around a central axis (e.g. Male ← 0 → Female) per age band — best for demographic age × gender splits",
+    category: "comparison",
+    renderer: "echarts",
+    icon: "ArrowLeftRight",
+    defaults: {
+      echartsType: "bar",
+      echartsOverrides: {
+        yAxis: { type: "category", inverse: true },
+        xAxis: { type: "value", axisLabel: { formatter: (v: number) => `${Math.abs(v)}` } },
+        grid: { top: 16, bottom: 24, left: 56, right: 32 },
+        series: [
+          { name: "Male",   type: "bar", stack: "pyramid", label: { show: true, position: "left", formatter: (p: { value: number }) => `${Math.abs(p.value)}` } },
+          { name: "Female", type: "bar", stack: "pyramid", label: { show: true, position: "right" } },
+        ],
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+      },
+      mirrorMetricIndex: 0, // first metric is rendered as negative values (left side)
+    },
+    requiredFields: { groupBy: true, metrics: true },
+  },
+  {
+    id: "lollipop_top_n_others",
+    label: "Lollipop (Top-N + Others)",
+    description: "Ranked lollipop showing the top-N rows individually with the long tail collapsed into an 'Others' roll-up — clickable to expand",
+    category: "comparison",
+    renderer: "echarts",
+    icon: "CircleDot",
+    defaults: {
+      echartsType: "bar",
+      echartsOverrides: {
+        yAxis: { type: "category", inverse: true },
+        xAxis: { type: "value" },
+        series: [
+          { type: "bar", barWidth: 2, itemStyle: { borderRadius: 0 }, emphasis: { disabled: true }, symbol: "circle", symbolSize: 14 },
+        ],
+      },
+      topN: 10,
+      rollupOthers: true,
+      othersLabel: "Others",
+    },
+    requiredFields: { groupBy: true, metric: true },
+  },
+  {
     id: "bullet",
     label: "Bullet Chart",
     description: "Compact comparison against a target value",

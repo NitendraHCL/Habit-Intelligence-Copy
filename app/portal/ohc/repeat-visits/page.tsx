@@ -1,6 +1,7 @@
 "use client";
 
 import { T, CHART_PALETTE, GENDER_COLORS } from "@/lib/ui/theme";
+import { interpolateHex } from "@/lib/dashboard/render-helpers";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -307,6 +308,8 @@ export default function RepeatVisitsPage() {
   const [cohortSelectedYears, setCohortSelectedYears] = useState<string[]>([]);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
+  const [spOthersModalOpen, setSpOthersModalOpen] = useState(false);
+  const [spOthersSearch, setSpOthersSearch] = useState("");
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {
@@ -991,11 +994,11 @@ export default function RepeatVisitsPage() {
             <InsightBox text="This chart breaks down repeat visit frequency into same-specialty and different-specialty buckets. A high proportion of same-specialty visits may indicate chronic condition management, while cross-specialty visits suggest multi-morbidity or referral patterns." />
           </CVCard>}
 
-          {/* Specialty Treemap */}
+          {/* Specialty — Modern Treemap (rank-graded single-color, soft tiles) */}
           {isChartVisible("specialtyTreemap") && <CVCard accentColor={"#6366f1"} title="Repeat Patients by Specialty" chartId="specialtyTreemap"
-            tooltipText="Treemap visualization where each tile represents a medical specialty. Tile area is proportional to the number of repeat patients, and color intensity reflects frequency share. Use the year selector to compare across periods."
-            subtitle="Highlight specialties for the most Repeat visits to pinpoint ongoing care needs and highlight resource allocations"
-            chartData={charts?.specialtyTreemap?.[treemapYear]} chartTitle="Repeat Patients by Specialty" chartDescription="Specialty treemap showing repeat visit volumes"
+            tooltipText="Treemap of repeat patients by specialty. Each tile's area is proportional to the repeat-patient count; tiles are graded from deep indigo (largest) to soft lavender (smallest) so dominance reads at a glance. Top 12 specialties shown individually; the long tail collapses into an 'Others' tile."
+            subtitle="Tile size = repeat-patient volume; color saturation grades by rank"
+            chartData={charts?.specialtyTreemap?.[treemapYear]} chartTitle="Repeat Patients by Specialty" chartDescription="Treemap of repeat-patient volume per specialty with rank-graded coloring"
             rightHeader={
               charts?.treemapYears?.length > 0 ? (
                 <select
@@ -1010,62 +1013,202 @@ export default function RepeatVisitsPage() {
                 </select>
               ) : null
             }>
-            <ResetFilter visible={treemapYear !== ""} onClick={() => setTreemapYear("")} />
-            <div className="overflow-x-auto">
-              <div style={{ height: 290, minWidth: 400 }}>
-                <ReactECharts style={{ height: "100%", width: "100%" }} option={{
-                  tooltip: {
-                    trigger: "item",
-                    backgroundColor: "#fff",
-                    borderColor: T.border,
-                    borderWidth: 1,
-                    padding: [10, 14],
-                    textStyle: { fontSize: 12, color: T.textPrimary },
-                    extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
-                    formatter: (p: any) => {
-                      const d = p.data;
-                      return `<strong>${d.name}</strong><br/>${formatNum(d.value)} repeat patients<br/>Avg <strong>${d.avgVisits || "—"} OHC visits</strong> per patient`;
-                    },
+            {(() => {
+              const raw: Array<{ name: string; value: number; avgVisits?: number }> = (charts?.specialtyTreemap?.[treemapYear] || []);
+              const sorted = [...raw].sort((a, b) => b.value - a.value);
+              const TOP_N = 12;
+              const top = sorted.slice(0, TOP_N);
+              const tail = sorted.slice(TOP_N);
+              const tailSum = tail.reduce((s, r) => s + r.value, 0);
+              // Shorten verbose doctor names ("Dr Bhagyalakshmi S" → "Bhagyalakshmi S",
+              // "Dr Kamireddy Srilakshmi" → "Kamireddy S.") so labels never spill into the
+              // percentage. Caps at 16 chars with an ellipsis.
+              const shortName = (n: string): string => {
+                if (!n) return "";
+                let s = n.replace(/^(Dr|Mr|Ms|Mrs)\.?\s+/i, "").trim();
+                // Collapse "First Last1 Last2" → "First L." when too long
+                if (s.length > 16) {
+                  const parts = s.split(/\s+/);
+                  if (parts.length >= 2) {
+                    s = `${parts[0]} ${parts.slice(1).map((p) => (p[0] || "")).join(".")}`;
+                  }
+                }
+                if (s.length > 16) s = s.slice(0, 15) + "…";
+                return s;
+              };
+              // Only the real top tiles go in the treemap. The long-tail
+              // "Others" rollup becomes a pill below the chart — keeping it
+              // out of the visual prevents one giant gray block from
+              // dominating the layout when the tail is 50%+ of total.
+              const tiles = top.map((d) => ({ ...d, isOthers: false }));
+              const grandTotal = sorted.reduce((s, r) => s + r.value, 0) || 1;
+              const topShown = top.reduce((s, r) => s + r.value, 0);
+              const topShownPct = Math.round((topShown / grandTotal) * 100);
+              const tailPct = Math.round((tailSum / grandTotal) * 100);
+              const dominant = sorted[0];
+              const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
+              // Rank-graded color: tile 0 (largest) = deep indigo, last = soft lavender.
+              // Single-family ramp reads as a heatmap-style hierarchy.
+              const RAMP_FROM = "#3730a3";
+              const RAMP_TO = "#c7d2fe";
+              const data = tiles.map((d, i) => {
+                const t = tiles.length === 1 ? 0 : i / (tiles.length - 1);
+                const isOthers = (d as any).isOthers || false;
+                const fill = isOthers ? "#9ca3af" : interpolateHex(RAMP_FROM, RAMP_TO, t);
+                return {
+                  name: d.name,
+                  shortLabel: isOthers ? `Others (${tail.length})` : shortName(d.name),
+                  value: d.value,
+                  avgVisits: d.avgVisits,
+                  isOthers,
+                  itemStyle: {
+                    color: fill,
+                    borderColor: "transparent",
+                    borderWidth: 0,
+                    borderRadius: 10,
+                    gapWidth: 6,
+                    shadowBlur: 0,
                   },
-                  series: [{
-                    type: "treemap",
-                    data: (charts?.specialtyTreemap?.[treemapYear] || []).map((d: any, i: number) => ({
-                      ...d,
-                      itemStyle: { color: TREEMAP_COLORS[i % TREEMAP_COLORS.length], borderColor: "#fff", borderWidth: 1 },
-                    })),
-                    roam: false,
-                    nodeClick: false,
-                    breadcrumb: { show: false },
-                    label: {
-                      show: true,
-                      position: "insideTopLeft",
-                      padding: [4, 5],
-                      overflow: "break",
-                      formatter: (p: any) => {
-                        const items = charts?.specialtyTreemap?.[treemapYear] || [];
-                        const total = items.reduce((s: number, t: any) => s + t.value, 0);
-                        const share = total > 0 ? p.value / total : 0;
-                        if (share < 0.04) return `{nameXS|${p.data.name}}`;
-                        if (share < 0.08) return `{nameS|${p.data.name}}`;
-                        return `{name|${p.data.name}}\n{val|avg ${p.data.avgVisits || "—"} visits}`;
-                      },
-                      rich: {
-                        name: { fontSize: 11, fontWeight: 700, color: "#fff", lineHeight: 16 },
-                        val: { fontSize: 10, color: "rgba(255,255,255,0.75)", lineHeight: 14 },
-                        nameS: { fontSize: 9, fontWeight: 700, color: "#fff", lineHeight: 12 },
-                        nameXS: { fontSize: 7, fontWeight: 700, color: "#fff", lineHeight: 9 },
-                      },
-                    },
-                    width: "100%",
-                    height: "100%",
-                    levels: [{
-                      itemStyle: { borderColor: "#fff", borderWidth: 1, gapWidth: 0 },
-                    }],
-                  }],
-                }} />
-              </div>
-            </div>
-            <InsightBox text={`Specialty treemap for ${treemapYear || "the selected year"} shows which departments drive the most repeat visits. Larger tiles indicate specialties with higher repeat patient volumes — consider prioritizing continuity-of-care programs for these areas.`} />
+                };
+              });
+              return (
+                <div className="flex-1 flex flex-col">
+                  {/* Hero strip above the treemap — tight spacing so the chart
+                      sits directly below without dead space */}
+                  <div className="flex items-end justify-between gap-4 mb-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Repeat Patients (top {tiles.length})</p>
+                      <p className="text-[24px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(topShown)}<span className="text-[12px] font-medium ml-1.5" style={{ color: T.textSecondary }}>· {topShownPct}% of pool</span></p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Specialty</p>
+                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[200px]" style={{ color: RAMP_FROM }}>
+                        {dominant?.name || "—"}
+                        <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
+                      </p>
+                    </div>
+                  </div>
+                  {/* Treemap */}
+                  <div style={{ height: 380, minHeight: 320 }}>
+                    <ReactECharts
+                      style={{ height: "100%", width: "100%" }}
+                      option={{
+                        backgroundColor: "transparent",
+                        tooltip: {
+                          trigger: "item",
+                          backgroundColor: "#fff",
+                          borderColor: T.border,
+                          borderWidth: 1,
+                          padding: [10, 14],
+                          textStyle: { fontSize: 12, color: T.textPrimary },
+                          extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
+                          formatter: (p: any) => {
+                            const d = p.data || {};
+                            const pct = grandTotal > 0 ? Math.round((d.value / grandTotal) * 1000) / 10 : 0;
+                            return `<strong>${d.name}</strong><br/>${formatNum(d.value)} repeat patients (${pct}%)${d.avgVisits ? `<br/>Avg <strong>${d.avgVisits}</strong> OHC visits per patient` : ""}`;
+                          },
+                        },
+                        series: [{
+                          type: "treemap",
+                          data,
+                          // Force the treemap canvas to fill the entire
+                          // container — defaults reserve 12% padding on every
+                          // side which is what was creating the dead band
+                          // between the hero strip and the first tile row.
+                          top: 0, bottom: 0, left: 0, right: 0,
+                          width: "100%",
+                          height: "100%",
+                          roam: false,
+                          nodeClick: false,
+                          breadcrumb: { show: false },
+                          // No stacked padding — tiles use gapWidth instead of borders
+                          leafDepth: 1,
+                          squareRatio: 0.5 * (1 + Math.sqrt(5)), // golden-ratio squarify → balanced shapes
+                          label: {
+                            show: true,
+                            position: "insideTopLeft",
+                            color: "#fff",
+                            fontFamily: "var(--font-inter), system-ui, sans-serif",
+                            overflow: "truncate",
+                            ellipsis: "…",
+                            padding: [10, 12, 10, 12],
+                            // Rich-text 3-line stack: name (bold), count
+                            // (medium), pct (light). All tiles get the
+                            // count + pct readout; thresholds only adjust
+                            // density on cramped tiles.
+                            formatter: (p: any) => {
+                              const pct = Math.round((p.value / grandTotal) * 1000) / 10;
+                              const share = grandTotal > 0 ? p.value / grandTotal : 0;
+                              const label = p.data.shortLabel || p.data.name;
+                              if (share < 0.03) {
+                                // Tiny tile — only count + pct, name is in tooltip
+                                return `{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
+                              }
+                              if (share < 0.05) {
+                                // Compact — single-line count · pct under name
+                                return `{name|${label}}\n{compact|${formatNum(p.value)} · ${pct}%}`;
+                              }
+                              // Roomy — 3-line stack
+                              return `{name|${label}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
+                            },
+                            rich: {
+                              name:    { fontSize: 12, fontWeight: 700, color: "#fff", lineHeight: 16, padding: [0, 0, 2, 0] },
+                              val:     { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.92)", lineHeight: 14 },
+                              pct:     { fontSize: 10.5, fontWeight: 500, color: "rgba(255,255,255,0.78)", lineHeight: 13 },
+                              compact: { fontSize: 10.5, fontWeight: 500, color: "rgba(255,255,255,0.85)", lineHeight: 14 },
+                            },
+                          },
+                          itemStyle: {
+                            borderColor: "transparent",
+                            borderWidth: 0,
+                            gapWidth: 6,
+                          },
+                          // Single level — disable depth-based color rotation (we
+                          // colour tiles individually via the data array)
+                          colorMappingBy: "id",
+                          levels: [{
+                            itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 },
+                            upperLabel: { show: false },
+                          }],
+                          emphasis: {
+                            itemStyle: {
+                              shadowBlur: 18,
+                              shadowOffsetY: 4,
+                              shadowColor: "rgba(55,48,163,0.30)",
+                              borderColor: "rgba(55,48,163,0.45)",
+                              borderWidth: 2,
+                            },
+                            label: { fontWeight: 800 },
+                          },
+                          animationDuration: 600,
+                          animationEasing: "cubicOut" as const,
+                        }],
+                      }}
+                    />
+                  </div>
+                  {/* Footer: Others pill (clickable → modal) + gradient legend */}
+                  <div className="flex items-center justify-between gap-3 mt-2.5 text-[10.5px]" style={{ color: T.textMuted }}>
+                    {tail.length > 0 ? (
+                      <button
+                        onClick={() => { setSpOthersSearch(""); setSpOthersModalOpen(true); }}
+                        className="inline-flex items-center gap-2 rounded-full px-3 py-1 transition hover:shadow-sm hover:border-indigo-300"
+                        style={{ background: "#f3f4f6", border: `1px solid ${T.borderLight}` }}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ background: "#9ca3af" }} />
+                        <span><strong style={{ color: T.textPrimary }}>+ {tail.length}</strong> smaller specialties · <strong style={{ color: T.textPrimary }}>{formatNum(tailSum)}</strong> patients ({tailPct}%)</span>
+                        <span className="text-[10px] font-semibold ml-1" style={{ color: "#4f46e5" }}>View →</span>
+                      </button>
+                    ) : <span />}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span>Largest</span>
+                      <span className="w-12 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${RAMP_FROM}, ${RAMP_TO})` }} />
+                      <span>Smallest</span>
+                    </div>
+                  </div>
+                  <InsightBox text={`${formatNum(grandTotal)} repeat patients across ${sorted.length} specialties — top ${tiles.length} shown above carry ${topShownPct}% of the repeat pool${tail.length > 0 ? `; the remaining ${tail.length} smaller specialties combine to ${tailPct}%` : ""}. ${dominant ? `${dominant.name} leads with ${formatNum(dominant.value)} patients (${dominantPct}%).` : ""} Tile area is proportional to volume; deeper indigo means a larger share — quickly spot which departments anchor your repeat-care load.`} />
+                </div>
+              );
+            })()}
           </CVCard>}
         </div>
 
@@ -1448,6 +1591,52 @@ export default function RepeatVisitsPage() {
           </div>
           <InsightBox text={`Cohort progression tracks ${cohortSelectedYears.length > 0 ? cohortSelectedYears.join(", ") : "selected"} year(s). The visit frequency distribution reveals whether patients are increasing or decreasing their visit frequency over time, while the BMI Sankey flow shows health outcome transitions — watch for flows moving from Above Normal to In Range as a positive indicator.`} />
         </CVCard>}
+
+        {/* Others (Specialty) breakdown modal */}
+        <Dialog open={spOthersModalOpen} onOpenChange={setSpOthersModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Others — Specialty Breakdown</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const all: Array<{ name: string; value: number; avgVisits?: number }> = (charts?.specialtyTreemap?.[treemapYear] || []);
+              const sorted = [...all].sort((a, b) => b.value - a.value);
+              const tail = sorted.slice(12);
+              const tailTotal = tail.reduce((s, r) => s + r.value, 0);
+              const grandTotal = sorted.reduce((s, r) => s + r.value, 0) || 1;
+              const q = spOthersSearch.trim().toLowerCase();
+              const filtered = q ? tail.filter((b) => b.name.toLowerCase().includes(q)) : tail;
+              return (
+                <>
+                  <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                    <strong>{tail.length}</strong> smaller specialties grouped · <strong>{formatNum(tailTotal)}</strong> total patients · <strong>{Math.round(tailTotal / grandTotal * 100)}%</strong> of pool
+                  </div>
+                  <Input placeholder="Search specialty…" value={spOthersSearch} onChange={(e) => setSpOthersSearch(e.target.value)} className="mb-3" />
+                  <ScrollArea className="h-[360px] pr-3">
+                    <div className="space-y-1">
+                      {filtered.map((b) => {
+                        const pct = Math.round((b.value / grandTotal) * 1000) / 10;
+                        const sharePct = Math.round((b.value / tailTotal) * 1000) / 10;
+                        return (
+                          <div key={b.name} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                            <span className="truncate" style={{ color: T.textSecondary }}>{b.name}</span>
+                            <span className="flex items-baseline gap-2 shrink-0">
+                              <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.value)}</span>
+                              <span className="text-[11px] tabular-nums" style={{ color: T.textMuted }}>{pct}% pool · {sharePct}% of others</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {filtered.length === 0 && (
+                        <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No specialties match &ldquo;{spOthersSearch}&rdquo;</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
 
         {/* Others (Location) breakdown modal */}
         <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>

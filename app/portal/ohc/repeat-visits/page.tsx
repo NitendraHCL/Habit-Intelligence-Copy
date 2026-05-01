@@ -92,7 +92,8 @@ function CVCard({
   const [expanded, setExpanded] = useState(false);
   return (
     <div
-      className={`bg-white rounded-2xl overflow-hidden transition-all ${expanded ? "col-span-full" : ""} ${className}`}
+      data-chart-card
+      className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
       {(title || accentColor) && (
@@ -102,7 +103,7 @@ function CVCard({
             <div className="flex items-start justify-between">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-[15px] font-bold" style={{ color: T.textPrimary }}>{title}</h3>
+                  <h3 className="text-[15px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>{title}</h3>
                   {tooltipText && (
                     <Tooltip>
                       <TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger>
@@ -110,7 +111,7 @@ function CVCard({
                     </Tooltip>
                   )}
                 </div>
-                {subtitle && <p className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
+                {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
@@ -126,44 +127,65 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5">{children}</div>
+      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
     </div>
   );
 }
 
 // ─── Stat Card ───
-function StatCard({ label, value, color, sub, icon, trend }: {
+// Mirrors the KPI cards on /portal/ohc/utilization: card is `h-full flex flex-col`,
+// inner padded body is `flex-1 flex flex-col` so the optional insight blob can be
+// bottom-pinned via `mt-auto pt-4`.
+function StatCard({ label, value, color, sub, icon, trend, tooltip, insight }: {
   label: string; value: string | number; color: string; sub?: string;
   icon?: React.ReactNode; trend?: { value: number; label: string };
+  tooltip?: string; insight?: string;
 }) {
   return (
     <div
-      className="bg-white rounded-2xl px-5 py-4 flex flex-col gap-1"
+      className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col"
       style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
     >
-      <div className="flex items-center gap-2 mb-1">
-        {icon && <span style={{ color: T.textMuted }}>{icon}</span>}
-        <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{label}</p>
+      <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+        <div className="flex items-center gap-1.5">
+          {icon && <span style={{ color: T.textMuted }}>{icon}</span>}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{label}</p>
+          {tooltip && (
+            <Tooltip>
+              <TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger>
+              <TooltipContent className="text-xs max-w-xs">{tooltip}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color }}>{value}</p>
+        {trend && (
+          <span
+            className="inline-flex items-center self-start mt-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-bold"
+            style={{ backgroundColor: (trend.value >= 0 ? T.green : T.coral) + "18", color: trend.value >= 0 ? T.green : T.coral }}
+          >
+            {trend.value >= 0 ? "↑" : "↓"} {Math.abs(trend.value)}% {trend.label}
+          </span>
+        )}
+        {sub && <p className="text-xs mt-2" style={{ color: T.textSecondary }}>{sub}</p>}
+        {insight && (
+          <div className="mt-auto pt-4">
+            <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{insight}</p>
+          </div>
+        )}
       </div>
-      <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em]" style={{ color }}>{value}</p>
-      {sub && <p className="text-[12px] leading-relaxed" style={{ color: T.textSecondary }}>{sub}</p>}
-      {trend && (
-        <span
-          className="inline-flex items-center self-start mt-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold"
-          style={{ backgroundColor: (trend.value >= 0 ? T.green : T.coral) + "18", color: trend.value >= 0 ? T.green : T.coral }}
-        >
-          {trend.value >= 0 ? "↑" : "↓"} {Math.abs(trend.value)}% {trend.label}
-        </span>
-      )}
     </div>
   );
 }
 
 // ─── InsightBox ───
+// Bottom-pinned to its parent card via `mt-auto pt-4`. Requires the parent
+// CVCard body to be `flex-1 flex flex-col` so the auto margin has room to push.
 function InsightBox({ text }: { text: string }) {
   return (
-    <div className="rounded-[14px] px-4 py-3 mt-4 text-[12px] leading-relaxed" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
-      {text}
+    <div className="mt-auto pt-4">
+      <div className="rounded-[14px] px-4 py-3.5 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>
+        {text}
+      </div>
     </div>
   );
 }
@@ -510,6 +532,8 @@ export default function RepeatVisitsPage() {
               sub={`Employees with ≥ ${minVisits} OHC visits in selected date range`}
               icon={<Users size={16} />}
               trend={{ value: 15, label: "vs last" }}
+              tooltip={`Distinct employees with at least ${minVisits} OHC consultations in the selected period`}
+              insight={`Employees who returned ${minVisits}+ times for any OHC service — a strong signal for ongoing care needs`}
             />
             <StatCard
               label="Avg Visit Frequency"
@@ -518,6 +542,8 @@ export default function RepeatVisitsPage() {
               sub="visits per repeater"
               icon={<TrendingUp size={16} />}
               trend={{ value: 8, label: "vs last" }}
+              tooltip="Average number of OHC consultations per repeat patient"
+              insight="Higher frequency typically reflects chronic management or active treatment plans"
             />
             <StatCard
               label="Total Consults by Repeat Users"
@@ -526,6 +552,8 @@ export default function RepeatVisitsPage() {
               sub="total visits"
               icon={<Repeat size={16} />}
               trend={{ value: -5, label: "vs last" }}
+              tooltip="Sum of all consultations contributed by the repeat-patient cohort"
+              insight="Volume driven by repeaters — lever for capacity and bundled care planning"
             />
             <StatCard
               label="Avg NPS"
@@ -534,6 +562,8 @@ export default function RepeatVisitsPage() {
               sub="patient satisfaction"
               icon={<Star size={16} />}
               trend={{ value: 5, label: "vs last" }}
+              tooltip="Mean Net Promoter Score across repeat patients (0–10 scale)"
+              insight="Watch for NPS dips alongside rising visit frequency — could signal unmet needs"
             />
           </div>}
 
@@ -591,9 +621,7 @@ export default function RepeatVisitsPage() {
           <p className="text-[18px] font-extrabold mt-4" style={{ color: T.textPrimary }}>
             {formatNum(totalConditionPatients)} <span className="text-[13px] font-normal" style={{ color: T.textSecondary }}>total patients (based on current selection)</span>
           </p>
-          <div className="mt-4">
-            <InsightBox text={`Out of ${formatNum(totalConditionPatients)} repeat patients, ${chronicPct}% have chronic conditions and ${100 - chronicPct}% have acute conditions. ${chronicPct > 50 ? "Chronic cases dominate the repeat visit pool, indicating ongoing care management needs." : "Acute cases form a larger share, suggesting episodic health issues drive repeat visits."}`} />
-          </div>
+          <InsightBox text={`Out of ${formatNum(totalConditionPatients)} repeat patients, ${chronicPct}% have chronic conditions and ${100 - chronicPct}% have acute conditions. ${chronicPct > 50 ? "Chronic cases dominate the repeat visit pool, indicating ongoing care management needs." : "Acute cases form a larger share, suggesting episodic health issues drive repeat visits."}`} />
         </CVCard>}
 
         {/* ── Demographics Row ── */}
@@ -612,9 +640,7 @@ export default function RepeatVisitsPage() {
               </ResponsiveContainer>
             </div>
             <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <div className="mt-3">
-              <InsightBox text={`Repeat patients are spread across ${ageData.length} age groups. The radar shape highlights which age brackets contribute most to repeat visits — look for the largest spikes to identify high-utilization demographics.`} />
-            </div>
+            <InsightBox text={`Repeat patients are spread across ${ageData.length} age groups. The radar shape highlights which age brackets contribute most to repeat visits — look for the largest spikes to identify high-utilization demographics.`} />
           </CVCard>}
 
           {/* Gender Split - Donut */}
@@ -636,9 +662,7 @@ export default function RepeatVisitsPage() {
               </ResponsiveContainer>
             </div>
             <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <div className="mt-3">
-              <InsightBox text={`Gender distribution across ${formatNum(genderTotal)} repeat patients. ${genderData.length > 0 ? `Includes ${genderData.map((g: any) => g.label).join(", ")} segments.` : ""} Identify gender-specific patterns to tailor health programs accordingly.`} />
-            </div>
+            <InsightBox text={`Gender distribution across ${formatNum(genderTotal)} repeat patients. ${genderData.length > 0 ? `Includes ${genderData.map((g: any) => g.label).join(", ")} segments.` : ""} Identify gender-specific patterns to tailor health programs accordingly.`} />
           </CVCard>}
 
           {/* Location Distribution - Pie */}
@@ -660,9 +684,7 @@ export default function RepeatVisitsPage() {
               </ResponsiveContainer>
             </div>
             <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <div className="mt-3">
-              <InsightBox text={`${formatNum(locationTotal)} repeat patients spread across ${locationData.length} locations. Review which locations have disproportionately high repeat volumes to allocate resources and investigate root causes.`} />
-            </div>
+            <InsightBox text={`${formatNum(locationTotal)} repeat patients spread across ${locationData.length} locations. Review which locations have disproportionately high repeat volumes to allocate resources and investigate root causes.`} />
           </CVCard>}
         </div>
 
@@ -692,9 +714,7 @@ export default function RepeatVisitsPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="mt-3">
-              <InsightBox text="This chart breaks down repeat visit frequency into same-specialty and different-specialty buckets. A high proportion of same-specialty visits may indicate chronic condition management, while cross-specialty visits suggest multi-morbidity or referral patterns." />
-            </div>
+            <InsightBox text="This chart breaks down repeat visit frequency into same-specialty and different-specialty buckets. A high proportion of same-specialty visits may indicate chronic condition management, while cross-specialty visits suggest multi-morbidity or referral patterns." />
           </CVCard>}
 
           {/* Specialty Treemap */}
@@ -771,9 +791,7 @@ export default function RepeatVisitsPage() {
                 }} />
               </div>
             </div>
-            <div className="mt-3">
-              <InsightBox text={`Specialty treemap for ${treemapYear || "the selected year"} shows which departments drive the most repeat visits. Larger tiles indicate specialties with higher repeat patient volumes — consider prioritizing continuity-of-care programs for these areas.`} />
-            </div>
+            <InsightBox text={`Specialty treemap for ${treemapYear || "the selected year"} shows which departments drive the most repeat visits. Larger tiles indicate specialties with higher repeat patient volumes — consider prioritizing continuity-of-care programs for these areas.`} />
           </CVCard>}
         </div>
 
@@ -807,9 +825,7 @@ export default function RepeatVisitsPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="mt-3">
-              <InsightBox text="Condition transition patterns reveal how repeat patients move between chronic and acute categories over successive visits. High chronic-to-chronic volumes suggest persistent conditions requiring ongoing management, while acute-to-chronic transitions may indicate disease progression." />
-            </div>
+            <InsightBox text="Condition transition patterns reveal how repeat patients move between chronic and acute categories over successive visits. High chronic-to-chronic volumes suggest persistent conditions requiring ongoing management, while acute-to-chronic transitions may indicate disease progression." />
           </CVCard>}
 
           {/* Visit Frequency & NPS Response */}
@@ -834,9 +850,7 @@ export default function RepeatVisitsPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="mt-3">
-              <InsightBox text="Compare NPS response rates and average satisfaction across visit frequency buckets. An upward NPS trend with higher visit counts suggests that frequent visitors are more engaged and satisfied, while a decline may signal care fatigue or unresolved issues." />
-            </div>
+            <InsightBox text="Compare NPS response rates and average satisfaction across visit frequency buckets. An upward NPS trend with higher visit counts suggests that frequent visitors are more engaged and satisfied, while a decline may signal care fatigue or unresolved issues." />
           </CVCard>}
         </div>
 
@@ -900,9 +914,7 @@ export default function RepeatVisitsPage() {
               })}
             </div>
           </div>
-          <div className="mt-4">
-            <InsightBox text={`Viewing ${condTableType} recurring conditions. Review conditions with high patient volume but low NPS scores (below 50) to prioritize care improvement initiatives. Conditions with high NPS response rates provide more reliable satisfaction data.`} />
-          </div>
+          <InsightBox text={`Viewing ${condTableType} recurring conditions. Review conditions with high patient volume but low NPS scores (below 50) to prioritize care improvement initiatives. Conditions with high NPS response rates provide more reliable satisfaction data.`} />
         </CVCard>}
 
         {/* ── Key Repeat User Segments ── */}
@@ -992,9 +1004,7 @@ export default function RepeatVisitsPage() {
             })}
           </div>
           </div>
-          <div className="mt-4">
-            <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically have higher NPS and response rates, indicating stronger care relationships. Use these insights to design retention and loyalty programs." />
-          </div>
+          <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically have higher NPS and response rates, indicating stronger care relationships. Use these insights to design retention and loyalty programs." />
         </CVCard>}
 
         {/* ── Same Cohort Progression ── */}
@@ -1162,9 +1172,7 @@ export default function RepeatVisitsPage() {
             </div>
           </div>
           </div>
-          <div className="mt-4">
-            <InsightBox text={`Cohort progression tracks ${cohortSelectedYears.length > 0 ? cohortSelectedYears.join(", ") : "selected"} year(s). The visit frequency distribution reveals whether patients are increasing or decreasing their visit frequency over time, while the BMI Sankey flow shows health outcome transitions — watch for flows moving from Above Normal to In Range as a positive indicator.`} />
-          </div>
+          <InsightBox text={`Cohort progression tracks ${cohortSelectedYears.length > 0 ? cohortSelectedYears.join(", ") : "selected"} year(s). The visit frequency distribution reveals whether patients are increasing or decreasing their visit frequency over time, while the BMI Sankey flow shows health outcome transitions — watch for flows moving from Above Normal to In Range as a positive indicator.`} />
         </CVCard>}
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { T, CHART_PALETTE } from "@/lib/ui/theme";
+import { T, CHART_PALETTE, GENDER_COLORS } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -15,6 +15,8 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ChartComments } from "@/components/ui/chart-comments";
 import {
   Info,
@@ -54,6 +56,8 @@ import {
   Pie,
   Cell,
   Line,
+  LabelList,
+  ReferenceLine,
 } from "recharts";
 import { format } from "date-fns";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
@@ -301,6 +305,8 @@ export default function RepeatVisitsPage() {
   const [treemapYear, setTreemapYear] = useState<string>("");
   const [condTableType, setCondTableType] = useState<"chronic" | "acute">("chronic");
   const [cohortSelectedYears, setCohortSelectedYears] = useState<string[]>([]);
+  const [othersModalOpen, setOthersModalOpen] = useState(false);
+  const [othersSearch, setOthersSearch] = useState("");
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = (chartId: string) => {
@@ -400,7 +406,14 @@ export default function RepeatVisitsPage() {
     return { combined, colors: COHORT_COLORS, thresholds };
   }, [charts?.cohortVisitFrequency, cohortSelectedYears]);
 
-  const GENDER_COLORS_MAP: Record<string, string> = { MALE: "#0d9488", FEMALE: "#a78bfa", OTHER: "#a1a1aa" };
+  // Use the portal-wide theme palette (Male = teal, Female = lilac, Others
+  // = gray). Same scheme used on Utilization / Health Insights / EWB.
+  // Includes an `Others` alias on top of the theme's `Other`.
+  const GENDER_COLORS_MAP: Record<string, string> = {
+    ...GENDER_COLORS,
+    Others: GENDER_COLORS.Other,
+    OTHERS: GENDER_COLORS.Other,
+  };
   const LOCATION_COLORS = ["#4f46e5", "#0d9488", "#6366f1", "#14b8a6", "#7c3aed", "#8b5cf6", "#818cf8", "#06b6d4"];
 
   return (
@@ -626,65 +639,326 @@ export default function RepeatVisitsPage() {
 
         {/* ── Demographics Row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Age Groups - Radar */}
-          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age Groups" tooltipText="Radar chart showing how repeat patients are distributed across age brackets. Wider coverage toward an age group indicates a higher concentration of repeat visitors in that segment." subtitle="Distribution of repeat patients by age range" chartId="ageGroups" chartData={ageData} chartTitle="Age Groups" chartDescription="Distribution of repeat patients by age range">
-            <div style={{ height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={ageData} cx="50%" cy="50%" outerRadius="70%">
-                  <PolarGrid stroke={T.borderLight} />
-                  <PolarAngleAxis dataKey="label" tick={{ fontSize: 11, fill: T.textSecondary }} />
-                  <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textMuted }} angle={30} />
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                  <Radar name="Patients" dataKey="count" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.18} strokeWidth={2} dot={{ r: 4, fill: "#4f46e5" }} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <InsightBox text={`Repeat patients are spread across ${ageData.length} age groups. The radar shape highlights which age brackets contribute most to repeat visits — look for the largest spikes to identify high-utilization demographics.`} />
+          {/* Age × Gender — Population Pyramid */}
+          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age × Gender Pyramid" tooltipText="Population pyramid showing repeat-patient distribution across age bands, split by gender. Male counts extend left, female counts extend right; bar length is proportional to the patient count in each age × gender cell. Click any bar to filter the dashboard." subtitle="Repeat patients by age band, split by gender (male ← → female)" chartId="ageGroups" chartData={charts?.demographics?.ageGenderPyramid || []} chartTitle="Age × Gender Pyramid" chartDescription="Repeat-patient distribution by age band split by gender">
+            {(() => {
+              const pyramid: Array<{ ageGroup: string; male: number; female: number; others: number; total: number }>
+                = charts?.demographics?.ageGenderPyramid || [];
+              if (!pyramid.length) {
+                return <div className="flex-1 flex items-center justify-center text-[12px]" style={{ color: T.textMuted }}>No data available for the selected filters.</div>;
+              }
+              const maxAbs = Math.max(1, ...pyramid.flatMap((r) => [r.male, r.female]));
+              // Symmetric domain so the visual scale on each side is identical
+              const data = pyramid.map((r) => ({
+                ...r,
+                maleNeg: -r.male,
+              }));
+              const totalAll = pyramid.reduce((s, r) => s + r.total, 0) || 1;
+              const dominantAge = pyramid.reduce((acc, r) => (r.total > acc.total ? r : acc), pyramid[0]);
+              return (
+                <div className="flex-1 flex flex-col mt-2">
+                  {/* Hero row */}
+                  <div className="flex items-end justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Repeat Patients</p>
+                      <p className="text-[28px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(totalAll)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Age Band</p>
+                      <p className="text-[16px] font-extrabold leading-tight" style={{ color: "#4f46e5" }}>{dominantAge?.ageGroup} <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>({Math.round((dominantAge.total / totalAll) * 100)}%)</span></p>
+                    </div>
+                  </div>
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 mb-2 text-[11px]" style={{ color: T.textSecondary }}>
+                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: GENDER_COLORS_MAP.Male }} /> Male</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: GENDER_COLORS_MAP.Female }} /> Female</span>
+                  </div>
+                  {/* Pyramid */}
+                  <div style={{ height: 260 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 4, right: 24, left: 24, bottom: 4 }} barCategoryGap="22%">
+                        <CartesianGrid horizontal={false} stroke={T.borderLight} strokeDasharray="3 3" />
+                        <XAxis
+                          type="number"
+                          domain={[-maxAbs, maxAbs]}
+                          tickFormatter={(v: number) => formatNum(Math.abs(v))}
+                          tick={{ fontSize: 10, fill: T.textMuted }}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="ageGroup"
+                          tick={{ fontSize: 12, fill: T.textPrimary, fontWeight: 600 }}
+                          width={50}
+                        />
+                        <ReferenceLine x={0} stroke={T.border} />
+                        <RechartsTooltip
+                          contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
+                          formatter={((v: number, name: string) => {
+                            const abs = Math.abs(v);
+                            const label = name === "maleNeg" ? "Male" : name === "female" ? "Female" : name;
+                            return [formatNum(abs), label];
+                          }) as any}
+                          labelFormatter={((label: string) => `Age ${label}`) as any}
+                        />
+                        <Bar
+                          dataKey="maleNeg"
+                          name="Male"
+                          fill={GENDER_COLORS_MAP.Male}
+                          radius={[6, 0, 0, 6]}
+                          onClick={(d: any) => { setSelectedAgeGroups([d.ageGroup]); setSelectedGenders(["Male"]); }}
+                          cursor="pointer"
+                        >
+                          <LabelList
+                            dataKey="male"
+                            position="left"
+                            formatter={((v: number) => v > 0 ? formatNum(v) : "") as any}
+                            style={{ fontSize: 11, fontWeight: 700, fill: T.textPrimary }}
+                          />
+                        </Bar>
+                        <Bar
+                          dataKey="female"
+                          name="Female"
+                          fill={GENDER_COLORS_MAP.Female}
+                          radius={[0, 6, 6, 0]}
+                          onClick={(d: any) => { setSelectedAgeGroups([d.ageGroup]); setSelectedGenders(["Female"]); }}
+                          cursor="pointer"
+                        >
+                          <LabelList
+                            dataKey="female"
+                            position="right"
+                            formatter={((v: number) => v > 0 ? formatNum(v) : "") as any}
+                            style={{ fontSize: 11, fontWeight: 700, fill: T.textPrimary }}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="text-[11px] mt-2" style={{ color: T.textMuted }}>Click a bar to filter by that age × gender cohort.</p>
+                  <InsightBox text={`The ${dominantAge?.ageGroup} band carries the largest share of repeat patients (${formatNum(dominantAge?.total || 0)} — ${Math.round((dominantAge.total / totalAll) * 100)}% of total). ${dominantAge.male > dominantAge.female ? `Within this band, Male leads with ${formatNum(dominantAge.male)} vs. Female at ${formatNum(dominantAge.female)}.` : `Within this band, Female leads with ${formatNum(dominantAge.female)} vs. Male at ${formatNum(dominantAge.male)}.`} Use the asymmetry to spot age × gender cohorts that need targeted screening or outreach.`} />
+                </div>
+              );
+            })()}
           </CVCard>}
 
-          {/* Gender Split - Donut */}
-          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Donut chart displaying the gender-wise breakdown of repeat patients. Each segment shows the percentage share. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartId="genderSplit" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity">
-            <div style={{ height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={genderData} dataKey="count" nameKey="label" cx="50%" cy="50%" outerRadius={90} innerRadius={55} paddingAngle={2} strokeWidth={0}
-                    label={({ name, percent }: any) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                  >
-                    {genderData.map((g: any, i: number) => (
-                      <Cell key={g.label} fill={GENDER_COLORS_MAP[g.label] || PIE_COLORS[i]} cursor="pointer"
-                        onClick={() => setSelectedGenders([g.label])} />
+          {/* Gender Split - Horizontal 100% stacked bar */}
+          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Single horizontal 100% stacked bar — each colored segment is a gender, sized by share of repeat patients. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartId="genderSplit" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity">
+            {(() => {
+              const total = genderTotal || 1;
+              const segments = genderData
+                .map((g: any) => ({
+                  label: g.label,
+                  count: g.count,
+                  pct: Math.round((g.count / total) * 1000) / 10,
+                  color: GENDER_COLORS_MAP[g.label] || PIE_COLORS[0],
+                }))
+                .sort((a: any, b: any) => b.count - a.count);
+              const top = segments[0];
+              const second = segments[1];
+              const ratio = top && second && second.count > 0
+                ? `${(top.count / second.count).toFixed(2)} : 1`
+                : "—";
+              return (
+                <div className="flex-1 flex flex-col mt-3">
+                  {/* Hero stat row: total + dominant ratio */}
+                  <div className="flex items-end justify-between gap-4 mb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Repeat Patients</p>
+                      <p className="text-[36px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(genderTotal)}</p>
+                    </div>
+                    {top && second && (
+                      <div className="text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{top.label} : {second.label}</p>
+                        <p className="text-[28px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: top.color, fontVariantNumeric: "tabular-nums" }}>{ratio}</p>
+                      </div>
+                    )}
+                  </div>
+                  {/* Stacked bar */}
+                  <div className="w-full h-14 rounded-xl overflow-hidden flex" style={{ border: `1px solid ${T.borderLight}` }}>
+                    {segments.map((s: any) => (
+                      <button
+                        key={s.label}
+                        onClick={() => setSelectedGenders([s.label])}
+                        className="flex flex-col items-center justify-center text-white transition-all hover:brightness-110"
+                        style={{ width: `${s.pct}%`, backgroundColor: s.color, minWidth: s.count > 0 ? 56 : 0 }}
+                        title={`${s.label}: ${formatNum(s.count)} (${s.pct}%)`}
+                      >
+                        {s.pct >= 8 && (
+                          <>
+                            <span className="text-[15px] font-extrabold leading-none">{s.pct}%</span>
+                            <span className="text-[10px] font-medium opacity-90 mt-1">{s.label}</span>
+                          </>
+                        )}
+                      </button>
                     ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
-                    formatter={((v: number) => [formatNum(v), "Patients"]) as any} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <InsightBox text={`Gender distribution across ${formatNum(genderTotal)} repeat patients. ${genderData.length > 0 ? `Includes ${genderData.map((g: any) => g.label).join(", ")} segments.` : ""} Identify gender-specific patterns to tailor health programs accordingly.`} />
+                  </div>
+                  {/* Per-gender tiles — column count adapts to segment count
+                      so tiles span the full width even when only Male/Female
+                      are present (no awkward empty third slot). */}
+                  <div className="grid gap-3 mt-4" style={{ gridTemplateColumns: `repeat(${Math.max(1, segments.length)}, minmax(0, 1fr))` }}>
+                    {segments.map((s: any) => (
+                      <button
+                        key={s.label}
+                        onClick={() => setSelectedGenders([s.label])}
+                        className="flex flex-col gap-1.5 rounded-xl px-4 py-3.5 text-left transition-all hover:-translate-y-px"
+                        style={{ border: `1px solid ${s.color}30`, backgroundColor: `${s.color}0a` }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>{s.label}</span>
+                        </div>
+                        <span className="text-[22px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: s.color, fontVariantNumeric: "tabular-nums" }}>{formatNum(s.count)}</span>
+                        <span className="text-[11px]" style={{ color: T.textSecondary }}>{s.pct}% of repeat pool</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Click any segment or tile to filter the entire page.</p>
+                  <InsightBox text={`Across ${formatNum(genderTotal)} repeat patients, ${top?.label || "the largest cohort"} accounts for ${top?.pct || 0}% of visits${second ? `, with ${second.label} at ${second.pct}% (${ratio} ratio)` : ""}. Use this split to tailor program outreach and screening priorities.`} />
+                </div>
+              );
+            })()}
           </CVCard>}
 
-          {/* Location Distribution - Pie */}
-          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Pie chart showing the geographic distribution of repeat patients across locations. Larger slices indicate locations with higher repeat visit volumes. Click a slice to filter the dashboard by that location." subtitle="Geographic spread of repeat patients" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Geographic spread of repeat patients">
-            <div style={{ height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={locationData} dataKey="count" nameKey="label" cx="50%" cy="50%" outerRadius={90} paddingAngle={1} strokeWidth={0}
-                    label={({ name, percent }: any) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                  >
-                    {locationData.map((_: any, i: number) => (
-                      <Cell key={i} fill={LOCATION_COLORS[i % LOCATION_COLORS.length]} cursor="pointer"
-                        onClick={() => setSelectedLocations([locationData[i].label])} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
-                    formatter={((v: number) => [formatNum(v), "Patients"]) as any} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click any segment to filter the entire page.</p>
-            <InsightBox text={`${formatNum(locationTotal)} repeat patients spread across ${locationData.length} locations. Review which locations have disproportionately high repeat volumes to allocate resources and investigate root causes.`} />
+          {/* Location Distribution - Lollipop chart with Others rollup */}
+          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Lollipop chart of the top 10 locations by repeat-patient volume. Each row's stem length is proportional to patient count; the dot at the end carries the exact number. Smaller sites are rolled into an 'Others' bucket — click the pill below the chart to see the full breakdown." subtitle="Top 10 locations by repeat-patient volume" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Top 10 locations as a lollipop chart, with smaller sites rolled into 'Others'">
+            {(() => {
+              const rawRows: Array<{ label: string; count: number }> = locationData;
+              const othersBreakdown: Array<{ location: string; total: number }> = charts?.demographics?.othersBreakdown || [];
+              const grandTotal = rawRows.reduce((s: number, r: any) => s + r.count, 0) || 1;
+              // Hide trivial entries (<0.5% AND not the synthetic "Others" row).
+              // They go into a footnote instead so the chart isn't dominated
+              // by zero-percent rows for tiny tenants like Cisco.
+              const NOISE_THRESHOLD = 0.005; // 0.5%
+              const negligible = rawRows.filter((r) => r.label !== "Others" && (r.count / grandTotal) < NOISE_THRESHOLD && r.count > 0);
+              const rows = rawRows.filter((r) => !negligible.includes(r));
+              const maxCount = Math.max(1, ...rows.map((r) => r.count));
+              const visibleRows = rows.filter((r) => r.label !== "Others");
+              const othersRow = rows.find((r) => r.label === "Others");
+              const negligibleTotal = negligible.reduce((s, r) => s + r.count, 0);
+              // Adaptive layout — compact "stat strip" for tiny tenants
+              // (≤3 real locations OR fewer than 50 total patients). The
+              // lollipop only earns its keep when there are ≥4 rows.
+              const useCompactLayout = visibleRows.length <= 3 && !othersRow;
+              return (
+                <div className="flex-1 flex flex-col mt-3">
+                  {/* Hero */}
+                  <div className="flex items-end justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Repeat Patients</p>
+                      <p className="text-[28px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(locationTotal)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Locations</p>
+                      <p className="text-[16px] font-extrabold leading-tight" style={{ color: "#4f46e5" }}>
+                        {visibleRows.length}{othersRow ? ` + ${othersBreakdown.length}` : ""}
+                        <span className="text-[12px] font-medium ml-1" style={{ color: T.textSecondary }}>{othersRow ? "(Others rolled-up)" : ""}</span>
+                      </p>
+                    </div>
+                  </div>
+                  {/* Compact stat strip — used for small tenants */}
+                  {useCompactLayout && (
+                    <>
+                      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(1, visibleRows.length)}, minmax(0, 1fr))` }}>
+                        {visibleRows.map((r: any, i: number) => {
+                          const pct = Math.round((r.count / grandTotal) * 1000) / 10;
+                          const dotColor = LOCATION_COLORS[i % LOCATION_COLORS.length];
+                          return (
+                            <button
+                              key={r.label}
+                              onClick={() => setSelectedLocations([r.label])}
+                              className="flex flex-col gap-1.5 rounded-xl px-4 py-3.5 text-left transition-all hover:-translate-y-px"
+                              style={{ border: `1px solid ${dotColor}30`, backgroundColor: `${dotColor}0a` }}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>{r.label}</span>
+                              </div>
+                              <span className="text-[22px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: dotColor, fontVariantNumeric: "tabular-nums" }}>{formatNum(r.count)}</span>
+                              <span className="text-[11px]" style={{ color: T.textSecondary }}>{pct}% of repeat pool</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Click any tile to filter the entire page by that location.</p>
+                      {negligible.length > 0 && (
+                        <p className="text-[10px] mt-1.5" style={{ color: T.textMuted }}>+ {negligible.length} negligible site{negligible.length > 1 ? "s" : ""} (&lt;0.5% share, {formatNum(negligibleTotal)} patients combined)</p>
+                      )}
+                      <InsightBox text={`${formatNum(locationTotal)} repeat patients across ${visibleRows.length} location${visibleRows.length > 1 ? "s" : ""}. ${visibleRows[0] ? `${visibleRows[0].label} carries ${Math.round(visibleRows[0].count / grandTotal * 100)}% of the repeat pool.` : ""}`} />
+                    </>
+                  )}
+                  {!useCompactLayout && <>
+                  {/* Lollipop list — top 10 + Others row in-chart */}
+                  <div className="flex flex-col gap-2.5">
+                    {rows.map((r: any, i: number) => {
+                      const isOthers = r.label === "Others";
+                      const pct = Math.round((r.count / grandTotal) * 1000) / 10;
+                      const widthPct = Math.max(2, (r.count / maxCount) * 100);
+                      const dotColor = isOthers ? "#a1a1aa" : LOCATION_COLORS[i % LOCATION_COLORS.length];
+                      const labelText = isOthers
+                        ? `Others (${othersBreakdown.length})`
+                        : r.label;
+                      return (
+                        <button
+                          key={r.label}
+                          onClick={() => {
+                            if (isOthers) {
+                              setOthersSearch("");
+                              setOthersModalOpen(true);
+                            } else {
+                              setSelectedLocations([r.label]);
+                            }
+                          }}
+                          className="grid items-center gap-3 text-left transition-opacity hover:opacity-90"
+                          style={{ gridTemplateColumns: "minmax(140px, 28%) 1fr auto" }}
+                          title={isOthers
+                            ? `Others: ${othersBreakdown.length} smaller sites · ${formatNum(r.count)} patients (${pct}%) — click to view breakdown`
+                            : `${r.label}: ${formatNum(r.count)} (${pct}%)`}
+                        >
+                          <span className="text-[12px] font-semibold truncate flex items-center gap-1.5" style={{ color: isOthers ? T.textSecondary : T.textPrimary, fontStyle: isOthers ? "italic" : "normal" }}>
+                            {labelText}
+                            {isOthers && <span className="text-[9px] font-bold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eef2ff", color: "#4f46e5" }}>roll-up</span>}
+                          </span>
+                          <span className="relative h-3 flex items-center">
+                            <span
+                              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full"
+                              style={{ height: 2, width: `${widthPct}%`, backgroundColor: `${dotColor}66`, ...(isOthers ? { backgroundImage: `repeating-linear-gradient(90deg, ${dotColor}aa 0 4px, transparent 4px 8px)`, backgroundColor: "transparent", height: 2 } : {}) }}
+                            />
+                            <span
+                              className="absolute top-1/2 -translate-y-1/2 rounded-full"
+                              style={{ left: `calc(${widthPct}% - 6px)`, width: 12, height: 12, backgroundColor: dotColor, boxShadow: `0 0 0 3px ${dotColor}25` }}
+                            />
+                          </span>
+                          <span className="text-[12px] font-bold tabular-nums whitespace-nowrap" style={{ color: T.textPrimary }}>
+                            {formatNum(r.count)} <span className="text-[10.5px] font-medium" style={{ color: T.textMuted }}>· {pct}%</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Others pill (matches Utilization page) */}
+                  {othersRow && (
+                    <button
+                      onClick={() => { setOthersSearch(""); setOthersModalOpen(true); }}
+                      className="mt-3 w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-left transition hover:shadow-sm hover:border-indigo-300"
+                      style={{ borderColor: T.border, background: "#fafafa" }}
+                    >
+                      <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#a1a1aa" }} />
+                        <span>
+                          <strong style={{ color: T.textPrimary }}>Others:</strong> {othersBreakdown.length} smaller sites · <strong style={{ color: T.textPrimary }}>{formatNum(othersRow.count)}</strong> patients
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
+                    </button>
+                  )}
+                  <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Click any row to filter the entire page by that location.</p>
+                  {negligible.length > 0 && (
+                    <p className="text-[10px] mt-1.5" style={{ color: T.textMuted }}>+ {negligible.length} negligible site{negligible.length > 1 ? "s" : ""} (&lt;0.5% share, {formatNum(negligibleTotal)} patients combined)</p>
+                  )}
+                  <InsightBox text={`${formatNum(locationTotal)} repeat patients across ${visibleRows.length}${othersRow ? ` + ${othersBreakdown.length}` : ""} locations. ${visibleRows[0] ? `${visibleRows[0].label} leads with ${formatNum(visibleRows[0].count)} patients (${Math.round(visibleRows[0].count / grandTotal * 100)}%).` : ""} Review locations with disproportionately high repeat volumes to allocate resources and investigate root causes.`} />
+                  </>}
+                </div>
+              );
+            })()}
           </CVCard>}
         </div>
 
@@ -1174,6 +1448,46 @@ export default function RepeatVisitsPage() {
           </div>
           <InsightBox text={`Cohort progression tracks ${cohortSelectedYears.length > 0 ? cohortSelectedYears.join(", ") : "selected"} year(s). The visit frequency distribution reveals whether patients are increasing or decreasing their visit frequency over time, while the BMI Sankey flow shows health outcome transitions — watch for flows moving from Above Normal to In Range as a positive indicator.`} />
         </CVCard>}
+
+        {/* Others (Location) breakdown modal */}
+        <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Others — Location Breakdown</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const list: Array<{ location: string; total: number }> = charts?.demographics?.othersBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              const q = othersSearch.trim().toLowerCase();
+              const filtered = q ? list.filter((b: any) => b.location.toLowerCase().includes(q)) : list;
+              return (
+                <>
+                  <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                    <strong>{list.length}</strong> smaller sites grouped · <strong>{formatNum(total)}</strong> total patients
+                  </div>
+                  <Input placeholder="Search location…" value={othersSearch} onChange={(e) => setOthersSearch(e.target.value)} className="mb-3" />
+                  <ScrollArea className="h-[360px] pr-3">
+                    <div className="space-y-1">
+                      {filtered.map((b: any) => (
+                        <button
+                          key={b.location}
+                          onClick={() => { setSelectedLocations([b.location]); setOthersModalOpen(false); }}
+                          className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm text-left"
+                        >
+                          <span style={{ color: T.textSecondary }}>{b.location}</span>
+                          <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.total)}</span>
+                        </button>
+                      ))}
+                      {filtered.length === 0 && (
+                        <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No locations match &ldquo;{othersSearch}&rdquo;</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

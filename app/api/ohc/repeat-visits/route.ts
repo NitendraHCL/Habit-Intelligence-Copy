@@ -367,6 +367,33 @@ async function handler(request: NextRequest) {
       .filter((b) => freqMap[b])
       .map((b) => ({ label: `${b} Visits`, count: freqMap[b] }));
 
+    // ageGenderPyramid — derived from stats.segment keys (`visitBucket|age|gender`)
+    // by collapsing across visit buckets. One row per age group with male,
+    // female and others counts so the page can render a population pyramid
+    // (Male ←  →  Female by age band).
+    const segMap = stats.segment || {};
+    const ageGenderAcc: Record<string, { male: number; female: number; others: number }> = {};
+    for (const key of Object.keys(segMap)) {
+      const parts = key.split("|");
+      if (parts.length !== 3) continue;
+      const ageBucket = parts[1];
+      const genderBucket = parts[2];
+      const n = segMap[key] || 0;
+      if (!ageGenderAcc[ageBucket]) ageGenderAcc[ageBucket] = { male: 0, female: 0, others: 0 };
+      if (genderBucket === "Male") ageGenderAcc[ageBucket].male += n;
+      else if (genderBucket === "Female") ageGenderAcc[ageBucket].female += n;
+      else ageGenderAcc[ageBucket].others += n;
+    }
+    const ageGenderPyramid = AGE_ORDER
+      .filter((b) => ageGenderAcc[b])
+      .map((b) => ({
+        ageGroup: b,
+        male: ageGenderAcc[b].male,
+        female: ageGenderAcc[b].female,
+        others: ageGenderAcc[b].others,
+        total: ageGenderAcc[b].male + ageGenderAcc[b].female + ageGenderAcc[b].others,
+      }));
+
     // specialtyTreemap is keyed by year — agg_diagnosis has no date, so we
     // expose a single synthetic bucket "All" that the page picks up via the
     // existing year-selector machinery (it'll just show one option).
@@ -449,14 +476,30 @@ async function handler(request: NextRequest) {
       },
       charts: {
         chronicVsAcute,
-        demographics: {
-          ageGroups: ageGroupsArr,
-          genderSplit,
-          locationDistribution: Object.entries(stats.location || {})
+        demographics: (() => {
+          // Top 10 locations + an "Others" rollup (matches the Utilization
+          // page pattern). The page renders a lollipop chart for the top 10
+          // and an "X smaller sites · Y patients" pill that expands the
+          // rolled-up list in a modal.
+          const sortedLoc = Object.entries(stats.location || {})
             .map(([label, count]) => ({ label, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 25),
-        },
+            .sort((a, b) => b.count - a.count);
+          const TOP_N = 10;
+          const top = sortedLoc.slice(0, TOP_N);
+          const tail = sortedLoc.slice(TOP_N);
+          const othersTotal = tail.reduce((s, r) => s + r.count, 0);
+          const locationDistribution = othersTotal > 0
+            ? [...top, { label: "Others", count: othersTotal }]
+            : top;
+          const othersBreakdown = tail.map((r) => ({ location: r.label, total: r.count }));
+          return {
+            ageGroups: ageGroupsArr,
+            ageGenderPyramid,
+            genderSplit,
+            locationDistribution,
+            othersBreakdown,
+          };
+        })(),
         repeatVisitFrequency,
         specialtyTreemap,
         treemapYears: ["All"],

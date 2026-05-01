@@ -1,6 +1,7 @@
 "use client";
 
 import { T, CHART_PALETTE, CHART_PALETTE_EXTENDED, HEATMAP_GRADIENT, GENDER_COLORS } from "@/lib/ui/theme";
+import { interpolateHex } from "@/lib/dashboard/render-helpers";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import useSWR from "swr";
@@ -106,6 +107,14 @@ function displayCat(name: string): string {
 
 function displaySub(name: string): string {
   return SUBCATEGORY_SHORT[name] || name;
+}
+
+// Short label for treemap tiles — caps long names so they fit inside narrow
+// rectangles without truncating mid-word at the rich-text segment boundary.
+function tileLabel(name: string, max = 14): string {
+  const s = name || "";
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
 }
 
 // ─── Season mapping ───
@@ -843,195 +852,346 @@ export default function HealthInsightsPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>ICD category distribution and condition-level breakdown for the selected category</p>
       {/* ── ICD Category Treemap + Condition Treemap (50/50) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ICD Category Distribution Treemap */}
+        {/* ICD Category Distribution Treemap — same styling as Repeat Patients
+            by Specialty on /portal/ohc/repeat-visits (rank-graded indigo,
+            soft tiles with gaps, hero strip + gradient legend, plain
+            text labels). */}
         <div>
           <CVCard
             accentColor="#4f46e5"
             title="ICD Category Distribution"
-            subtitle="Most prevalent clinical conditions observed across consultations. Click any category to view its conditions breakdown on right"
-            tooltipText="Treemap showing proportional distribution of disease categories by consultation volume. Click any category to view its condition breakdown on the right panel."
+            subtitle="Tile size = consult volume per category; color saturation grades by rank. Click any category to drill into its conditions →"
+            tooltipText="Treemap of ICD-derived disease categories by consultation volume. Tiles are graded from deep indigo (largest) to soft lavender (smallest) so dominance reads at a glance. Click any tile to drill its condition breakdown into the right panel."
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
-            chartDescription="Proportional distribution of disease categories by consultation volume"
+            chartDescription="Treemap of ICD categories by consultation volume with rank-graded coloring"
           >
-            <div className="mb-1" />
-            <div style={{ height: 360 }}>
-              <ReactECharts
-                style={{ height: "100%", width: "100%" }}
-                onEvents={{
-                  click: (params: any) => {
-                    if (params.data?.name) {
-                      setSelectedCategory(params.data.name);
-                      setSelectedCondition("");
-                    }
+            {(() => {
+              const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
+              const TOP_N = 12;
+              const top = sorted.slice(0, TOP_N);
+              const tail = sorted.slice(TOP_N);
+              const tailSum = tail.reduce((s: number, r: any) => s + r.value, 0);
+              const tiles = top.map((d: any) => ({ ...d, isOthers: false }));
+              const grandTotal = sorted.reduce((s: number, r: any) => s + (r.value || 0), 0) || 1;
+              const topShown = top.reduce((s: number, r: any) => s + r.value, 0);
+              const topShownPct = Math.round((topShown / grandTotal) * 100);
+              const tailPct = Math.round((tailSum / grandTotal) * 100);
+              const dominant = sorted[0];
+              const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
+              const RAMP_FROM = "#3730a3";
+              const RAMP_TO = "#c7d2fe";
+              const data = tiles.map((d: any, i: number) => {
+                const t = tiles.length === 1 ? 0 : i / (tiles.length - 1);
+                const fill = interpolateHex(RAMP_FROM, RAMP_TO, t);
+                return {
+                  name: d.name,
+                  displayName: displayCat(d.name),
+                  value: d.value,
+                  uniquePatients: d.uniquePatients,
+                  itemStyle: {
+                    color: fill,
+                    borderColor: "transparent",
+                    borderWidth: 0,
+                    borderRadius: 10,
+                    gapWidth: 6,
                   },
-                }}
-                option={{
-                  tooltip: {
-                    trigger: "item",
-                    backgroundColor: "#fff",
-                    borderColor: T.border,
-                    borderWidth: 1,
-                    padding: [10, 14],
-                    textStyle: { fontSize: 12, color: T.textPrimary },
-                    extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
-                    formatter: (p: any) => {
-                      const d = p.data;
-                      return `<strong>${displayCat(d.name)}</strong><br/>Consults: ${formatNum(d._realValue ?? d.value)}<br/>Unique Patients: ${formatNum(d.uniquePatients || 0)}<br/>Share of total: ${d.percentage ?? 0}%`;
-                    },
-                  },
-                  series: [{
-                    type: "treemap",
-                    data: (() => {
-                      const transformed = categoryTreemap.map((item: any) => ({ ...item, _sqrtVal: Math.pow(item.value || 1, 0.35) }));
-                      const totalSqrt = transformed.reduce((s: number, t: any) => s + t._sqrtVal, 0);
-                      return transformed.map((item: any, i: number) => ({
-                        ...item,
-                        value: item._sqrtVal,
-                        _realValue: item.value,
-                        _displayPct: totalSqrt > 0 ? Math.round((item._sqrtVal / totalSqrt) * 1000) / 10 : 0,
-                        itemStyle: {
-                          color: TREEMAP_COLORS[i % TREEMAP_COLORS.length],
-                          borderColor: "#fff",
-                          borderWidth: 1,
-                          borderRadius: 0,
-                          gapWidth: 0,
+                };
+              });
+              return (
+                <div className="flex-1 flex flex-col">
+                  {/* Hero strip — total of top-N + dominant category */}
+                  <div className="flex items-end justify-between gap-4 mb-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Consults (top {tiles.length})</p>
+                      <p className="text-[24px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(topShown)}<span className="text-[12px] font-medium ml-1.5" style={{ color: T.textSecondary }}>· {topShownPct}% of pool</span></p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Category</p>
+                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[200px]" style={{ color: RAMP_FROM }}>
+                        {dominant ? displayCat(dominant.name) : "—"}
+                        <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
+                      </p>
+                    </div>
+                  </div>
+                  {/* Treemap */}
+                  <div style={{ height: 380, minHeight: 320 }}>
+                    <ReactECharts
+                      style={{ height: "100%", width: "100%" }}
+                      onEvents={{
+                        click: (params: any) => {
+                          if (params.data?.name) {
+                            setSelectedCategory(params.data.name);
+                            setSelectedCondition("");
+                          }
                         },
-                      }));
-                    })(),
-                    roam: false,
-                    nodeClick: false,
-                    breadcrumb: { show: false },
-                    label: {
-                      show: true,
-                      position: "insideTopLeft",
-                      padding: [4, 5],
-                      color: "#fff",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      fontFamily: "var(--font-inter), system-ui, sans-serif",
-                      overflow: "break",
-                      formatter: (p: any) => {
-                        const dn = displayCat(p.data.name);
-                        const totalVal = categoryTreemap.reduce((s: number, t: any) => s + Math.pow(t.value || 1, 0.35), 0);
-                        const share = totalVal > 0 ? p.value / totalVal : 0;
-                        if (share < 0.04) return `{nameXS|${dn}}`;
-                        if (share < 0.08) return `{nameS|${dn}}`;
-                        return `{name|${dn}}\n{pct|${p.data._displayPct ?? p.data.percentage}%}`;
-                      },
-                      rich: {
-                        name: { fontSize: 11, fontWeight: 600, color: "#fff", lineHeight: 16 },
-                        pct: { fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.75)", lineHeight: 14 },
-                        nameS: { fontSize: 9, fontWeight: 600, color: "#fff", lineHeight: 12 },
-                        nameXS: { fontSize: 7, fontWeight: 600, color: "#fff", lineHeight: 9 },
-                      },
-                    },
-                    itemStyle: { borderRadius: 0 },
-                  }],
-                }}
-              />
-            </div>
-            {categoryTreemap.length > 0 && (
-              <InsightBox text={`The leading ICD category is ${displayCat(categoryTreemap[0]?.name || "")} with ${formatNum(categoryTreemap[0]?.value || 0)} consultations, accounting for the largest share of clinical visits. Click any category to drill into its condition breakdown.`} />
-            )}
+                      }}
+                      option={{
+                        tooltip: {
+                          trigger: "item",
+                          backgroundColor: "#fff",
+                          borderColor: T.border,
+                          borderWidth: 1,
+                          padding: [10, 14],
+                          textStyle: { fontSize: 12, color: T.textPrimary },
+                          extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
+                          formatter: (p: any) => {
+                            const dd = p.data || {};
+                            const pct = grandTotal > 0 ? Math.round((dd.value / grandTotal) * 1000) / 10 : 0;
+                            return `<strong>${dd.displayName || dd.name}</strong><br/>${formatNum(dd.value)} consults (${pct}%)${dd.uniquePatients ? `<br/>${formatNum(dd.uniquePatients)} unique patients` : ""}`;
+                          },
+                        },
+                        series: [{
+                          type: "treemap",
+                          data,
+                          top: 0, bottom: 0, left: 0, right: 0,
+                          width: "100%",
+                          height: "100%",
+                          roam: false,
+                          nodeClick: false,
+                          breadcrumb: { show: false },
+                          leafDepth: 1,
+                          squareRatio: 0.5 * (1 + Math.sqrt(5)),
+                          label: {
+                            show: true,
+                            position: "insideTopLeft",
+                            color: "#fff",
+                            fontFamily: "var(--font-inter), system-ui, sans-serif",
+                            overflow: "truncate",
+                            ellipsis: "…",
+                            padding: [8, 10, 8, 10],
+                            // Density tiers — extreme size variation in this
+                            // dataset (one 48% tile + ten ~3-7% tiles) means
+                            // small tiles must show very little, otherwise
+                            // numbers get truncated mid-digit.
+                            //   < 2%    → no label (tooltip carries it)
+                            //   2-4%    → just the percentage
+                            //   4-8%    → short name + percentage
+                            //   ≥ 8%    → short name + count + percentage
+                            formatter: (p: any) => {
+                              const pct = Math.round((p.value / grandTotal) * 1000) / 10;
+                              const share = grandTotal > 0 ? p.value / grandTotal : 0;
+                              const label = tileLabel(p.data.displayName || p.data.name, 14);
+                              if (share < 0.02) return "";
+                              if (share < 0.04) return `{pct|${pct}%}`;
+                              if (share < 0.08) return `{name|${label}}\n{pct|${pct}%}`;
+                              return `{name|${label}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
+                            },
+                            rich: {
+                              name: { fontSize: 12, fontWeight: 700, color: "#fff", lineHeight: 16, padding: [0, 0, 2, 0] },
+                              val:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.92)", lineHeight: 14 },
+                              pct:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 14 },
+                            },
+                          },
+                          itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 },
+                          colorMappingBy: "id",
+                          levels: [{ itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 }, upperLabel: { show: false } }],
+                          emphasis: {
+                            itemStyle: {
+                              shadowBlur: 18,
+                              shadowOffsetY: 4,
+                              shadowColor: "rgba(55,48,163,0.30)",
+                              borderColor: "rgba(55,48,163,0.45)",
+                              borderWidth: 2,
+                            },
+                            label: { fontWeight: 800 },
+                          },
+                          animationDuration: 600,
+                          animationEasing: "cubicOut" as const,
+                        }],
+                      }}
+                    />
+                  </div>
+                  {/* Footer: tail summary + gradient legend */}
+                  <div className="flex items-center justify-between gap-3 mt-2.5 text-[10.5px]" style={{ color: T.textMuted }}>
+                    {tail.length > 0 ? (
+                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "#f3f4f6", border: `1px solid ${T.borderLight}` }}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: "#9ca3af" }} />
+                        <span><strong style={{ color: T.textPrimary }}>+ {tail.length}</strong> smaller categories · <strong style={{ color: T.textPrimary }}>{formatNum(tailSum)}</strong> consults ({tailPct}%)</span>
+                      </span>
+                    ) : <span />}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span>Largest</span>
+                      <span className="w-12 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${RAMP_FROM}, ${RAMP_TO})` }} />
+                      <span>Smallest</span>
+                    </div>
+                  </div>
+                  {categoryTreemap.length > 0 && (
+                    <InsightBox text={`The leading ICD category is ${displayCat(dominant?.name || "")} with ${formatNum(dominant?.value || 0)} consultations (${dominantPct}% of total). Top ${tiles.length} carry ${topShownPct}% of all consults${tail.length > 0 ? `; ${tail.length} smaller categories combine to ${tailPct}%` : ""}. Click any tile to drill into its condition breakdown.`} />
+                  )}
+                </div>
+              );
+            })()}
           </CVCard>
         </div>
 
-        {/* Condition Share Distribution */}
+        {/* Condition Share Distribution — same styling as Repeat Patients
+            by Specialty on /portal/ohc/repeat-visits */}
         <div>
           <CVCard
             accentColor="#6366f1"
             title="Condition Share Distribution"
-            subtitle="Breakdown of specific conditions within the selected category. Click to see the trends below"
-            tooltipText="Breaks down specific conditions within the selected ICD category. Tile sizes represent relative consultation volumes with power-balanced percentages."
+            subtitle="Tile size = consult volume per condition; color saturation grades by rank within the selected category"
+            tooltipText="Treemap of specific conditions within the selected ICD category. Tiles are graded by rank — deepest indigo = top condition. Click any tile to filter the trends below."
             chartId="conditionShareDistribution"
             chartData={conditionBreakdown}
-            chartDescription="Breakdown of specific conditions within the selected ICD category"
+            chartDescription="Treemap of conditions within the selected ICD category, rank-graded"
           >
-            <div className="mb-1" />
-            <div style={{ height: 360 }}>
-              {conditionBreakdown.length > 0 ? (
-                <ReactECharts
-                  style={{ height: "100%", width: "100%" }}
-                  onEvents={{
-                    click: (params: any) => {
-                      if (params.data?.name) setSelectedCondition(params.data.name);
-                    },
-                  }}
-                  option={{
-                    tooltip: {
-                      trigger: "item",
-                      backgroundColor: "#fff",
-                      borderColor: T.border,
-                      borderWidth: 1,
-                      padding: [10, 14],
-                      textStyle: { fontSize: 12, color: T.textPrimary },
-                      extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
-                      formatter: (p: any) => {
-                        const d = p.data;
-                        return `<strong>${displaySub(d.name)}</strong><br/>Consults: ${formatNum(d._realValue ?? d.value)}<br/>Unique Patients: ${formatNum(d.uniquePatients || 0)}<br/>Share of category: ${d.percentage ?? 0}%`;
-                      },
-                    },
-                    series: [{
-                      type: "treemap",
-                      data: (() => {
-                        const transformed = conditionBreakdown.map((item: any) => ({ ...item, _sqrtVal: Math.pow(item.value || 1, 0.35) }));
-                        const totalSqrt = transformed.reduce((s: number, t: any) => s + t._sqrtVal, 0);
-                        return transformed.map((item: any, i: number) => ({
-                          ...item,
-                          value: item._sqrtVal,
-                          _realValue: item.value,
-                          _displayPct: totalSqrt > 0 ? Math.round((item._sqrtVal / totalSqrt) * 1000) / 10 : 0,
-                          itemStyle: {
-                            color: CONDITION_TREEMAP_COLORS[i % CONDITION_TREEMAP_COLORS.length],
-                            borderColor: "#fff",
-                            borderWidth: 1,
-                            borderRadius: 0,
-                            gapWidth: 0,
+            {conditionBreakdown.length > 0 ? (() => {
+              const sorted = [...conditionBreakdown].sort((a: any, b: any) => b.value - a.value);
+              const TOP_N = 12;
+              const top = sorted.slice(0, TOP_N);
+              const tail = sorted.slice(TOP_N);
+              const tailSum = tail.reduce((s: number, r: any) => s + r.value, 0);
+              const tiles = top.map((d: any) => ({ ...d, isOthers: false }));
+              const grandTotal = sorted.reduce((s: number, r: any) => s + (r.value || 0), 0) || 1;
+              const topShown = top.reduce((s: number, r: any) => s + r.value, 0);
+              const topShownPct = Math.round((topShown / grandTotal) * 100);
+              const tailPct = Math.round((tailSum / grandTotal) * 100);
+              const dominant = sorted[0];
+              const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
+              const RAMP_FROM = "#3730a3";
+              const RAMP_TO = "#c7d2fe";
+              const data = tiles.map((d: any, i: number) => {
+                const t = tiles.length === 1 ? 0 : i / (tiles.length - 1);
+                const fill = interpolateHex(RAMP_FROM, RAMP_TO, t);
+                return {
+                  name: d.name,
+                  displayName: displaySub(d.name),
+                  value: d.value,
+                  uniquePatients: d.uniquePatients,
+                  itemStyle: {
+                    color: fill,
+                    borderColor: "transparent",
+                    borderWidth: 0,
+                    borderRadius: 10,
+                    gapWidth: 6,
+                  },
+                };
+              });
+              return (
+                <div className="flex-1 flex flex-col">
+                  {/* Hero strip */}
+                  <div className="flex items-end justify-between gap-4 mb-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Consults (top {tiles.length})</p>
+                      <p className="text-[24px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(topShown)}<span className="text-[12px] font-medium ml-1.5" style={{ color: T.textSecondary }}>· {topShownPct}% of category</span></p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Condition</p>
+                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[200px]" style={{ color: RAMP_FROM }}>
+                        {dominant ? displaySub(dominant.name) : "—"}
+                        <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
+                      </p>
+                    </div>
+                  </div>
+                  {/* Treemap */}
+                  <div style={{ height: 380, minHeight: 320 }}>
+                    <ReactECharts
+                      style={{ height: "100%", width: "100%" }}
+                      onEvents={{
+                        click: (params: any) => {
+                          if (params.data?.name) setSelectedCondition(params.data.name);
+                        },
+                      }}
+                      option={{
+                        tooltip: {
+                          trigger: "item",
+                          backgroundColor: "#fff",
+                          borderColor: T.border,
+                          borderWidth: 1,
+                          padding: [10, 14],
+                          textStyle: { fontSize: 12, color: T.textPrimary },
+                          extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
+                          formatter: (p: any) => {
+                            const dd = p.data || {};
+                            const pct = grandTotal > 0 ? Math.round((dd.value / grandTotal) * 1000) / 10 : 0;
+                            return `<strong>${dd.displayName || dd.name}</strong><br/>${formatNum(dd.value)} consults (${pct}%)${dd.uniquePatients ? `<br/>${formatNum(dd.uniquePatients)} unique patients` : ""}`;
                           },
-                        }));
-                      })(),
-                      roam: false,
-                      nodeClick: false,
-                      breadcrumb: { show: false },
-                      label: {
-                        show: true,
-                        position: "insideTopLeft",
-                        padding: [4, 5],
-                        color: "#fff",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        fontFamily: "var(--font-inter), system-ui, sans-serif",
-                        overflow: "truncate",
-                        ellipsis: "…",
-                        formatter: (p: any) => {
-                          const dn = displaySub(p.data.name);
-                          const totalVal = conditionBreakdown.reduce((s: number, t: any) => s + Math.pow(t.value || 1, 0.35), 0);
-                          const share = totalVal > 0 ? p.value / totalVal : 0;
-                          if (share < 0.04) return `{nameXS|${dn}}`;
-                          if (share < 0.08) return `{nameS|${dn}}`;
-                          return `{name|${dn}}\n{pct|${p.data._displayPct ?? p.data.percentage}%}`;
                         },
-                        rich: {
-                          name: { fontSize: 11, fontWeight: 600, color: "#fff", lineHeight: 16 },
-                          pct: { fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.75)", lineHeight: 14 },
-                          nameS: { fontSize: 9, fontWeight: 600, color: "#fff", lineHeight: 12 },
-                          nameXS: { fontSize: 7, fontWeight: 600, color: "#fff", lineHeight: 9 },
-                        },
-                      },
-                      itemStyle: { borderRadius: 0 },
-                    }],
-                  }}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-[13px]" style={{ color: T.textMuted }}>
-                  Click a category to explore conditions
+                        series: [{
+                          type: "treemap",
+                          data,
+                          top: 0, bottom: 0, left: 0, right: 0,
+                          width: "100%",
+                          height: "100%",
+                          roam: false,
+                          nodeClick: false,
+                          breadcrumb: { show: false },
+                          leafDepth: 1,
+                          squareRatio: 0.5 * (1 + Math.sqrt(5)),
+                          label: {
+                            show: true,
+                            position: "insideTopLeft",
+                            color: "#fff",
+                            fontFamily: "var(--font-inter), system-ui, sans-serif",
+                            overflow: "truncate",
+                            ellipsis: "…",
+                            padding: [8, 10, 8, 10],
+                            // Density tiers — extreme size variation in this
+                            // dataset (one 48% tile + ten ~3-7% tiles) means
+                            // small tiles must show very little, otherwise
+                            // numbers get truncated mid-digit.
+                            //   < 2%    → no label (tooltip carries it)
+                            //   2-4%    → just the percentage
+                            //   4-8%    → short name + percentage
+                            //   ≥ 8%    → short name + count + percentage
+                            formatter: (p: any) => {
+                              const pct = Math.round((p.value / grandTotal) * 1000) / 10;
+                              const share = grandTotal > 0 ? p.value / grandTotal : 0;
+                              const label = tileLabel(p.data.displayName || p.data.name, 14);
+                              if (share < 0.02) return "";
+                              if (share < 0.04) return `{pct|${pct}%}`;
+                              if (share < 0.08) return `{name|${label}}\n{pct|${pct}%}`;
+                              return `{name|${label}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
+                            },
+                            rich: {
+                              name: { fontSize: 12, fontWeight: 700, color: "#fff", lineHeight: 16, padding: [0, 0, 2, 0] },
+                              val:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.92)", lineHeight: 14 },
+                              pct:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 14 },
+                            },
+                          },
+                          itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 },
+                          colorMappingBy: "id",
+                          levels: [{ itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 }, upperLabel: { show: false } }],
+                          emphasis: {
+                            itemStyle: {
+                              shadowBlur: 18,
+                              shadowOffsetY: 4,
+                              shadowColor: "rgba(55,48,163,0.30)",
+                              borderColor: "rgba(55,48,163,0.45)",
+                              borderWidth: 2,
+                            },
+                            label: { fontWeight: 800 },
+                          },
+                          animationDuration: 600,
+                          animationEasing: "cubicOut" as const,
+                        }],
+                      }}
+                    />
+                  </div>
+                  {/* Footer: tail summary + gradient legend */}
+                  <div className="flex items-center justify-between gap-3 mt-2.5 text-[10.5px]" style={{ color: T.textMuted }}>
+                    {tail.length > 0 ? (
+                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "#f3f4f6", border: `1px solid ${T.borderLight}` }}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: "#9ca3af" }} />
+                        <span><strong style={{ color: T.textPrimary }}>+ {tail.length}</strong> smaller conditions · <strong style={{ color: T.textPrimary }}>{formatNum(tailSum)}</strong> consults ({tailPct}%)</span>
+                      </span>
+                    ) : <span />}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span>Largest</span>
+                      <span className="w-12 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${RAMP_FROM}, ${RAMP_TO})` }} />
+                      <span>Smallest</span>
+                    </div>
+                  </div>
+                  <InsightBox text={`Within ${displayCat(effectiveCategory)}, ${displaySub(dominant?.name || "")} leads with ${formatNum(dominant?.value || 0)} consultations (${dominantPct}% of category). Top ${tiles.length} conditions carry ${topShownPct}% of category volume${tail.length > 0 ? `; ${tail.length} smaller conditions combine to ${tailPct}%` : ""}. Click any tile to filter the trends below.`} />
                 </div>
-              )}
-            </div>
-            {conditionBreakdown.length > 0 && (
-              <InsightBox text={`Within ${displayCat(effectiveCategory)}, the top condition is ${displaySub(conditionBreakdown[0]?.name || "")} with ${formatNum(conditionBreakdown[0]?.value || 0)} consultations. This breakdown shows how specific conditions contribute to the selected ICD category.`} />
+              );
+            })() : (
+              <div className="flex-1 flex items-center justify-center text-[13px]" style={{ color: T.textMuted, minHeight: 320 }}>
+                Click a category to explore conditions
+              </div>
             )}
           </CVCard>
         </div>

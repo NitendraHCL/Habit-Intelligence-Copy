@@ -20,8 +20,8 @@ async function main() {
       table,
       label: ds.label,
       cugColumn: ds.cugColumn,
-      columns: ds.columns as unknown as object,
-      joins: (ds.joins ?? null) as unknown as object | null,
+      columns: JSON.parse(JSON.stringify(ds.columns)),
+      joins: ds.joins ? JSON.parse(JSON.stringify(ds.joins)) : undefined,
       enabled: true,
     };
     if (existing) {

@@ -55,7 +55,8 @@ import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+const ReactEChartsBase = dynamic(() => import("echarts-for-react"), { ssr: false });
+const ReactECharts = ReactEChartsBase as any;
 
 
 const MATRIX_COLORS = HEATMAP_GRADIENT;

@@ -283,7 +283,7 @@ export default function EmotionalWellbeingPage() {
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], relations: [] as string[],
   });
 
-  const [demoTab, setDemoTab] = useState<"age" | "gender">("age");
+  const [demoTab, setDemoTab] = useState<"age" | "gender" | "location" | "shift">("age");
   const [trendView, setTrendView] = useState<"year" | "month">("month");
   const [activeImpression, setActiveImpression] = useState<string>("");
   const [selectedVisitBucket, setSelectedVisitBucket] = useState<string>("");
@@ -454,7 +454,7 @@ export default function EmotionalWellbeingPage() {
     category: i.category ?? i.label ?? "Unknown",
     count: i.count,
   }));
-  const impressionsByBucket: Record<string, Array<{ category: string; count: number }>> = charts?.impressionsByVisitBucket || {};
+const impressionsByBucket: Record<string, Array<{ category: string; count: number }>> = Object.fromEntries(Object.entries(charts?.impressionsByVisitBucket || {}).map(([key, arr]) => [key, (arr as Array<{ label?: string; category?: string; count: number }>).map(i => ({ category: i.category ?? i.label ?? "Unknown", count: i.count }))]));
   const impressions = selectedVisitBucket && impressionsByBucket[selectedVisitBucket]
     ? impressionsByBucket[selectedVisitBucket]
     : allImpressions;
@@ -465,7 +465,7 @@ export default function EmotionalWellbeingPage() {
     return map;
   }, [allImpressions]);
   const selectedImpression = activeImpression || impressions[0]?.category || "";
-  const subcategories: Array<{ subcategory: string; count: number }> = charts?.impressionSubcategories?.[selectedImpression] || [];
+const subcategories: Array<{ subcategory: string; count: number }> = (charts?.impressionSubcategories?.[selectedImpression] || []).map((i: { label?: string; subcategory?: string; count: number }) => ({ subcategory: i.subcategory ?? i.label ?? "Unknown", count: i.count }));
 
   // Scales
   const anxietyScale: Array<{ label: string; count: number }> = charts?.anxietyScale || [];
@@ -480,7 +480,7 @@ export default function EmotionalWellbeingPage() {
   const smokingTrend: Array<{ period: string; pct: number }> = (charts as any)?.smokingTrend || [];
   const visitPattern: Array<{ label: string; count: number }> = charts?.visitPattern || [];
   const criticalRisk = charts?.criticalRisk || { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 };
-  const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
+const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
   const substanceUsePct: number = charts?.substanceUsePct || 0;
 
   const maxCritical = Math.max(criticalRisk.suicidalThoughts, criticalRisk.attemptedSelfHarm, criticalRisk.previousAttempts, 1);

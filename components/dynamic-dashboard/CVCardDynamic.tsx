@@ -184,12 +184,7 @@ export default function CVCardDynamic({
     setPicking(true);
     // Tell DynamicChart to forward next click as an anchor
     onChartClickForAnchor?.((params) => {
-      const anchor: CommentAnchor = {
-        xValue: params.name as string ?? params.activeLabel as string ?? undefined,
-        seriesName: params.seriesName as string ?? undefined,
-        yValue: typeof params.value === "number" ? params.value : undefined,
-        segmentName: params.name as string ?? undefined,
-      };
+      const anchor: CommentAnchor = { chartType: "chart" };
       anchorCallbackRef.current?.(anchor);
       anchorCallbackRef.current = null;
       setPicking(false);

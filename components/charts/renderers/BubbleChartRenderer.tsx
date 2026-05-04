@@ -135,7 +135,7 @@ export default function BubbleChartRenderer({
             {/* Background overlay: faint horizontal bars per row using ReferenceArea */}
             {background?.type === "horizontal_bar" &&
               allRows.map((row, idx) => {
-                const w = Number(row[background.column] ?? 0);
+                const w = Number(background.column ? row[background.column] ?? 0 : 0);
                 if (!w) return null;
                 const yVal = Number(row[yKey] ?? 0);
                 return (

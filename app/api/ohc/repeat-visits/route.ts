@@ -257,8 +257,8 @@ async function handler(request: NextRequest) {
         ),
         "chronicVsAcute"
       ),
-      // specialtyTreemap — diagnosis volumes per treating doctor (no
-      // speciality column on this table; doctor_name is the closest proxy)
+      // specialtyTreemap — diagnosis volumes per treating doctor speciality
+      // (uses agg_diagnosis.treating_doctor_speciality, ~10–15 buckets)
       safeQuery(
         () => dwQuery<{ speciality: string; count: string }>(
           `WITH per_uhid AS (
@@ -266,7 +266,7 @@ async function handler(request: NextRequest) {
             GROUP BY d.uhid
           )
           SELECT
-            COALESCE(NULLIF(TRIM(d.doctor_name), ''), 'Unknown') AS speciality,
+            COALESCE(NULLIF(TRIM(d.treating_doctor_speciality), ''), 'Unknown') AS speciality,
             COUNT(*)::bigint AS count
           FROM ${DIAG_TABLE} d
           WHERE ${q.where}
@@ -277,7 +277,7 @@ async function handler(request: NextRequest) {
           q.params,
           HEAVY_OPTS
         ),
-        "doctorTreemap"
+        "specialtyTreemap"
       ),
       // recurringConditions — diagnoses occurring 2+ times for the same uhid,
       // split into chronic vs acute

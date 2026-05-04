@@ -323,6 +323,10 @@ export default function RepeatVisitsPage() {
   // (raw appointments → client-side aggregateRepeatVisits) was scanning a
   // 1.4M-row payload on every filter change; this single round-trip computes
   // everything server-side from the diagnosis fact table.
+  // Note: conditionFilter is intentionally NOT in the API params — that
+  // would change the cache key and force an expensive 30-40s refetch on
+  // every toggle. Instead, the filter is applied client-side below to the
+  // already-cached chronicVsAcute + recurringConditions slices.
   const repeatExtraParams = useMemo(() => ({
     minVisits: String(minVisits),
     ...(appliedLocations.length ? { locations: appliedLocations.join(",") } : {}),
@@ -372,16 +376,26 @@ export default function RepeatVisitsPage() {
     setAppliedAgeGroups([...selectedAgeGroups]);
   };
 
-  // Chronic vs Acute totals
-  const chronicCount = charts?.chronicVsAcute?.chronic || 0;
-  const acuteCount = charts?.chronicVsAcute?.acute || 0;
+  // Chronic vs Acute totals — applies `conditionFilter` client-side so toggling
+  // between All / Chronic Only / Acute Only doesn't trigger an API refetch.
+  const chronicCountRaw = charts?.chronicVsAcute?.chronic || 0;
+  const acuteCountRaw = charts?.chronicVsAcute?.acute || 0;
+  const chronicCount = conditionFilter === "acute" ? 0 : chronicCountRaw;
+  const acuteCount = conditionFilter === "chronic" ? 0 : acuteCountRaw;
   const totalConditionPatients = chronicCount + acuteCount;
   const chronicPct = totalConditionPatients > 0 ? Math.round((chronicCount / totalConditionPatients) * 100) : 0;
 
-  // Demographics
-  const ageData = charts?.demographics?.ageGroups || [];
-  const genderData = charts?.demographics?.genderSplit || [];
-  const locationData = charts?.demographics?.locationDistribution || [];
+  // Demographics — pick the slice matching the active condition filter from
+  // the cached payload. The API emits three parallel slices (combined,
+  // chronic, acute) so toggling the filter never triggers a refetch.
+  const demoSource = conditionFilter === "chronic"
+    ? (charts?.demographicsChronic || charts?.demographics)
+    : conditionFilter === "acute"
+      ? (charts?.demographicsAcute || charts?.demographics)
+      : charts?.demographics;
+  const ageData = demoSource?.ageGroups || [];
+  const genderData = demoSource?.genderSplit || [];
+  const locationData = demoSource?.locationDistribution || [];
   const genderTotal = genderData.reduce((s: number, g: any) => s + g.count, 0);
   const locationTotal = locationData.reduce((s: number, l: any) => s + l.count, 0);
 
@@ -611,20 +625,25 @@ export default function RepeatVisitsPage() {
             </span>
           </div>
 
-          {/* Stacked Bar */}
+          {/* Stacked Bar — hide each segment entirely when its count is 0 so
+              the label can't overflow into the neighbouring segment. */}
           <div className="rounded-xl overflow-hidden flex h-10 mb-4" style={{ border: `1px solid ${T.border}` }}>
-            <div
-              className="flex items-center justify-center text-[13px] font-bold text-white transition-all"
-              style={{ width: `${chronicPct}%`, backgroundColor: T.amber, minWidth: chronicPct > 0 ? 80 : 0 }}
-            >
-              {formatNum(chronicCount)} Chronic
-            </div>
-            <div
-              className="flex items-center justify-center text-[13px] font-bold text-white transition-all"
-              style={{ width: `${100 - chronicPct}%`, backgroundColor: "#4f46e5", minWidth: (100 - chronicPct) > 0 ? 80 : 0 }}
-            >
-              {formatNum(acuteCount)} Acute
-            </div>
+            {chronicCount > 0 && (
+              <div
+                className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
+                style={{ width: `${chronicPct}%`, backgroundColor: T.amber, minWidth: 80 }}
+              >
+                {formatNum(chronicCount)} Chronic
+              </div>
+            )}
+            {acuteCount > 0 && (
+              <div
+                className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
+                style={{ width: `${100 - chronicPct}%`, backgroundColor: "#4f46e5", minWidth: 80 }}
+              >
+                {formatNum(acuteCount)} Acute
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-6 text-[12px]" style={{ color: T.textSecondary }}>
@@ -636,18 +655,26 @@ export default function RepeatVisitsPage() {
             </span>
           </div>
           <p className="text-[18px] font-extrabold mt-4" style={{ color: T.textPrimary }}>
-            {formatNum(totalConditionPatients)} <span className="text-[13px] font-normal" style={{ color: T.textSecondary }}>total patients (based on current selection)</span>
+            {formatNum(totalConditionPatients)} <span className="text-[13px] font-normal" style={{ color: T.textSecondary }}>
+              {conditionFilter === "all" ? "total patients (based on current selection)" : conditionFilter === "chronic" ? "chronic-only repeat patients" : "acute-only repeat patients"}
+            </span>
           </p>
-          <InsightBox text={`Out of ${formatNum(totalConditionPatients)} repeat patients, ${chronicPct}% have chronic conditions and ${100 - chronicPct}% have acute conditions. ${chronicPct > 50 ? "Chronic cases dominate the repeat visit pool, indicating ongoing care management needs." : "Acute cases form a larger share, suggesting episodic health issues drive repeat visits."}`} />
+          <InsightBox text={
+            conditionFilter === "all"
+              ? `Out of ${formatNum(chronicCountRaw + acuteCountRaw)} repeat patients, ${Math.round(chronicCountRaw / Math.max(1, chronicCountRaw + acuteCountRaw) * 100)}% have chronic conditions and ${Math.round(acuteCountRaw / Math.max(1, chronicCountRaw + acuteCountRaw) * 100)}% have acute conditions. ${chronicCountRaw >= acuteCountRaw ? "Chronic cases dominate the repeat visit pool, indicating ongoing care management needs." : "Acute cases form a larger share, suggesting episodic health issues drive repeat visits."}`
+              : conditionFilter === "chronic"
+                ? `Showing the chronic cohort only — ${formatNum(chronicCountRaw)} repeat patients with long-term conditions. Toggle "All Repeaters" above to compare against the acute cohort.`
+                : `Showing the acute cohort only — ${formatNum(acuteCountRaw)} repeat patients with short-term / episodic conditions. Toggle "All Repeaters" above to compare against the chronic cohort.`
+          } />
         </CVCard>}
 
         {/* ── Demographics Row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Age × Gender — Population Pyramid */}
-          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age × Gender Pyramid" tooltipText="Population pyramid showing repeat-patient distribution across age bands, split by gender. Male counts extend left, female counts extend right; bar length is proportional to the patient count in each age × gender cell. Click any bar to filter the dashboard." subtitle="Repeat patients by age band, split by gender (male ← → female)" chartId="ageGroups" chartData={charts?.demographics?.ageGenderPyramid || []} chartTitle="Age × Gender Pyramid" chartDescription="Repeat-patient distribution by age band split by gender">
+          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age × Gender Pyramid" tooltipText="Population pyramid showing repeat-patient distribution across age bands, split by gender. Male counts extend left, female counts extend right; bar length is proportional to the patient count in each age × gender cell. Click any bar to filter the dashboard." subtitle="Repeat patients by age band, split by gender (male ← → female)" chartId="ageGroups" chartData={demoSource?.ageGenderPyramid || []} chartTitle="Age × Gender Pyramid" chartDescription="Repeat-patient distribution by age band split by gender">
             {(() => {
               const pyramid: Array<{ ageGroup: string; male: number; female: number; others: number; total: number }>
-                = charts?.demographics?.ageGenderPyramid || [];
+                = demoSource?.ageGenderPyramid || [];
               if (!pyramid.length) {
                 return <div className="flex-1 flex items-center justify-center text-[12px]" style={{ color: T.textMuted }}>No data available for the selected filters.</div>;
               }
@@ -826,7 +853,7 @@ export default function RepeatVisitsPage() {
           {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Lollipop chart of the top 10 locations by repeat-patient volume. Each row's stem length is proportional to patient count; the dot at the end carries the exact number. Smaller sites are rolled into an 'Others' bucket — click the pill below the chart to see the full breakdown." subtitle="Top 10 locations by repeat-patient volume" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Top 10 locations as a lollipop chart, with smaller sites rolled into 'Others'">
             {(() => {
               const rawRows: Array<{ label: string; count: number }> = locationData;
-              const othersBreakdown: Array<{ location: string; total: number }> = charts?.demographics?.othersBreakdown || [];
+              const othersBreakdown: Array<{ location: string; total: number }> = demoSource?.othersBreakdown || [];
               const grandTotal = rawRows.reduce((s: number, r: any) => s + r.count, 0) || 1;
               // Hide trivial entries (<0.5% AND not the synthetic "Others" row).
               // They go into a footnote instead so the chart isn't dominated
@@ -1646,7 +1673,7 @@ export default function RepeatVisitsPage() {
               <DialogTitle>Others — Location Breakdown</DialogTitle>
             </DialogHeader>
             {(() => {
-              const list: Array<{ location: string; total: number }> = charts?.demographics?.othersBreakdown || [];
+              const list: Array<{ location: string; total: number }> = demoSource?.othersBreakdown || [];
               const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
               const q = othersSearch.trim().toLowerCase();
               const filtered = q ? list.filter((b: any) => b.location.toLowerCase().includes(q)) : list;

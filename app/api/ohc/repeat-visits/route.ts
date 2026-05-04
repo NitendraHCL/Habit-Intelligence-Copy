@@ -57,6 +57,7 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const genders = searchParams.get("genders")?.split(",").filter(Boolean);
   const locations = searchParams.get("locations")?.split(",").filter(Boolean);
+  const conditionType = searchParams.get("conditionType"); // 'chronic' | 'acute' | 'all'
 
   const conditions: string[] = [`d.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
@@ -91,6 +92,8 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
     params.push(ageGroups);
     idx++;
   }
+  if (conditionType === "chronic") conditions.push(CHRONIC_CASE);
+  else if (conditionType === "acute") conditions.push(`NOT ${CHRONIC_CASE}`);
 
   return { params, where: conditions.join(" AND ") };
 }
@@ -128,11 +131,17 @@ async function handler(request: NextRequest) {
     // ── Consolidated patient-stats query: one per_uhid pass, every patient-
     // level rollup (KPIs, age bucket, gender, visit-frequency bucket,
     // segments) computed in a single round-trip via FILTER aggregates.
+    //
+    // Each demographic row carries n_total, n_chronic, n_acute so the page
+    // can switch between All/Chronic/Acute views from cached data — no API
+    // refetch on filter toggle.
     const patientStatsRows = await safeQuery(
       () => dwQuery<{
         kind: string;
         bucket: string;
         n: string;
+        n_chronic: string;
+        n_acute: string;
       }>(
         `WITH per_uhid AS (
           SELECT
@@ -140,7 +149,8 @@ async function handler(request: NextRequest) {
             COUNT(*)::int AS vc,
             MAX(d.patient_age) AS age_years,
             MAX(d.patient_gender)    AS gender,
-            MAX(d.facility_name)     AS facility
+            MAX(d.facility_name)     AS facility,
+            BOOL_OR(${CHRONIC_CASE}) AS has_chronic
           FROM ${DIAG_TABLE} d
           WHERE ${q.where}
           GROUP BY d.uhid
@@ -148,10 +158,12 @@ async function handler(request: NextRequest) {
         repeat_pool AS (
           SELECT * FROM per_uhid WHERE vc >= ${minVisits}
         )
-        SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket, COUNT(*)::bigint AS n FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(vc), 0)::bigint FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'avgVisitFrequencyX10', ROUND(COALESCE(AVG(vc), 0) * 10)::bigint FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'frequentRepeaters', COUNT(*)::bigint FROM per_uhid WHERE vc >= 5
+        SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket,
+               COUNT(*)::bigint AS n, 0::bigint AS n_chronic, 0::bigint AS n_acute
+          FROM repeat_pool
+        UNION ALL SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(vc), 0)::bigint, 0::bigint, 0::bigint FROM repeat_pool
+        UNION ALL SELECT 'kpi', 'avgVisitFrequencyX10', ROUND(COALESCE(AVG(vc), 0) * 10)::bigint, 0::bigint, 0::bigint FROM repeat_pool
+        UNION ALL SELECT 'kpi', 'frequentRepeaters', COUNT(*)::bigint, 0::bigint, 0::bigint FROM per_uhid WHERE vc >= 5
         UNION ALL
           SELECT 'ageGroup', CASE
             WHEN age_years < 20 THEN '<20'
@@ -159,23 +171,35 @@ async function handler(request: NextRequest) {
             WHEN age_years BETWEEN 36 AND 40 THEN '36-40'
             WHEN age_years BETWEEN 41 AND 60 THEN '41-60'
             WHEN age_years > 60 THEN '61+'
-            ELSE 'Unknown' END, COUNT(*)::bigint
+            ELSE 'Unknown' END,
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE has_chronic)::bigint,
+            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
           FROM repeat_pool WHERE age_years IS NOT NULL GROUP BY 2
         UNION ALL
           SELECT 'gender', CASE
             WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
             WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
-            ELSE 'Others' END, COUNT(*)::bigint
+            ELSE 'Others' END,
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE has_chronic)::bigint,
+            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
           FROM repeat_pool GROUP BY 2
         UNION ALL
           SELECT 'visitFreq', CASE
             WHEN vc >= 10 THEN '10+'
             WHEN vc BETWEEN 5 AND 9 THEN '5-9'
             WHEN vc BETWEEN 2 AND 4 THEN '2-4'
-            ELSE '1' END, COUNT(*)::bigint
+            ELSE '1' END,
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE has_chronic)::bigint,
+            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
           FROM repeat_pool GROUP BY 2
         UNION ALL
-          SELECT 'location', COALESCE(NULLIF(TRIM(facility), ''), 'Unknown'), COUNT(*)::bigint
+          SELECT 'location', COALESCE(NULLIF(TRIM(facility), ''), 'Unknown'),
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE has_chronic)::bigint,
+            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
           FROM repeat_pool GROUP BY 2
         UNION ALL
           SELECT 'segment',
@@ -197,7 +221,9 @@ async function handler(request: NextRequest) {
               WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
               WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
               ELSE 'Others' END),
-            COUNT(*)::bigint
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE has_chronic)::bigint,
+            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
           FROM repeat_pool GROUP BY 2`,
         q.params,
         HEAVY_OPTS
@@ -332,12 +358,20 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── Assemble ──
-    // patientStatsRows is a multi-shape result: { kind, bucket, n }
-    // Group by `kind` then index by bucket.
-    const stats: Record<string, Record<string, number>> = {};
+    // patientStatsRows is a multi-shape result: { kind, bucket, n, n_chronic, n_acute }
+    // We index three parallel stat maps so the page can switch between
+    // All/Chronic/Acute views from a single cached payload.
+    type StatMap = Record<string, Record<string, number>>;
+    const stats: StatMap = {};
+    const statsChronic: StatMap = {};
+    const statsAcute: StatMap = {};
     for (const r of patientStatsRows) {
       if (!stats[r.kind]) stats[r.kind] = {};
+      if (!statsChronic[r.kind]) statsChronic[r.kind] = {};
+      if (!statsAcute[r.kind]) statsAcute[r.kind] = {};
       stats[r.kind][r.bucket] = Number(r.n);
+      statsChronic[r.kind][r.bucket] = Number(r.n_chronic);
+      statsAcute[r.kind][r.bucket] = Number(r.n_acute);
     }
     const totalRepeatPatients = stats.kpi?.totalRepeatPatients || 0;
     const totalConsultsByRepeat = stats.kpi?.totalConsultsByRepeat || 0;
@@ -351,48 +385,84 @@ async function handler(request: NextRequest) {
     };
 
     const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
-    const ageMap = stats.ageGroup || {};
-    const ageGroupsArr = AGE_ORDER
-      .filter((b) => ageMap[b])
-      .map((b) => ({ label: b, count: ageMap[b] }));
-
-    const genderMap = stats.gender || {};
-    const genderSplit = ["Male", "Female", "Others"]
-      .filter((g) => genderMap[g])
-      .map((g) => ({ label: g, count: genderMap[g] }));
-
     const FREQ_ORDER = ["1", "2-4", "5-9", "10+"];
+
+    // Build a complete demographics slice (ageGroups, genderSplit,
+    // locationDistribution, ageGenderPyramid) from any stats map. We call this
+    // 3 times — once for combined, chronic, acute — so the page can render any
+    // slice from a single cached payload.
+    function buildDemographics(s: StatMap) {
+      const ageMap = s.ageGroup || {};
+      const ageGroupsArr = AGE_ORDER
+        .filter((b) => ageMap[b])
+        .map((b) => ({ label: b, count: ageMap[b] }));
+
+      const genderMap = s.gender || {};
+      const genderSplit = ["Male", "Female", "Others"]
+        .filter((g) => genderMap[g])
+        .map((g) => ({ label: g, count: genderMap[g] }));
+
+      const locationDistribution = Object.entries(s.location || {})
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count);
+
+      // ageGenderPyramid — derived from segment keys (`visitBucket|age|gender`)
+      // by collapsing across visit buckets. One row per age band with male,
+      // female and others counts.
+      const segMap = s.segment || {};
+      const acc: Record<string, { male: number; female: number; others: number }> = {};
+      for (const key of Object.keys(segMap)) {
+        const parts = key.split("|");
+        if (parts.length !== 3) continue;
+        const ageBucket = parts[1];
+        const genderBucket = parts[2];
+        const n = segMap[key] || 0;
+        if (!acc[ageBucket]) acc[ageBucket] = { male: 0, female: 0, others: 0 };
+        if (genderBucket === "Male") acc[ageBucket].male += n;
+        else if (genderBucket === "Female") acc[ageBucket].female += n;
+        else acc[ageBucket].others += n;
+      }
+      const ageGenderPyramid = AGE_ORDER
+        .filter((b) => acc[b])
+        .map((b) => ({
+          ageGroup: b,
+          male: acc[b].male,
+          female: acc[b].female,
+          others: acc[b].others,
+          total: acc[b].male + acc[b].female + acc[b].others,
+        }));
+
+      return { ageGroups: ageGroupsArr, genderSplit, locationDistribution, ageGenderPyramid };
+    }
+
+    const demoCombined = buildDemographics(stats);
+    const demoChronic = buildDemographics(statsChronic);
+    const demoAcute = buildDemographics(statsAcute);
+
+    // Build location top-N + others rollup once per slice (Top 10 + Others)
+    function withLocationRollup(loc: Array<{ label: string; count: number }>) {
+      const TOP_N = 10;
+      const top = loc.slice(0, TOP_N);
+      const tail = loc.slice(TOP_N);
+      const tailSum = tail.reduce((s, r) => s + r.count, 0);
+      return {
+        locationDistribution: tailSum > 0 ? [...top, { label: "Others", count: tailSum }] : top,
+        othersBreakdown: tail.map((r) => ({ location: r.label, total: r.count })),
+      };
+    }
+    const combinedLoc = withLocationRollup(demoCombined.locationDistribution);
+    const chronicLoc = withLocationRollup(demoChronic.locationDistribution);
+    const acuteLoc = withLocationRollup(demoAcute.locationDistribution);
+
     const freqMap = stats.visitFreq || {};
     const repeatVisitFrequency = FREQ_ORDER
       .filter((b) => freqMap[b])
       .map((b) => ({ label: `${b} Visits`, count: freqMap[b] }));
 
-    // ageGenderPyramid — derived from stats.segment keys (`visitBucket|age|gender`)
-    // by collapsing across visit buckets. One row per age group with male,
-    // female and others counts so the page can render a population pyramid
-    // (Male ←  →  Female by age band).
-    const segMap = stats.segment || {};
-    const ageGenderAcc: Record<string, { male: number; female: number; others: number }> = {};
-    for (const key of Object.keys(segMap)) {
-      const parts = key.split("|");
-      if (parts.length !== 3) continue;
-      const ageBucket = parts[1];
-      const genderBucket = parts[2];
-      const n = segMap[key] || 0;
-      if (!ageGenderAcc[ageBucket]) ageGenderAcc[ageBucket] = { male: 0, female: 0, others: 0 };
-      if (genderBucket === "Male") ageGenderAcc[ageBucket].male += n;
-      else if (genderBucket === "Female") ageGenderAcc[ageBucket].female += n;
-      else ageGenderAcc[ageBucket].others += n;
-    }
-    const ageGenderPyramid = AGE_ORDER
-      .filter((b) => ageGenderAcc[b])
-      .map((b) => ({
-        ageGroup: b,
-        male: ageGenderAcc[b].male,
-        female: ageGenderAcc[b].female,
-        others: ageGenderAcc[b].others,
-        total: ageGenderAcc[b].male + ageGenderAcc[b].female + ageGenderAcc[b].others,
-      }));
+    // Backwards-compat aliases for the existing page consumers
+    const ageGroupsArr = demoCombined.ageGroups;
+    const genderSplit = demoCombined.genderSplit;
+    const ageGenderPyramid = demoCombined.ageGenderPyramid;
 
     // specialtyTreemap is keyed by year — agg_diagnosis has no date, so we
     // expose a single synthetic bucket "All" that the page picks up via the
@@ -476,30 +546,30 @@ async function handler(request: NextRequest) {
       },
       charts: {
         chronicVsAcute,
-        demographics: (() => {
-          // Top 10 locations + an "Others" rollup (matches the Utilization
-          // page pattern). The page renders a lollipop chart for the top 10
-          // and an "X smaller sites · Y patients" pill that expands the
-          // rolled-up list in a modal.
-          const sortedLoc = Object.entries(stats.location || {})
-            .map(([label, count]) => ({ label, count }))
-            .sort((a, b) => b.count - a.count);
-          const TOP_N = 10;
-          const top = sortedLoc.slice(0, TOP_N);
-          const tail = sortedLoc.slice(TOP_N);
-          const othersTotal = tail.reduce((s, r) => s + r.count, 0);
-          const locationDistribution = othersTotal > 0
-            ? [...top, { label: "Others", count: othersTotal }]
-            : top;
-          const othersBreakdown = tail.map((r) => ({ location: r.label, total: r.count }));
-          return {
-            ageGroups: ageGroupsArr,
-            ageGenderPyramid,
-            genderSplit,
-            locationDistribution,
-            othersBreakdown,
-          };
-        })(),
+        // Combined demographics — what the page consumes when conditionFilter === "all"
+        demographics: {
+          ageGroups: ageGroupsArr,
+          ageGenderPyramid,
+          genderSplit,
+          locationDistribution: combinedLoc.locationDistribution,
+          othersBreakdown: combinedLoc.othersBreakdown,
+        },
+        // Chronic-only slice — page picks this when conditionFilter === "chronic"
+        demographicsChronic: {
+          ageGroups: demoChronic.ageGroups,
+          ageGenderPyramid: demoChronic.ageGenderPyramid,
+          genderSplit: demoChronic.genderSplit,
+          locationDistribution: chronicLoc.locationDistribution,
+          othersBreakdown: chronicLoc.othersBreakdown,
+        },
+        // Acute-only slice — page picks this when conditionFilter === "acute"
+        demographicsAcute: {
+          ageGroups: demoAcute.ageGroups,
+          ageGenderPyramid: demoAcute.ageGenderPyramid,
+          genderSplit: demoAcute.genderSplit,
+          locationDistribution: acuteLoc.locationDistribution,
+          othersBreakdown: acuteLoc.othersBreakdown,
+        },
         repeatVisitFrequency,
         specialtyTreemap,
         treemapYears: ["All"],

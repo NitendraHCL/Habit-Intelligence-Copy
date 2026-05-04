@@ -80,6 +80,22 @@ function formatNum(n: number): string {
   return String(n);
 }
 
+// Strip ICD-10 boilerplate that adds noise to condition labels:
+//   "Hyperlipidemia, unspecified"     → "Hyperlipidemia"
+//   "Hypothyroidism, unspecified"     → "Hypothyroidism"
+//   "Type 2 diabetes mellitus without complications" → "Type 2 diabetes mellitus"
+//   "Diabetes mellitus due to underlying condition"  → "Diabetes mellitus"
+function cleanIcdLabel(name: string): string {
+  if (!name) return name;
+  return name
+    .replace(/,\s*unspecified\b/i, "")
+    .replace(/,\s*not elsewhere classified\b/i, "")
+    .replace(/\s+without\s+(?:other\s+)?complications?\b.*$/i, "")
+    .replace(/\s+due to\s+underlying\s+condition\b.*$/i, "")
+    .replace(/\s+\(unspecified\)/i, "")
+    .trim();
+}
+
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
   return <div className="w-10 h-1 rounded-sm mb-3.5" style={{ background: `linear-gradient(90deg, ${color}, ${colorEnd || color})` }} />;
@@ -1239,8 +1255,8 @@ export default function RepeatVisitsPage() {
                                   {i + 1}
                                 </span>
                               </td>
-                              <td className="px-3 py-3 align-middle font-semibold" style={{ borderBottom: `1px solid ${T.borderLight}`, color: T.textPrimary }}>
-                                {cond.name}
+                              <td className="px-3 py-3 align-middle font-semibold" style={{ borderBottom: `1px solid ${T.borderLight}`, color: T.textPrimary }} title={cond.name}>
+                                {cleanIcdLabel(cond.name)}
                               </td>
                               <td className="px-3 py-3 align-middle" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                                 <div className="flex items-center gap-3">
@@ -1271,7 +1287,7 @@ export default function RepeatVisitsPage() {
                     </table>
                   </div>
                 </div>
-                <InsightBox text={`Viewing ${condTableType === "chronic" ? "chronic" : "acute"} recurring conditions — ${rows.length} conditions affecting ${formatNum(totalPatients)} repeat patients with ${formatNum(totalOccurrences)} total occurrences. ${rows[0] ? `${rows[0].name} leads with ${formatNum(rows[0].patients)} patients (${(rows[0].count / Math.max(1, rows[0].patients)).toFixed(1)}× avg recurrence).` : ""} Higher avg-per-patient indicates conditions where individual patients return repeatedly — strong candidates for proactive care management.`} />
+                <InsightBox text={`Viewing ${condTableType === "chronic" ? "chronic" : "acute"} recurring conditions — ${rows.length} conditions affecting ${formatNum(totalPatients)} repeat patients with ${formatNum(totalOccurrences)} total occurrences. ${rows[0] ? `${cleanIcdLabel(rows[0].name)} leads with ${formatNum(rows[0].patients)} patients (${(rows[0].count / Math.max(1, rows[0].patients)).toFixed(1)}× avg recurrence).` : ""} Higher avg-per-patient indicates conditions where individual patients return repeatedly — strong candidates for proactive care management.`} />
               </div>
             );
           })()}

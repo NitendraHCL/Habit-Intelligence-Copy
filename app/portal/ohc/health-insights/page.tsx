@@ -106,7 +106,21 @@ function displayCat(name: string): string {
 }
 
 function displaySub(name: string): string {
-  return SUBCATEGORY_SHORT[name] || name;
+  if (!name) return name;
+  // Curated short label first (preserves manual aliases)
+  if (SUBCATEGORY_SHORT[name]) return SUBCATEGORY_SHORT[name];
+  // Generic cleanup of ICD-10 boilerplate that adds noise to labels:
+  //   "Hyperlipidemia, unspecified"     → "Hyperlipidemia"
+  //   "Anemia, unspecified"             → "Anemia"
+  //   "Type 2 diabetes mellitus without complications" → "Type 2 diabetes mellitus"
+  //   "Diabetes mellitus due to underlying condition"  → "Diabetes mellitus"
+  return name
+    .replace(/,\s*unspecified\b/i, "")
+    .replace(/,\s*not elsewhere classified\b/i, "")
+    .replace(/\s+without\s+(?:other\s+)?complications?\b.*$/i, "")
+    .replace(/\s+due to\s+underlying\s+condition\b.*$/i, "")
+    .replace(/\s+\(unspecified\)/i, "")
+    .trim();
 }
 
 // Short label for treemap tiles — caps long names so they fit inside narrow

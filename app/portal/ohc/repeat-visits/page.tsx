@@ -619,7 +619,7 @@ export default function RepeatVisitsPage() {
             {chronicCount > 0 && (
               <div
                 className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
-                style={{ width: `${chronicPct}%`, backgroundColor: T.amber, minWidth: 80 }}
+                style={{ width: `${chronicPct}%`, backgroundColor: "#4f46e5", minWidth: 80 }}
               >
                 {formatNum(chronicCount)} Chronic
               </div>
@@ -627,7 +627,7 @@ export default function RepeatVisitsPage() {
             {acuteCount > 0 && (
               <div
                 className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
-                style={{ width: `${100 - chronicPct}%`, backgroundColor: "#4f46e5", minWidth: 80 }}
+                style={{ width: `${100 - chronicPct}%`, backgroundColor: T.teal, minWidth: 80 }}
               >
                 {formatNum(acuteCount)} Acute
               </div>
@@ -636,10 +636,10 @@ export default function RepeatVisitsPage() {
 
           <div className="flex items-center gap-6 text-[12px]" style={{ color: T.textSecondary }}>
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: T.amber }} /> Chronic ({chronicPct}%)
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#4f46e5" }} /> Chronic ({chronicPct}%)
             </span>
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#4f46e5" }} /> Acute ({100 - chronicPct}%)
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: T.teal }} /> Acute ({100 - chronicPct}%)
             </span>
           </div>
           <p className="text-[18px] font-extrabold mt-4" style={{ color: T.textPrimary }}>

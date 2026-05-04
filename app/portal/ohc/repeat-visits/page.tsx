@@ -513,8 +513,6 @@ export default function RepeatVisitsPage() {
               { id: "locationDistribution", label: "Location Distribution" },
               { id: "repeatVisitFrequency", label: "Repeat Visit Frequency" },
               { id: "specialtyTreemap", label: "Repeat Patients by Specialty" },
-              { id: "conditionTransitionFlow", label: "Condition Transition Flow" },
-              { id: "visitFrequencyNps", label: "Visit Frequency & NPS Response" },
               { id: "recurringConditions", label: "Recurring Conditions Performance" },
               { id: "repeatUserSegments", label: "Key Repeat User Segments" },
               { id: "cohortProgression", label: "Same Cohort Progression" },
@@ -1240,133 +1238,138 @@ export default function RepeatVisitsPage() {
           </CVCard>}
         </div>
 
-        {/* ── Condition Transition Flow + Visit Frequency NPS ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Condition Transition Flow */}
-          {isChartVisible("conditionTransitionFlow") && <CVCard accentColor={T.teal} title="Condition Transition Flow" chartId="conditionTransitionFlow"
-            tooltipText="Horizontal bar chart showing patient transitions between condition types across visits. Each bar represents a transition path (e.g., Chronic to Chronic) with patient count and average NPS score. Helps identify whether conditions are persisting or evolving."
-            subtitle="Track how repeat patients move across condition categories — chronic to chronic, acute to chronic, and acute to acute."
-            chartData={charts?.conditionTransitions} chartTitle="Condition Transition Flow" chartDescription="Patient transitions between condition types across visits">
-            <div className="overflow-x-auto">
-              <div style={{ height: 260, minWidth: 400 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={charts?.conditionTransitions || []} layout="vertical" margin={{ top: 10, right: 60, left: 10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: T.textMuted }} tickFormatter={(v: number) => formatNum(v)} />
-                    <YAxis type="category" dataKey="transition" tick={{ fontSize: 12, fontWeight: 600, fill: T.textPrimary }} width={130} />
-                    <RechartsTooltip
-                      contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }}
-                      formatter={((v: number, _: any, entry: any) => [
-                        `${formatNum(v)} patients | NPS: ${entry.payload.avgNps}`,
-                        "Count",
-                      ]) as any}
-                    />
-                    <Bar dataKey="count" radius={[0, 8, 8, 0]} barSize={40}>
-                      {(charts?.conditionTransitions || []).map((_: any, i: number) => (
-                        <Cell key={i} fill={["#0d9488", "#4f46e5", "#6366f1"][i % 3] + "B0"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <InsightBox text="Condition transition patterns reveal how repeat patients move between chronic and acute categories over successive visits. High chronic-to-chronic volumes suggest persistent conditions requiring ongoing management, while acute-to-chronic transitions may indicate disease progression." />
-          </CVCard>}
-
-          {/* Visit Frequency & NPS Response */}
-          {isChartVisible("visitFrequencyNps") && <CVCard accentColor={T.amber} title="Visit Frequency & NPS Response Analysis" chartId="visitFrequencyNps"
-            tooltipText="Combined bar and line chart. Bars show total users and NPS response counts per visit frequency bucket (left axis). The line overlay tracks average NPS score (right axis, 0–100). Reveals whether more frequent visitors are more or less satisfied."
-            subtitle="Shows total repeat visitors by frequency, NPS feedback, and average satisfaction scores."
-            chartData={charts?.visitFrequencyNps} chartTitle="Visit Frequency & NPS Response Analysis" chartDescription="Repeat visitors by frequency, NPS feedback, and satisfaction scores">
-            <div className="overflow-x-auto">
-              <div style={{ height: 260, minWidth: 400 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={charts?.visitFrequencyNps || []} margin={{ top: 10, right: 50, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                    <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: T.textSecondary }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10, fill: T.textMuted }} tickFormatter={(v: number) => formatNum(v)} />
-                    <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: T.textMuted }} />
-                    <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                    <Bar yAxisId="left" dataKey="totalUsers" name="Total Users" fill={"#818cf8" + "70"} radius={[4, 4, 0, 0]} barSize={30} />
-                    <Bar yAxisId="left" dataKey="npsResponses" name="NPS Responses" fill={"#0d9488" + "90"} radius={[4, 4, 0, 0]} barSize={30} />
-                    <Line yAxisId="right" type="monotone" dataKey="avgNps" name="Avg NPS" stroke={T.amber} strokeWidth={3} dot={{ r: 5, fill: T.amber }} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <InsightBox text="Compare NPS response rates and average satisfaction across visit frequency buckets. An upward NPS trend with higher visit counts suggests that frequent visitors are more engaged and satisfied, while a decline may signal care fatigue or unresolved issues." />
-          </CVCard>}
-        </div>
-
         {/* ── Recurring Conditions Table ── */}
         {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance" chartId="recurringConditions"
-          tooltipText="Table listing the most common recurring conditions among repeat patients, split by chronic and acute categories. Each row shows patient count, NPS response count with response rate bar, and average NPS score color-coded by satisfaction level (green >= 70, yellow >= 50, red < 50)."
-          subtitle="Analysis of patients with recurring diagnoses in major categories. Shows patient volume and satisfaction scores."
-          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Recurring conditions with patient volume and satisfaction scores"
-
+          tooltipText="Ranked table of conditions that recur across repeat patients (≥2 occurrences per patient), split by Chronic and Acute. Rows are ordered by distinct patient count; the volume bar is sized relative to the top condition. The Avg / Patient column shows how many times the average affected patient comes back for the same condition."
+          subtitle="Conditions recurring across repeat patients — volume, occurrences, and recurrence intensity per patient"
+          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Ranked recurring conditions by patient volume and recurrence intensity"
           expandable={false}>
-          <div className="flex gap-2 mt-3 mb-5">
-            {(["chronic", "acute"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setCondTableType(t)}
-                className="px-4 py-2 rounded-lg text-[13px] font-bold transition-all"
-                style={{
-                  backgroundColor: condTableType === t ? "#4f46e5" : T.white,
-                  color: condTableType === t ? "#fff" : T.textPrimary,
-                  border: `1.5px solid ${condTableType === t ? "#4f46e5" : T.border}`,
-                }}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
+          {/* Chronic / Acute toggle */}
+          <div className="flex items-center gap-2 mt-3 mb-4">
+            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
+              {(["chronic", "acute"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setCondTableType(t)}
+                  className="px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
+                  style={{
+                    backgroundColor: condTableType === t ? T.white : "transparent",
+                    color: condTableType === t ? T.textPrimary : T.textMuted,
+                    boxShadow: condTableType === t ? "0 1px 2px rgba(15,23,42,0.08)" : undefined,
+                  }}
+                >
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
             <ResetFilter visible={condTableType !== "chronic"} onClick={() => setCondTableType("chronic")} />
           </div>
 
-          <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
-            <div className="grid gap-0 text-[13px]" style={{ gridTemplateColumns: "1.5fr 1fr 1.5fr 0.8fr", minWidth: 500 }}>
-              <div className="font-bold px-4 py-2.5 border-b-2" style={{ borderColor: T.border, color: T.textMuted }}>Condition</div>
-              <div className="font-bold px-4 py-2.5 border-b-2" style={{ borderColor: T.border, color: T.textMuted }}>Total Patients</div>
-              <div className="font-bold px-4 py-2.5 border-b-2" style={{ borderColor: T.border, color: T.textMuted }}>NPS Responses</div>
-              <div className="font-bold px-4 py-2.5 border-b-2" style={{ borderColor: T.border, color: T.textMuted }}>Avg NPS</div>
-              {(charts?.recurringConditions?.[condTableType] || []).map((cond: any, i: number) => {
-                const responseRate = cond.patients > 0 ? Math.round((cond.npsResponses / cond.patients) * 100) : 0;
-                return [
-                  <div key={`n-${i}`} className="px-4 py-3 font-semibold border-b" style={{ borderColor: T.borderLight, color: T.textPrimary }}>{cond.name}</div>,
-                  <div key={`p-${i}`} className="px-4 py-3 font-bold text-[16px] border-b" style={{ borderColor: T.borderLight, color: T.textPrimary }}>{formatNum(cond.patients)}</div>,
-                  <div key={`r-${i}`} className="px-4 py-3 border-b" style={{ borderColor: T.borderLight }}>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(cond.npsResponses)}</span>
-                      <span className="text-[11px]" style={{ color: T.textMuted }}>({responseRate}%)</span>
-                    </div>
-                    <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ backgroundColor: T.borderLight }}>
-                      <div className="h-full rounded-full" style={{ width: `${responseRate}%`, backgroundColor: T.amber }} />
-                    </div>
-                  </div>,
-                  <div key={`a-${i}`} className="px-4 py-3 border-b" style={{ borderColor: T.borderLight }}>
-                    <span
-                      className="inline-flex items-center px-3 py-1 rounded-full text-[13px] font-bold"
-                      style={{
-                        backgroundColor: cond.avgNps >= 70 ? "#dcfce7" : cond.avgNps >= 50 ? "#fef9c3" : "#fee2e2",
-                        color: cond.avgNps >= 70 ? "#166534" : cond.avgNps >= 50 ? "#854d0e" : "#991b1b",
-                      }}
+          {(() => {
+            const rows: Array<{ name: string; count: number; patients: number }>
+              = (charts?.recurringConditions?.[condTableType] || []);
+            const maxPatients = Math.max(1, ...rows.map((r) => r.patients));
+            const totalPatients = rows.reduce((s, r) => s + r.patients, 0);
+            const totalOccurrences = rows.reduce((s, r) => s + r.count, 0);
+            const accent = condTableType === "chronic" ? "#4f46e5" : T.teal;
+            const accentSoft = condTableType === "chronic" ? "#4f46e515" : T.teal + "15";
+            return (
+              <div className="flex-1 flex flex-col">
+                {/* Hero stat tiles — 3 separate KPIs in soft accent-tinted cards */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {[
+                    { label: "Conditions Tracked", value: formatNum(rows.length), sub: condTableType === "chronic" ? "long-term recurring" : "short-term recurring" },
+                    { label: "Distinct Patients", value: formatNum(totalPatients), sub: "with recurring diagnoses" },
+                    { label: "Total Occurrences", value: formatNum(totalOccurrences), sub: `${rows.length > 0 ? (totalOccurrences / Math.max(1, totalPatients)).toFixed(1) : 0}× avg per patient` },
+                  ].map((m) => (
+                    <div
+                      key={m.label}
+                      className="rounded-xl px-4 py-3 transition-all hover:-translate-y-px"
+                      style={{ backgroundColor: accentSoft, border: `1px solid ${accent}25` }}
                     >
-                      {cond.avgNps}
-                    </span>
-                  </div>,
-                ];
-              })}
-            </div>
-          </div>
-          <InsightBox text={`Viewing ${condTableType} recurring conditions. Review conditions with high patient volume but low NPS scores (below 50) to prioritize care improvement initiatives. Conditions with high NPS response rates provide more reliable satisfaction data.`} />
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{m.label}</p>
+                      <p className="text-[26px] font-extrabold leading-none tracking-[-0.02em] mt-1.5 font-[var(--font-inter)]" style={{ color: accent, fontVariantNumeric: "tabular-nums" }}>{m.value}</p>
+                      <p className="text-[10.5px] mt-1" style={{ color: T.textSecondary }}>{m.sub}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Table */}
+                <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
+                  <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
+                    <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                      <thead className="sticky top-0 z-10" style={{ backgroundColor: T.warmBg }}>
+                        <tr>
+                          <th className="text-left px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em] w-[44px]" style={{ color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>#</th>
+                          <th className="text-left px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>Condition</th>
+                          <th className="text-left px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted, borderBottom: `1px solid ${T.border}`, minWidth: 220 }}>Patients</th>
+                          <th className="text-right px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em] whitespace-nowrap" style={{ color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>Total Occurrences</th>
+                          <th className="text-right px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em] whitespace-nowrap" style={{ color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>Avg / Patient</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="text-center py-10 text-[12px]" style={{ color: T.textMuted }}>
+                              No recurring {condTableType} conditions found for the current selection.
+                            </td>
+                          </tr>
+                        ) : rows.map((cond, i) => {
+                          const widthPct = Math.max(2, (cond.patients / maxPatients) * 100);
+                          const avgPerPatient = cond.patients > 0 ? cond.count / cond.patients : 0;
+                          const sharePct = totalPatients > 0 ? Math.round((cond.patients / totalPatients) * 1000) / 10 : 0;
+                          return (
+                            <tr key={cond.name} className="transition-colors hover:bg-gray-50">
+                              <td className="px-3 py-3 align-middle" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                                <span
+                                  className="inline-flex items-center justify-center text-[11px] font-bold rounded-full"
+                                  style={{ backgroundColor: i < 3 ? accentSoft : T.borderLight, color: i < 3 ? accent : T.textMuted, width: 26, height: 26 }}
+                                >
+                                  {i + 1}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 align-middle font-semibold" style={{ borderBottom: `1px solid ${T.borderLight}`, color: T.textPrimary }}>
+                                {cond.name}
+                              </td>
+                              <td className="px-3 py-3 align-middle" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                                <div className="flex items-center gap-3">
+                                  <div className="relative h-2 rounded-full flex-1 overflow-hidden" style={{ backgroundColor: T.borderLight, minWidth: 80 }}>
+                                    <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${widthPct}%`, backgroundColor: accent }} />
+                                  </div>
+                                  <span className="font-bold tabular-nums whitespace-nowrap text-[13px]" style={{ color: T.textPrimary }}>
+                                    {formatNum(cond.patients)}
+                                    <span className="ml-1 text-[10.5px] font-medium" style={{ color: T.textMuted }}>· {sharePct}%</span>
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 align-middle text-right tabular-nums font-semibold whitespace-nowrap" style={{ borderBottom: `1px solid ${T.borderLight}`, color: T.textPrimary }}>
+                                {formatNum(cond.count)}
+                              </td>
+                              <td className="px-3 py-3 align-middle text-right" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                                <span
+                                  className="inline-flex items-center justify-end px-2.5 py-0.5 rounded-md text-[12px] font-bold tabular-nums"
+                                  style={{ backgroundColor: accentSoft, color: accent }}
+                                >
+                                  {avgPerPatient.toFixed(1)}×
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <InsightBox text={`Viewing ${condTableType === "chronic" ? "chronic" : "acute"} recurring conditions — ${rows.length} conditions affecting ${formatNum(totalPatients)} repeat patients with ${formatNum(totalOccurrences)} total occurrences. ${rows[0] ? `${rows[0].name} leads with ${formatNum(rows[0].patients)} patients (${(rows[0].count / Math.max(1, rows[0].patients)).toFixed(1)}× avg recurrence).` : ""} Higher avg-per-patient indicates conditions where individual patients return repeatedly — strong candidates for proactive care management.`} />
+              </div>
+            );
+          })()}
         </CVCard>}
 
         {/* ── Key Repeat User Segments ── */}
         {isChartVisible("repeatUserSegments") && <CVCard accentColor={"#6366f1"} title="Key Repeat User Segments" chartId="repeatUserSegments"
-          tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows key metrics — patient count, average NPS, visits per year, NPS response rate — along with chronic vs. acute split and a mini donut chart for visual comparison."
-          subtitle="Compare engagement patterns, satisfaction levels, and visit frequencies across repeat patient cohorts. Longer-tenured users show higher satisfaction and more consistent visit patterns."
-          chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns and satisfaction across repeat patient cohorts"
+          tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows patient count and visits-per-year, plus the chronic vs. acute split with a mini donut for visual comparison."
+          subtitle="Compare engagement patterns and visit frequencies across repeat patient cohorts grouped by tenure."
+          chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns across repeat patient cohorts"
           expandable={false}>
           <div className="overflow-x-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-3" style={{ minWidth: 700 }}>
@@ -1374,34 +1377,28 @@ export default function RepeatVisitsPage() {
               const segColors = ["#818cf8", "#0d9488", "#a78bfa"];
               const segColor = segColors[i % segColors.length];
               const tenureLabel = rawSeg?.label === "3+ years" ? "\u22653 yr" : rawSeg?.label === "2 years" ? "=2 yr" : "=1 yr";
-              // Ensure NPS hierarchy: 3yr highest > 2yr > 1yr lowest
-              const npsOffset = rawSeg?.label === "3+ years" ? 0.5 : rawSeg?.label === "2 years" ? 0.2 : -0.2;
-              const rawChronic = rawSeg?.chronic ?? { count: 0, pct: 0, nps: 0 };
-              const rawAcute   = rawSeg?.acute   ?? { count: 0, pct: 0, nps: 0 };
+              const rawChronic = rawSeg?.chronic ?? { count: 0, pct: 0 };
+              const rawAcute   = rawSeg?.acute   ?? { count: 0, pct: 0 };
               const seg = {
                 label: rawSeg?.label ?? "",
                 patients: rawSeg?.patients ?? 0,
                 visitsPerYear: rawSeg?.visitsPerYear ?? 0,
-                responseRate: rawSeg?.responseRate ?? 0,
-                avgNps: Math.round(((rawSeg?.avgNps ?? 0) + npsOffset) * 10) / 10,
-                chronic: { ...rawChronic, nps: Math.round(((rawChronic.nps || 0) + npsOffset) * 10) / 10 },
-                acute:   { ...rawAcute,   nps: Math.round(((rawAcute.nps   || 0) + npsOffset) * 10) / 10 },
+                chronic: rawChronic,
+                acute: rawAcute,
               };
               return (
                 <div key={seg.label} className="rounded-2xl p-5" style={{ border: `2px solid ${segColor}30`, backgroundColor: `${segColor}08` }}>
                   <h4 className="text-[14px] font-bold mb-4" style={{ color: T.textPrimary }}>
                     Consistent Users since ({tenureLabel})
                   </h4>
-                  {/* 4 KPI metrics in a row */}
-                  <div className="grid grid-cols-4 gap-2 mb-5">
+                  {/* 2 KPI metrics in a row */}
+                  <div className="grid grid-cols-2 gap-2 mb-5">
                     {[
                       { label: "Patients", value: formatNum(seg.patients) },
-                      { label: "Avg NPS", value: seg.avgNps },
-                      { label: "Visits/Yr", value: seg.visitsPerYear },
-                      { label: "Response Rate", value: `${seg.responseRate}%` },
+                      { label: "Visits / Yr", value: seg.visitsPerYear },
                     ].map((m) => (
                       <div key={m.label} className="text-center">
-                        <p className="text-[20px] font-extrabold" style={{ color: segColor }}>{m.value}</p>
+                        <p className="text-[24px] font-extrabold" style={{ color: segColor }}>{m.value}</p>
                         <p className="text-[10px] font-medium mt-0.5" style={{ color: T.textMuted }}>{m.label}</p>
                       </div>
                     ))}
@@ -1411,13 +1408,13 @@ export default function RepeatVisitsPage() {
                     <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${segColor}10`, border: `1px solid ${segColor}25` }}>
                       <p className="text-[11px] font-bold mb-1" style={{ color: T.textSecondary }}>Chronic Patients</p>
                       <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>
-                        {formatNum(seg.chronic.count)} ({seg.chronic.pct}%) - NPS: {seg.chronic.nps || "—"}
+                        {formatNum(seg.chronic.count)} <span className="font-medium" style={{ color: T.textSecondary }}>({seg.chronic.pct}%)</span>
                       </p>
                     </div>
                     <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${segColor}08`, border: `1px solid ${segColor}15` }}>
                       <p className="text-[11px] font-bold mb-1" style={{ color: T.textSecondary }}>Acute Patients</p>
                       <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>
-                        {formatNum(seg.acute.count)} ({seg.acute.pct}%) - NPS: {seg.acute.nps || "—"}
+                        {formatNum(seg.acute.count)} <span className="font-medium" style={{ color: T.textSecondary }}>({seg.acute.pct}%)</span>
                       </p>
                     </div>
                   </div>
@@ -1449,7 +1446,7 @@ export default function RepeatVisitsPage() {
             })}
           </div>
           </div>
-          <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically have higher NPS and response rates, indicating stronger care relationships. Use these insights to design retention and loyalty programs." />
+          <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically visit more consistently per year and skew chronic, signalling stronger care relationships. Use these insights to design retention and continuity-of-care programs." />
         </CVCard>}
 
         {/* ── Same Cohort Progression ── */}

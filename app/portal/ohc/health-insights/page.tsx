@@ -581,8 +581,16 @@ export default function HealthInsightsPage() {
     return { hotspot, genderGap: "", locationSpotlight: "" };
   }, [demoMatrix, demoSegments, demoTab]);
 
-  // Disease combos (limit to 6)
-  const combos = (d?.diseaseCombinations || []).slice(0, 6);
+  // Disease combos (limit to 6) — precompute a cleaned displayName so the
+  // axis labels, tooltip and insight all show the ICD-cleaned form
+  // ("Hyperlipidemia + Prediabetes" instead of "Hyperlipidemia, unspecified
+  // + Prediabetes").
+  const combos = (d?.diseaseCombinations || []).slice(0, 6).map((c: any) => ({
+    ...c,
+    displayName: typeof c.name === "string"
+      ? c.name.split(" + ").map((p: string) => displaySub(p.trim())).join(" + ")
+      : c.name,
+  }));
 
   // Seasonal trends
   const seasonalTrends: Record<string, any[]> = d?.seasonalTrends || {};
@@ -1449,71 +1457,119 @@ export default function HealthInsightsPage() {
           chartDescription="Disease co-occurrence frequency with gender breakdown"
           headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
         >
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-[12px] font-medium px-3 py-1 rounded-full" style={{ backgroundColor: "#4f46e512", color: "#4f46e5", border: "1px solid #4f46e522" }}>Gender Split</span>
-            <span className="text-[11px]" style={{ color: T.textMuted }}>— bubble Y-position and colour indicate Male vs Female count for each disease pair</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <div style={{ height: 320, minWidth: Math.max(combos.length * 120, 500) }}>
-              <ReactECharts
-                style={{ height: "100%", width: "100%" }}
-                option={{
-                  tooltip: {
-                    trigger: "item",
-                    backgroundColor: "#fff",
-                    borderColor: T.border,
-                    borderWidth: 1,
-                    padding: [10, 14],
-                    textStyle: { fontSize: 12, color: T.textPrimary },
-                    extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
-                    formatter: (p: any) => {
-                      const d = p.data;
-                      return `<strong>${d[3]}</strong><br/><span style="color:#4f46e5">Total Affected: ${formatNum(d[2])}</span><br/>Breakdown by Gender:<br/>&bull; Male: ${formatNum(d[4])}<br/>&bull; Female: ${formatNum(d[5])}`;
-                    },
-                  },
-                  legend: {
-                    data: ["Male", "Female"],
-                    top: 0,
-                    textStyle: { fontSize: 11, color: T.textSecondary },
-                    icon: "circle",
-                    itemWidth: 10,
-                    itemHeight: 10,
-                  },
-                  grid: { left: 20, right: 20, top: 40, bottom: 40 },
-                  xAxis: {
-                    type: "category",
-                    data: combos.map((c: any) => {
-                      const parts = c.name.split(" + ").map((p: string) => displayCat(p.trim()));
-                      const label = parts.join(" + ");
-                      return label.length > 35 ? label.substring(0, 32) + "..." : label;
-                    }),
-                    axisLabel: { fontSize: 9, rotate: 35, color: T.textMuted },
-                  },
-                  yAxis: { type: "value", axisLabel: { fontSize: 10, color: T.textMuted } },
-                  series: [
-                    {
-                      name: "Male",
-                      type: "scatter",
-                      data: combos.map((c: any, i: number) => [i, c.male, c.total, c.name, c.male, c.female]),
-                      symbolSize: (data: any) => Math.max(Math.sqrt(data[1]) * 2.5, 8),
-                      itemStyle: { color: GENDER_COLORS.Male, opacity: 0.85 },
-                    },
-                    {
-                      name: "Female",
-                      type: "scatter",
-                      data: combos.map((c: any, i: number) => [i, c.female, c.total, c.name, c.male, c.female]),
-                      symbolSize: (data: any) => Math.max(Math.sqrt(data[1]) * 2.5, 8),
-                      itemStyle: { color: GENDER_COLORS.Female, opacity: 0.85 },
-                    },
-                  ],
-                }}
-              />
-            </div>
-          </div>
+          {/* Cleveland dot plot — one row per disease pair, two dots
+              (Male / Female) connected by a thin grey line. Line length =
+              the gender gap; dot positions = absolute counts. Lighter and
+              far more readable than the overlapping bubble cloud. */}
+          {(() => {
+            const maxValue = Math.max(1, ...combos.flatMap((c: any) => [c.male || 0, c.female || 0]));
+            return (
+              <div className="flex flex-col">
+                {/* Legend */}
+                <div className="flex items-center gap-4 mb-4 text-[11px]" style={{ color: T.textSecondary }}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLORS.Male }} /> Male
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLORS.Female }} /> Female
+                  </span>
+                  <span className="text-[10.5px]" style={{ color: T.textMuted }}>— line length = gender gap</span>
+                </div>
+                {/* Rows */}
+                <div className="flex flex-col gap-3">
+                  {combos.map((c: any) => {
+                    const male = c.male || 0;
+                    const female = c.female || 0;
+                    const total = c.total || male + female;
+                    const malePct = (male / maxValue) * 100;
+                    const femalePct = (female / maxValue) * 100;
+                    const leftPct = Math.min(malePct, femalePct);
+                    const rightPct = Math.max(malePct, femalePct);
+                    const leadingGender = male >= female ? "Male" : "Female";
+                    const gap = Math.abs(male - female);
+                    const gapPct = total > 0 ? Math.round((gap / total) * 100) : 0;
+                    const label = c.displayName || c.name;
+                    return (
+                      <div
+                        key={label}
+                        className="grid items-center gap-3 text-left"
+                        style={{ gridTemplateColumns: "minmax(180px, 30%) 1fr auto" }}
+                        title={`${label}\nMale: ${formatNum(male)}\nFemale: ${formatNum(female)}\nTotal: ${formatNum(total)}`}
+                      >
+                        {/* Pair label */}
+                        <span className="text-[12px] font-semibold truncate" style={{ color: T.textPrimary }}>
+                          {label}
+                        </span>
+                        {/* Dot plot lane */}
+                        <span className="relative h-5 flex items-center">
+                          {/* Subtle baseline track */}
+                          <span
+                            className="absolute left-0 top-1/2 -translate-y-1/2 w-full rounded-full"
+                            style={{ height: 1, backgroundColor: T.borderLight }}
+                          />
+                          {/* Connector line between Male and Female dots */}
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
+                            style={{
+                              left: `${leftPct}%`,
+                              width: `${Math.max(0, rightPct - leftPct)}%`,
+                              height: 3,
+                              backgroundColor: T.textMuted,
+                              opacity: 0.5,
+                            }}
+                          />
+                          {/* Male dot */}
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
+                            style={{
+                              left: `calc(${malePct}% - 7px)`,
+                              width: 14,
+                              height: 14,
+                              backgroundColor: GENDER_COLORS.Male,
+                              boxShadow: `0 0 0 3px ${GENDER_COLORS.Male}25`,
+                            }}
+                          />
+                          {/* Female dot */}
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
+                            style={{
+                              left: `calc(${femalePct}% - 7px)`,
+                              width: 14,
+                              height: 14,
+                              backgroundColor: GENDER_COLORS.Female,
+                              boxShadow: `0 0 0 3px ${GENDER_COLORS.Female}25`,
+                            }}
+                          />
+                        </span>
+                        {/* Counts cluster */}
+                        <span className="flex items-baseline gap-2 shrink-0 whitespace-nowrap text-[12px] tabular-nums">
+                          <span className="font-bold" style={{ color: GENDER_COLORS.Male }}>{formatNum(male)}</span>
+                          <span style={{ color: T.textMuted }}>·</span>
+                          <span className="font-bold" style={{ color: GENDER_COLORS.Female }}>{formatNum(female)}</span>
+                          <span className="text-[10.5px] font-medium ml-1" style={{ color: leadingGender === "Male" ? GENDER_COLORS.Male : GENDER_COLORS.Female }}>
+                            {leadingGender}+{gapPct}%
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* X-axis scale reference */}
+                <div className="grid items-center gap-3 mt-3 text-[10px]" style={{ gridTemplateColumns: "minmax(180px, 30%) 1fr auto", color: T.textMuted }}>
+                  <span />
+                  <span className="flex items-center justify-between">
+                    <span>0</span>
+                    <span>{formatNum(Math.round(maxValue / 2))}</span>
+                    <span>{formatNum(maxValue)}</span>
+                  </span>
+                  <span />
+                </div>
+              </div>
+            );
+          })()}
 
           {combos.length > 0 && (
-            <InsightBox text={`In ${selectedYear}, ${combos[0]?.name} co-occurrence affected ${formatNum(combos[0]?.total || 0)} employees, with a higher share among ${(combos[0]?.male || 0) > (combos[0]?.female || 0) ? "Male" : "Female"} (${Math.round(Math.max(combos[0]?.male || 0, combos[0]?.female || 0) / (combos[0]?.total || 1) * 100)}%).`} />
+            <InsightBox text={`In ${selectedYear}, ${combos[0]?.displayName || combos[0]?.name} co-occurrence affected ${formatNum(combos[0]?.total || 0)} employees, with a higher share among ${(combos[0]?.male || 0) > (combos[0]?.female || 0) ? "Male" : "Female"} (${Math.round(Math.max(combos[0]?.male || 0, combos[0]?.female || 0) / (combos[0]?.total || 1) * 100)}%).`} />
           )}
       </CVCard>
 

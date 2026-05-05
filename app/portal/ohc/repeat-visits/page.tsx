@@ -339,27 +339,36 @@ export default function RepeatVisitsPage() {
   // (raw appointments → client-side aggregateRepeatVisits) was scanning a
   // 1.4M-row payload on every filter change; this single round-trip computes
   // everything server-side from the diagnosis fact table.
-  // Note: conditionFilter is intentionally NOT in the API params — that
-  // would change the cache key and force an expensive 30-40s refetch on
-  // every toggle. Instead, the filter is applied client-side below to the
-  // already-cached chronicVsAcute + recurringConditions slices.
+  // Note: minVisits AND conditionFilter are intentionally NOT in the API
+  // params — both are precomputed server-side as 12 slices ("all_2",
+  // "chronic_2", "acute_5", …) and shipped in one payload. Toggling either
+  // filter just picks a different slice from the cached payload, no refetch.
   const repeatExtraParams = useMemo(() => ({
-    minVisits: String(minVisits),
     ...(appliedLocations.length ? { locations: appliedLocations.join(",") } : {}),
     ...(appliedGenders.length ? { genders: appliedGenders.join(",") } : {}),
     ...(appliedAgeGroups.length ? { ageGroups: appliedAgeGroups.join(",") } : {}),
-  }), [minVisits, appliedLocations, appliedGenders, appliedAgeGroups]);
+  }), [appliedLocations, appliedGenders, appliedAgeGroups]);
 
   const { data: repeatApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/repeat-visits", repeatExtraParams);
 
-  const kpis = repeatApi?.kpis;
-  const charts = repeatApi?.charts;
+  // Pick the precomputed slice matching (conditionFilter × minVisits). The
+  // slice carries its own kpis + chart subset; we merge it with the
+  // payload's global charts (specialtyTreemap, recurringConditions, etc.)
+  // which don't depend on these filters.
+  const sliceKey = `${conditionFilter}_${minVisits}`;
+  const activeSlice = repeatApi?.slices?.[sliceKey] || repeatApi?.slices?.["all_2"];
+  const kpis = activeSlice?.kpis || repeatApi?.kpis;
+  const charts = useMemo(() => {
+    if (!repeatApi?.charts) return undefined;
+    return { ...repeatApi.charts, ...(activeSlice?.charts || {}) };
+  }, [repeatApi, activeSlice]);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
 
-  // Set default treemap year when data loads
+  // Set default treemap year when data loads — default to "All" (the first
+  // entry the API returns) so the chart shows aggregated data on first paint.
   useEffect(() => {
     if (charts?.treemapYears?.length && !treemapYear) {
-      setTreemapYear(charts.treemapYears[charts.treemapYears.length - 1]);
+      setTreemapYear(charts.treemapYears[0]);
     }
   }, [charts?.treemapYears, treemapYear]);
 

@@ -6,33 +6,16 @@ import { withCache } from "@/lib/cache/middleware";
 /* ────────────────────────────────────────────────────────────────────
  * OHC Repeat Visits API — sourced from aggregated_table.agg_diagnosis.
  *
- * Each row is one diagnosis recorded for a patient. "Visit count" =
- * number of diagnosis rows for the uhid. Repeat patients = uhids with
- * visit_count >= minVisits (default 2).
+ * Visit count = COUNT(DISTINCT d._id) per uhid (one _id per appointment).
  *
- * Limitations of agg_diagnosis (vs. a richer event-level fact table):
- *   - No date column. So no time-series, no year breakdown, no cohort
- *     progression, no trend charts. Charts that need time return [].
- *   - No facility/location. So locationDistribution returns [].
- *   - No NPS, no vitals, no condition-transition path. Those return
- *     empty defaults.
- *
- * What agg_diagnosis CAN populate (and we do):
- *   - KPIs: totalRepeatPatients, avgVisitFrequency,
- *           totalConsultsByRepeat, frequentRepeaters
- *   - chronicVsAcute breakdown
- *   - demographics: ageGroups, genderSplit
- *   - repeatVisitFrequency bucket distribution
- *   - specialtyTreemap (by treating_doctor_speciality)
- *   - recurringConditions (diagnoses repeating per uhid)
- *   - repeatUserSegments (visit-bucket × age × gender cohorts)
+ * Pre-computes 12 slices (4 visit-buckets × 3 condition types) in a
+ * single per_uhid scan and ships them all in one payload so the page
+ * can switch between Min Visits (2/3/4/5) and All/Chronic/Acute toggles
+ * without re-hitting the warehouse.
  * ──────────────────────────────────────────────────────────────────── */
 
 const DIAG_TABLE = "aggregated_table.agg_diagnosis";
 
-// Categorise a diagnosis_text into broad chronic vs acute. Chronic
-// catches the standard long-term conditions that actually drive most
-// repeat-visit volume in an OHC setting; everything else falls to acute.
 const CHRONIC_CASE = `(
   LOWER(d.icd_description) ~* '(diabet|hyperten|hyperlipid|asthma|arthrit|copd|chronic|thyroid|cardiac|hypothyr|hyperthyr|coronary|ischaem|ischem|kidney disease|ckd|cancer|tumor|tumour|psori|ecz|migraine|epileps|alzheim|parkinson|depress|anxiety|bipolar)'
 )`;
@@ -45,11 +28,39 @@ const AGE_GROUP_CASE = `CASE
   WHEN d.patient_age > 60 THEN '61+'
 END`;
 
-const GENDER_NORM = `CASE
-  WHEN LOWER(TRIM(d.patient_gender)) IN ('male', 'm') THEN 'Male'
-  WHEN LOWER(TRIM(d.patient_gender)) IN ('female', 'f') THEN 'Female'
-  ELSE 'Others'
-END`;
+// Slice combinations for the multi-FILTER aggregation. The SQL emits 12
+// columns per grouped row (n2a, n2c, n2x, … n5x) where the digit is the
+// minVisits threshold and the letter is the condition: a=all, c=chronic,
+// x=acute (= NOT chronic at the patient level).
+const VC_THRESHOLDS = [2, 3, 4, 5] as const;
+const COND_TYPES = ["a", "c", "x"] as const;
+type Cond = typeof COND_TYPES[number];
+
+// `template` receives the `FILTER (WHERE ...)` clause and returns the
+// full SQL expression. Postgres requires FILTER to attach directly to the
+// aggregate function (e.g. `COUNT(*) FILTER(...)` or `COALESCE(SUM(vc)
+// FILTER(...), 0)`), so this indirection lets each row decide where the
+// FILTER goes. `extraWhere` is appended inside the WHERE clause for rows
+// that need an additional per-uhid predicate (e.g. spec_count <= 1).
+const filterCol = (
+  template: (filter: string) => string,
+  vc: number,
+  cond: Cond,
+  extraWhere?: string,
+): string => {
+  const condClause =
+    cond === "a" ? "" :
+    cond === "c" ? "AND has_chronic" :
+                   "AND NOT has_chronic";
+  const extra = extraWhere ? ` AND ${extraWhere}` : "";
+  const filter = `FILTER (WHERE vc >= ${vc} ${condClause}${extra})`;
+  return `${template(filter)}::bigint AS n${vc}${cond}`;
+};
+const allFilterCols = (
+  template: (filter: string) => string,
+  extraWhere?: string,
+): string =>
+  VC_THRESHOLDS.flatMap((vc) => COND_TYPES.map((cond) => filterCol(template, vc, cond, extraWhere))).join(",\n  ");
 
 function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -57,7 +68,6 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const genders = searchParams.get("genders")?.split(",").filter(Boolean);
   const locations = searchParams.get("locations")?.split(",").filter(Boolean);
-  const conditionType = searchParams.get("conditionType"); // 'chronic' | 'acute' | 'all'
 
   const conditions: string[] = [`d.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
@@ -92,8 +102,9 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
     params.push(ageGroups);
     idx++;
   }
-  if (conditionType === "chronic") conditions.push(CHRONIC_CASE);
-  else if (conditionType === "acute") conditions.push(`NOT ${CHRONIC_CASE}`);
+  // Note: minVisits and conditionType are intentionally NOT in the WHERE
+  // clause — they're applied client-side from the precomputed slices so
+  // toggling them doesn't change the cache key or refetch.
 
   return { params, where: conditions.join(" AND ") };
 }
@@ -104,8 +115,6 @@ async function handler(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
-    const minVisitsParam = parseInt(searchParams.get("minVisits") || "2", 10);
-    const minVisits = Number.isFinite(minVisitsParam) && minVisitsParam >= 1 ? minVisitsParam : 2;
 
     const cugCode = await getSessionCugCode(clientId ?? undefined);
     if (!cugCode) {
@@ -123,47 +132,63 @@ async function handler(request: NextRequest) {
       }
     }
 
-    // ── Heavy timeout: agg_diagnosis can be ~80M rows for a single tenant.
-    // The per_uhid GROUP BY scans the cug-filtered slice; bump the per-query
-    // statement timeout to 60s rather than the 15s default.
     const HEAVY_OPTS = { statementTimeoutMs: 60000 };
 
-    // ── Consolidated patient-stats query: one per_uhid pass, every patient-
-    // level rollup (KPIs, age bucket, gender, visit-frequency bucket,
-    // segments) computed in a single round-trip via FILTER aggregates.
-    //
-    // Each demographic row carries n_total, n_chronic, n_acute so the page
-    // can switch between All/Chronic/Acute views from cached data — no API
-    // refetch on filter toggle.
+    type SliceCols = Record<string, string>;
+
+    // ── Big consolidated query — one per_uhid pass, all 12 slices.
     const patientStatsRows = await safeQuery(
-      () => dwQuery<{
-        kind: string;
-        bucket: string;
-        n: string;
-        n_chronic: string;
-        n_acute: string;
-      }>(
+      () => dwQuery<{ kind: string; bucket: string } & SliceCols>(
         `WITH per_uhid AS (
           SELECT
             d.uhid,
+            -- _id is unique per row (1 row = 1 appointment), so COUNT(*) is
+            -- equivalent to COUNT(DISTINCT _id) but ~5× faster on Postgres.
             COUNT(*)::int AS vc,
             MAX(d.patient_age) AS age_years,
-            MAX(d.patient_gender)    AS gender,
-            MAX(d.facility_name)     AS facility,
-            BOOL_OR(${CHRONIC_CASE}) AS has_chronic
+            MAX(d.patient_gender) AS gender,
+            MAX(d.facility_name) AS facility,
+            MIN(d.g_creation_time) AS first_at,
+            MAX(d.g_creation_time) AS last_at,
+            BOOL_OR(${CHRONIC_CASE}) AS has_chronic,
+            -- distinct specialties seen by this uhid across all visits;
+            -- drives the same/different specialty split on the Repeat
+            -- Visit Frequency chart.
+            COUNT(DISTINCT NULLIF(TRIM(d.treating_doctor_speciality), ''))::int AS spec_count
           FROM ${DIAG_TABLE} d
           WHERE ${q.where}
           GROUP BY d.uhid
-        ),
-        repeat_pool AS (
-          SELECT * FROM per_uhid WHERE vc >= ${minVisits}
         )
         SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket,
-               COUNT(*)::bigint AS n, 0::bigint AS n_chronic, 0::bigint AS n_acute
-          FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(vc), 0)::bigint, 0::bigint, 0::bigint FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'avgVisitFrequencyX10', ROUND(COALESCE(AVG(vc), 0) * 10)::bigint, 0::bigint, 0::bigint FROM repeat_pool
-        UNION ALL SELECT 'kpi', 'frequentRepeaters', COUNT(*)::bigint, 0::bigint, 0::bigint FROM per_uhid WHERE vc >= 5
+          ${allFilterCols((f) => `COUNT(*) ${f}`)}
+        FROM per_uhid
+        UNION ALL
+        SELECT 'kpi', 'totalConsultsByRepeat',
+          ${allFilterCols((f) => `COALESCE(SUM(vc) ${f}, 0)`)}
+        FROM per_uhid
+        UNION ALL
+        SELECT 'kpi', 'avgVisitFrequencyX10',
+          ${allFilterCols((f) => `ROUND(COALESCE(AVG(vc) ${f}, 0) * 10)`)}
+        FROM per_uhid
+        UNION ALL
+        -- frequentRepeaters = patients with ≥5 visits. Since vc >= 5 is
+        -- strictly tighter than vc >= 2/3/4, every column in the row is
+        -- the same number for a given condition type. Hand-written to
+        -- avoid nested FILTER (Postgres rejects FILTER(...) FILTER(...)).
+        SELECT 'kpi' AS kind, 'frequentRepeaters' AS bucket,
+          COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n2a,
+          COUNT(*) FILTER (WHERE vc >= 5 AND has_chronic)::bigint AS n2c,
+          COUNT(*) FILTER (WHERE vc >= 5 AND NOT has_chronic)::bigint AS n2x,
+          COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n3a,
+          COUNT(*) FILTER (WHERE vc >= 5 AND has_chronic)::bigint AS n3c,
+          COUNT(*) FILTER (WHERE vc >= 5 AND NOT has_chronic)::bigint AS n3x,
+          COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n4a,
+          COUNT(*) FILTER (WHERE vc >= 5 AND has_chronic)::bigint AS n4c,
+          COUNT(*) FILTER (WHERE vc >= 5 AND NOT has_chronic)::bigint AS n4x,
+          COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n5a,
+          COUNT(*) FILTER (WHERE vc >= 5 AND has_chronic)::bigint AS n5c,
+          COUNT(*) FILTER (WHERE vc >= 5 AND NOT has_chronic)::bigint AS n5x
+        FROM per_uhid
         UNION ALL
           SELECT 'ageGroup', CASE
             WHEN age_years < 20 THEN '<20'
@@ -172,35 +197,47 @@ async function handler(request: NextRequest) {
             WHEN age_years BETWEEN 41 AND 60 THEN '41-60'
             WHEN age_years > 60 THEN '61+'
             ELSE 'Unknown' END,
-            COUNT(*)::bigint,
-            COUNT(*) FILTER (WHERE has_chronic)::bigint,
-            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
-          FROM repeat_pool WHERE age_years IS NOT NULL GROUP BY 2
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid WHERE age_years IS NOT NULL GROUP BY 2
         UNION ALL
           SELECT 'gender', CASE
             WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
             WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
             ELSE 'Others' END,
-            COUNT(*)::bigint,
-            COUNT(*) FILTER (WHERE has_chronic)::bigint,
-            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
-          FROM repeat_pool GROUP BY 2
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid GROUP BY 2
         UNION ALL
           SELECT 'visitFreq', CASE
             WHEN vc >= 10 THEN '10+'
             WHEN vc BETWEEN 5 AND 9 THEN '5-9'
             WHEN vc BETWEEN 2 AND 4 THEN '2-4'
             ELSE '1' END,
-            COUNT(*)::bigint,
-            COUNT(*) FILTER (WHERE has_chronic)::bigint,
-            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
-          FROM repeat_pool GROUP BY 2
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid GROUP BY 2
+        UNION ALL
+        -- visitFreqSame — patients in each visit bucket who saw only ONE
+        -- specialty across all visits. Same-specialty side of the
+        -- Repeat Visit Frequency stacked bar.
+          SELECT 'visitFreqSame', CASE
+            WHEN vc >= 10 THEN '10+'
+            WHEN vc BETWEEN 5 AND 9 THEN '5-9'
+            WHEN vc BETWEEN 2 AND 4 THEN '2-4'
+            ELSE '1' END,
+            ${allFilterCols((f) => `COUNT(*) ${f}`, "spec_count <= 1")}
+          FROM per_uhid GROUP BY 2
+        UNION ALL
+        -- visitFreqDiff — patients with multiple specialties.
+          SELECT 'visitFreqDiff', CASE
+            WHEN vc >= 10 THEN '10+'
+            WHEN vc BETWEEN 5 AND 9 THEN '5-9'
+            WHEN vc BETWEEN 2 AND 4 THEN '2-4'
+            ELSE '1' END,
+            ${allFilterCols((f) => `COUNT(*) ${f}`, "spec_count >= 2")}
+          FROM per_uhid GROUP BY 2
         UNION ALL
           SELECT 'location', COALESCE(NULLIF(TRIM(facility), ''), 'Unknown'),
-            COUNT(*)::bigint,
-            COUNT(*) FILTER (WHERE has_chronic)::bigint,
-            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
-          FROM repeat_pool GROUP BY 2
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid GROUP BY 2
         UNION ALL
           SELECT 'segment',
             (CASE
@@ -221,66 +258,59 @@ async function handler(request: NextRequest) {
               WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
               WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
               ELSE 'Others' END),
-            COUNT(*)::bigint,
-            COUNT(*) FILTER (WHERE has_chronic)::bigint,
-            COUNT(*) FILTER (WHERE NOT has_chronic)::bigint
-          FROM repeat_pool GROUP BY 2`,
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid GROUP BY 2
+        UNION ALL
+          SELECT 'tenure',
+            (CASE
+              WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 2 THEN '3+ years'
+              WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 1 THEN '2 years'
+              ELSE '1 year' END)
+            || '|' || (CASE WHEN has_chronic THEN 'chronic' ELSE 'acute' END),
+            ${allFilterCols((f) => `COUNT(*) ${f}`)}
+          FROM per_uhid GROUP BY 2
+        UNION ALL
+          SELECT 'tenureVisits',
+            (CASE
+              WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 2 THEN '3+ years'
+              WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 1 THEN '2 years'
+              ELSE '1 year' END),
+            ${allFilterCols((f) => `COALESCE(SUM(vc) ${f}, 0)`)}
+          FROM per_uhid GROUP BY 2`,
         q.params,
         HEAVY_OPTS
       ),
       "patientStats"
     );
 
-    // ── Diagnosis-level queries (need diagnosis_text + speciality) ──
+    // ── Parallel: chronic vs acute headline + recurring conditions +
+    //   specialty treemap.
     const [
       chronicAcuteRows,
-      specialtyRows,
       recurringRows,
-      tenureSegmentRows,
+      specialtyRows,
     ] = await Promise.all([
-      // Chronic vs Acute — rows count among repeat patients
+      // Chronic vs Acute uses ROW-LEVEL counts of ICD diagnoses (each row =
+      // one ICD code recorded for a patient). At the row level acute >
+      // chronic in this dataset; at the patient level chronic >> acute
+      // because most patients carry at least one chronic ICD. Filtered to
+      // diagnoses belonging to repeat patients (uhid with ≥2 visits).
       safeQuery(
         () => dwQuery<{ chronic: string; acute: string }>(
-          `WITH per_uhid AS (
-            SELECT d.uhid, COUNT(*) AS vc
-            FROM ${DIAG_TABLE} d WHERE ${q.where}
-            GROUP BY d.uhid
+          `WITH repeaters AS (
+            SELECT d.uhid FROM ${DIAG_TABLE} d WHERE ${q.where}
+            GROUP BY d.uhid HAVING COUNT(*) >= 2
           )
           SELECT
             COUNT(*) FILTER (WHERE ${CHRONIC_CASE})::bigint AS chronic,
             COUNT(*) FILTER (WHERE NOT ${CHRONIC_CASE})::bigint AS acute
           FROM ${DIAG_TABLE} d
-          WHERE ${q.where}
-            AND d.uhid IN (SELECT uhid FROM per_uhid WHERE vc >= ${minVisits})`,
+          WHERE ${q.where} AND d.uhid IN (SELECT uhid FROM repeaters)`,
           q.params,
           HEAVY_OPTS
         ),
         "chronicVsAcute"
       ),
-      // specialtyTreemap — diagnosis volumes per treating doctor speciality
-      // (uses agg_diagnosis.treating_doctor_speciality, ~10–15 buckets)
-      safeQuery(
-        () => dwQuery<{ speciality: string; count: string }>(
-          `WITH per_uhid AS (
-            SELECT d.uhid, COUNT(*) AS vc FROM ${DIAG_TABLE} d WHERE ${q.where}
-            GROUP BY d.uhid
-          )
-          SELECT
-            COALESCE(NULLIF(TRIM(d.treating_doctor_speciality), ''), 'Unknown') AS speciality,
-            COUNT(*)::bigint AS count
-          FROM ${DIAG_TABLE} d
-          WHERE ${q.where}
-            AND d.uhid IN (SELECT uhid FROM per_uhid WHERE vc >= ${minVisits})
-          GROUP BY 1
-          ORDER BY 2 DESC
-          LIMIT 25`,
-          q.params,
-          HEAVY_OPTS
-        ),
-        "specialtyTreemap"
-      ),
-      // recurringConditions — diagnoses occurring 2+ times for the same uhid,
-      // split into chronic vs acute
       safeQuery(
         () => dwQuery<{ category: string; condition: string; patients: string; total_occurrences: string }>(
           `WITH dx AS (
@@ -303,99 +333,56 @@ async function handler(request: NextRequest) {
           FROM dx
           GROUP BY 1, 2
           ORDER BY patients DESC
-          LIMIT 30`,
+          LIMIT 60`,
           q.params,
           HEAVY_OPTS
         ),
         "recurringConditions"
       ),
-      // tenureSegments — group repeat patients by tenure (years between
-      // first and last visit) and chronic-vs-acute. Used to populate the
-      // "Key Repeat User Segments" cards (1 yr / 2 yr / 3+ yr).
       safeQuery(
-        () => dwQuery<{
-          tenure_label: string;
-          has_chronic: boolean;
-          patients: string;
-          total_visits: string;
-          avg_tenure_years: string;
-        }>(
+        () => dwQuery<{ speciality: string; year: string; count: string }>(
           `WITH per_uhid AS (
-            SELECT
-              d.uhid,
-              COUNT(*) AS vc,
-              MIN(d.g_creation_time) AS first_visit,
-              MAX(d.g_creation_time) AS last_visit,
-              BOOL_OR(${CHRONIC_CASE}) AS has_chronic
-            FROM ${DIAG_TABLE} d
-            WHERE ${q.where}
+            SELECT d.uhid, COUNT(*) AS vc
+            FROM ${DIAG_TABLE} d WHERE ${q.where}
             GROUP BY d.uhid
-            HAVING COUNT(*) >= ${minVisits}
-          ),
-          tenured AS (
-            SELECT
-              vc,
-              has_chronic,
-              GREATEST(EXTRACT(EPOCH FROM (last_visit - first_visit)) / (365.25 * 86400.0), 0) AS tenure_years
-            FROM per_uhid
           )
           SELECT
-            CASE
-              WHEN tenure_years >= 2 THEN '3+ years'
-              WHEN tenure_years >= 1 THEN '2 years'
-              ELSE '1 year' END AS tenure_label,
-            has_chronic,
-            COUNT(*)::bigint AS patients,
-            COALESCE(SUM(vc), 0)::bigint AS total_visits,
-            COALESCE(AVG(GREATEST(tenure_years, 0.5)), 0.5)::numeric AS avg_tenure_years
-          FROM tenured
-          GROUP BY 1, 2`,
+            COALESCE(NULLIF(TRIM(d.treating_doctor_speciality), ''), 'Unknown') AS speciality,
+            EXTRACT(YEAR FROM d.g_creation_time)::int::text AS year,
+            COUNT(*)::bigint AS count
+          FROM ${DIAG_TABLE} d
+          WHERE ${q.where}
+            AND d.g_creation_time IS NOT NULL
+            AND d.uhid IN (SELECT uhid FROM per_uhid WHERE vc >= 2)
+          GROUP BY 1, 2
+          ORDER BY 3 DESC`,
           q.params,
           HEAVY_OPTS
         ),
-        "tenureSegments"
+        "specialtyTreemap"
       ),
     ]);
 
-    // ── Assemble ──
-    // patientStatsRows is a multi-shape result: { kind, bucket, n, n_chronic, n_acute }
-    // We index three parallel stat maps so the page can switch between
-    // All/Chronic/Acute views from a single cached payload.
+    // ── Build slice maps ─────────────────────────────────────────────
     type StatMap = Record<string, Record<string, number>>;
-    const stats: StatMap = {};
-    const statsChronic: StatMap = {};
-    const statsAcute: StatMap = {};
-    for (const r of patientStatsRows) {
-      if (!stats[r.kind]) stats[r.kind] = {};
-      if (!statsChronic[r.kind]) statsChronic[r.kind] = {};
-      if (!statsAcute[r.kind]) statsAcute[r.kind] = {};
-      stats[r.kind][r.bucket] = Number(r.n);
-      statsChronic[r.kind][r.bucket] = Number(r.n_chronic);
-      statsAcute[r.kind][r.bucket] = Number(r.n_acute);
-    }
-    const totalRepeatPatients = stats.kpi?.totalRepeatPatients || 0;
-    const totalConsultsByRepeat = stats.kpi?.totalConsultsByRepeat || 0;
-    const frequentRepeaters = stats.kpi?.frequentRepeaters || 0;
-    const avgVisitFrequencyNum = (stats.kpi?.avgVisitFrequencyX10 || 0) / 10;
+    const colKey = (vc: number, cond: Cond) => `n${vc}${cond}`;
 
-    const chronicAcute = chronicAcuteRows[0];
-    const chronicVsAcute = {
-      chronic: Number(chronicAcute?.chronic || 0),
-      acute: Number(chronicAcute?.acute || 0),
-    };
+    function bucketByCond(rows: typeof patientStatsRows, vc: number, cond: Cond): StatMap {
+      const map: StatMap = {};
+      for (const r of rows) {
+        if (!map[r.kind]) map[r.kind] = {};
+        const col = colKey(vc, cond);
+        map[r.kind][r.bucket] = Number((r as Record<string, string>)[col] || 0);
+      }
+      return map;
+    }
 
     const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
     const FREQ_ORDER = ["1", "2-4", "5-9", "10+"];
 
-    // Build a complete demographics slice (ageGroups, genderSplit,
-    // locationDistribution, ageGenderPyramid) from any stats map. We call this
-    // 3 times — once for combined, chronic, acute — so the page can render any
-    // slice from a single cached payload.
     function buildDemographics(s: StatMap) {
       const ageMap = s.ageGroup || {};
-      const ageGroupsArr = AGE_ORDER
-        .filter((b) => ageMap[b])
-        .map((b) => ({ label: b, count: ageMap[b] }));
+      const ageGroups = AGE_ORDER.filter((b) => ageMap[b]).map((b) => ({ label: b, count: ageMap[b] }));
 
       const genderMap = s.gender || {};
       const genderSplit = ["Male", "Female", "Others"]
@@ -406,9 +393,6 @@ async function handler(request: NextRequest) {
         .map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count);
 
-      // ageGenderPyramid — derived from segment keys (`visitBucket|age|gender`)
-      // by collapsing across visit buckets. One row per age band with male,
-      // female and others counts.
       const segMap = s.segment || {};
       const acc: Record<string, { male: number; female: number; others: number }> = {};
       for (const key of Object.keys(segMap)) {
@@ -432,14 +416,9 @@ async function handler(request: NextRequest) {
           total: acc[b].male + acc[b].female + acc[b].others,
         }));
 
-      return { ageGroups: ageGroupsArr, genderSplit, locationDistribution, ageGenderPyramid };
+      return { ageGroups, genderSplit, locationDistribution, ageGenderPyramid };
     }
 
-    const demoCombined = buildDemographics(stats);
-    const demoChronic = buildDemographics(statsChronic);
-    const demoAcute = buildDemographics(statsAcute);
-
-    // Build location top-N + others rollup once per slice (Top 10 + Others)
     function withLocationRollup(loc: Array<{ label: string; count: number }>) {
       const TOP_N = 10;
       const top = loc.slice(0, TOP_N);
@@ -450,28 +429,163 @@ async function handler(request: NextRequest) {
         othersBreakdown: tail.map((r) => ({ location: r.label, total: r.count })),
       };
     }
-    const combinedLoc = withLocationRollup(demoCombined.locationDistribution);
-    const chronicLoc = withLocationRollup(demoChronic.locationDistribution);
-    const acuteLoc = withLocationRollup(demoAcute.locationDistribution);
 
-    const freqMap = stats.visitFreq || {};
-    const repeatVisitFrequency = FREQ_ORDER
-      .filter((b) => freqMap[b])
-      .map((b) => ({ label: `${b} Visits`, count: freqMap[b] }));
+    function buildRepeatUserSegments(rows: typeof patientStatsRows, vc: number, cond: Cond) {
+      const segPatients: Record<string, { chronic: number; acute: number }> = {
+        "1 year": { chronic: 0, acute: 0 },
+        "2 years": { chronic: 0, acute: 0 },
+        "3+ years": { chronic: 0, acute: 0 },
+      };
+      const segVisits: Record<string, number> = { "1 year": 0, "2 years": 0, "3+ years": 0 };
+      const col = colKey(vc, cond);
+      for (const r of rows) {
+        const v = Number((r as Record<string, string>)[col] || 0);
+        if (r.kind === "tenure") {
+          const [label, kind] = r.bucket.split("|");
+          if (segPatients[label]) {
+            if (kind === "chronic") segPatients[label].chronic = v;
+            else segPatients[label].acute = v;
+          }
+        } else if (r.kind === "tenureVisits") {
+          if (segVisits[r.bucket] !== undefined) segVisits[r.bucket] = v;
+        }
+      }
+      return (["1 year", "2 years", "3+ years"] as const).map((label) => {
+        const c = segPatients[label].chronic;
+        const a = segPatients[label].acute;
+        const total = c + a;
+        const visits = segVisits[label] || 0;
+        const tenureYears = label === "3+ years" ? 3 : label === "2 years" ? 1.5 : 0.5;
+        const visitsPerYear = total > 0 ? Math.round((visits / total / tenureYears) * 10) / 10 : 0;
+        const chronicPct = total > 0 ? Math.round((c / total) * 100) : 0;
+        return {
+          label,
+          patients: total,
+          avgNps: 0,
+          visitsPerYear,
+          responseRate: 0,
+          chronic: { count: c, pct: chronicPct, nps: 0 },
+          acute:   { count: a, pct: 100 - chronicPct, nps: 0 },
+        };
+      });
+    }
 
-    // Backwards-compat aliases for the existing page consumers
-    const ageGroupsArr = demoCombined.ageGroups;
-    const genderSplit = demoCombined.genderSplit;
-    const ageGenderPyramid = demoCombined.ageGenderPyramid;
+    function buildSlice(vc: number, cond: Cond) {
+      const stats = bucketByCond(patientStatsRows, vc, cond);
+      const statsChronic = bucketByCond(patientStatsRows, vc, "c");
+      const statsAcute = bucketByCond(patientStatsRows, vc, "x");
 
-    // specialtyTreemap is keyed by year — agg_diagnosis has no date, so we
-    // expose a single synthetic bucket "All" that the page picks up via the
-    // existing year-selector machinery (it'll just show one option).
-    const specialtyTreemap: Record<string, Array<{ name: string; value: number }>> = {
-      All: specialtyRows.map((r) => ({ name: r.speciality, value: Number(r.count) })),
+      const totalRepeatPatients = stats.kpi?.totalRepeatPatients || 0;
+      const totalConsultsByRepeat = stats.kpi?.totalConsultsByRepeat || 0;
+      const frequentRepeaters = stats.kpi?.frequentRepeaters || 0;
+      const avgVisitFrequencyNum = (stats.kpi?.avgVisitFrequencyX10 || 0) / 10;
+
+      const demoCombined = buildDemographics(stats);
+      const demoChronic = buildDemographics(statsChronic);
+      const demoAcute = buildDemographics(statsAcute);
+
+      const combinedLoc = withLocationRollup(demoCombined.locationDistribution);
+      const chronicLoc = withLocationRollup(demoChronic.locationDistribution);
+      const acuteLoc = withLocationRollup(demoAcute.locationDistribution);
+
+      // Repeat Visit Frequency — stacked bar: bucket × (same / different
+      // specialty). Each bucket carries `bucket`, `count` (total) plus
+      // `sameSpecialty` and `differentSpecialty` so the chart's two
+      // dataKeys render correctly.
+      const freqMap = stats.visitFreq || {};
+      const sameMap = stats.visitFreqSame || {};
+      const diffMap = stats.visitFreqDiff || {};
+      const repeatVisitFrequency = FREQ_ORDER
+        .filter((b) => freqMap[b])
+        .map((b) => ({
+          bucket: `${b} Visits`,
+          label: `${b} Visits`,
+          count: freqMap[b] || 0,
+          sameSpecialty: sameMap[b] || 0,
+          differentSpecialty: diffMap[b] || 0,
+        }));
+
+      const repeatUserSegments = buildRepeatUserSegments(patientStatsRows, vc, cond);
+
+      return {
+        kpis: {
+          totalRepeatPatients,
+          avgVisitFrequency: avgVisitFrequencyNum,
+          totalConsultsByRepeat,
+          avgNps: 0,
+          frequentRepeaters,
+          avgFrequency: avgVisitFrequencyNum.toFixed(1),
+          repeatRate: 0,
+          lsmpEnrolled: 0,
+        },
+        charts: {
+          demographics: {
+            ageGroups: demoCombined.ageGroups,
+            ageGenderPyramid: demoCombined.ageGenderPyramid,
+            genderSplit: demoCombined.genderSplit,
+            locationDistribution: combinedLoc.locationDistribution,
+            othersBreakdown: combinedLoc.othersBreakdown,
+          },
+          demographicsChronic: {
+            ageGroups: demoChronic.ageGroups,
+            ageGenderPyramid: demoChronic.ageGenderPyramid,
+            genderSplit: demoChronic.genderSplit,
+            locationDistribution: chronicLoc.locationDistribution,
+            othersBreakdown: chronicLoc.othersBreakdown,
+          },
+          demographicsAcute: {
+            ageGroups: demoAcute.ageGroups,
+            ageGenderPyramid: demoAcute.ageGenderPyramid,
+            genderSplit: demoAcute.genderSplit,
+            locationDistribution: acuteLoc.locationDistribution,
+            othersBreakdown: acuteLoc.othersBreakdown,
+          },
+          repeatVisitFrequency,
+          repeatUserSegments,
+        },
+      };
+    }
+
+    type SlicePayload = ReturnType<typeof buildSlice>;
+    const slices: Record<string, SlicePayload> = {};
+    const condLabel: Record<Cond, "all" | "chronic" | "acute"> = { a: "all", c: "chronic", x: "acute" };
+    for (const cond of COND_TYPES) {
+      for (const vc of VC_THRESHOLDS) {
+        slices[`${condLabel[cond]}_${vc}`] = buildSlice(vc, cond);
+      }
+    }
+
+    const defaultSlice = slices["all_2"];
+
+    const chronicAcute = chronicAcuteRows[0];
+    const chronicVsAcute = {
+      chronic: Number(chronicAcute?.chronic || 0),
+      acute: Number(chronicAcute?.acute || 0),
     };
 
-    // recurringConditions split into chronic + acute arrays
+    const specialtyTreemap: Record<string, Array<{ name: string; value: number }>> = { All: [] };
+    const allTotals: Record<string, number> = {};
+    const yearTotals: Record<string, Record<string, number>> = {};
+    for (const r of specialtyRows) {
+      const sp = r.speciality;
+      const yr = r.year;
+      const n = Number(r.count);
+      allTotals[sp] = (allTotals[sp] || 0) + n;
+      if (!yearTotals[yr]) yearTotals[yr] = {};
+      yearTotals[yr][sp] = (yearTotals[yr][sp] || 0) + n;
+    }
+    specialtyTreemap.All = Object.entries(allTotals)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 25);
+    for (const yr of Object.keys(yearTotals)) {
+      specialtyTreemap[yr] = Object.entries(yearTotals[yr])
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 25);
+    }
+    const treemapYears = ["All", ...Object.keys(yearTotals).sort((a, b) => Number(b) - Number(a))];
+
     const recurringConditions: { chronic: Array<{ name: string; count: number; patients: number }>; acute: Array<{ name: string; count: number; patients: number }> } = {
       chronic: [],
       acute: [],
@@ -482,107 +596,23 @@ async function handler(request: NextRequest) {
       else recurringConditions.acute.push(entry);
     }
 
-    // repeatUserSegments — tenure-bucketed (1yr / 2yr / 3+yr) cards with
-    // chronic/acute split. Built from tenureSegmentRows. NPS is unavailable
-    // on agg_diagnosis, so avgNps/responseRate default to 0 (page renders
-    // "—" via `seg.chronic.nps || "—"`).
-    type SegBucket = {
-      label: string;
-      patients: number;
-      totalVisits: number;
-      avgTenure: number;
-      chronicCount: number;
-      acuteCount: number;
-    };
-    const segBuckets: Record<string, SegBucket> = {
-      "1 year": { label: "1 year", patients: 0, totalVisits: 0, avgTenure: 0.5, chronicCount: 0, acuteCount: 0 },
-      "2 years": { label: "2 years", patients: 0, totalVisits: 0, avgTenure: 1.5, chronicCount: 0, acuteCount: 0 },
-      "3+ years": { label: "3+ years", patients: 0, totalVisits: 0, avgTenure: 3, chronicCount: 0, acuteCount: 0 },
-    };
-    let segTenureWeight: Record<string, number> = { "1 year": 0, "2 years": 0, "3+ years": 0 };
-    for (const r of tenureSegmentRows) {
-      const b = segBuckets[r.tenure_label];
-      if (!b) continue;
-      const patients = Number(r.patients || 0);
-      const visits = Number(r.total_visits || 0);
-      const tenure = Number(r.avg_tenure_years || 0);
-      b.patients += patients;
-      b.totalVisits += visits;
-      segTenureWeight[r.tenure_label] += tenure * patients;
-      if (r.has_chronic) b.chronicCount += patients;
-      else b.acuteCount += patients;
-    }
-    const repeatUserSegments = (["1 year", "2 years", "3+ years"] as const).map((label) => {
-      const b = segBuckets[label];
-      const denom = b.patients || 1;
-      const tenureYears = segTenureWeight[label] / denom || (label === "3+ years" ? 3 : label === "2 years" ? 1.5 : 0.5);
-      const visitsPerYear = b.totalVisits > 0 && tenureYears > 0
-        ? Math.round((b.totalVisits / denom / Math.max(tenureYears, 0.5)) * 10) / 10
-        : 0;
-      const chronicPct = b.patients > 0 ? Math.round((b.chronicCount / b.patients) * 100) : 0;
-      const acutePct = b.patients > 0 ? 100 - chronicPct : 0;
-      return {
-        label,
-        patients: b.patients,
-        avgNps: 0,
-        visitsPerYear,
-        responseRate: 0,
-        chronic: { count: b.chronicCount, pct: chronicPct, nps: 0 },
-        acute:   { count: b.acuteCount,   pct: acutePct,   nps: 0 },
-      };
-    });
-
     return NextResponse.json({
-      kpis: {
-        totalRepeatPatients,
-        avgVisitFrequency: avgVisitFrequencyNum,
-        totalConsultsByRepeat,
-        avgNps: 0,                  // No NPS source
-        frequentRepeaters,
-        // Convenience fields the PageGlanceBox and fallback text reads:
-        avgFrequency: avgVisitFrequencyNum.toFixed(1),
-        repeatRate: 0,              // Needs total-patient denominator from another table
-        lsmpEnrolled: 0,            // No LSMP enrollment source
-      },
+      kpis: defaultSlice.kpis,
       charts: {
+        ...defaultSlice.charts,
         chronicVsAcute,
-        // Combined demographics — what the page consumes when conditionFilter === "all"
-        demographics: {
-          ageGroups: ageGroupsArr,
-          ageGenderPyramid,
-          genderSplit,
-          locationDistribution: combinedLoc.locationDistribution,
-          othersBreakdown: combinedLoc.othersBreakdown,
-        },
-        // Chronic-only slice — page picks this when conditionFilter === "chronic"
-        demographicsChronic: {
-          ageGroups: demoChronic.ageGroups,
-          ageGenderPyramid: demoChronic.ageGenderPyramid,
-          genderSplit: demoChronic.genderSplit,
-          locationDistribution: chronicLoc.locationDistribution,
-          othersBreakdown: chronicLoc.othersBreakdown,
-        },
-        // Acute-only slice — page picks this when conditionFilter === "acute"
-        demographicsAcute: {
-          ageGroups: demoAcute.ageGroups,
-          ageGenderPyramid: demoAcute.ageGenderPyramid,
-          genderSplit: demoAcute.genderSplit,
-          locationDistribution: acuteLoc.locationDistribution,
-          othersBreakdown: acuteLoc.othersBreakdown,
-        },
-        repeatVisitFrequency,
         specialtyTreemap,
-        treemapYears: ["All"],
-        // Time-bound charts (no date column on agg_diagnosis):
+        treemapYears,
+        recurringConditions,
+        // Cohort progression intentionally empty — needs per-visit BMI source
         conditionTransitions: [],
         visitFrequencyNps: [],
         sankeyFlow: { nodes: [], links: [] },
         vitalTotals: { v1: {}, v2: {}, v3: {} },
         cohortVisitFrequency: {},
         cohortYears: [],
-        recurringConditions,
-        repeatUserSegments,
       },
+      slices,
       lastUpdated: new Date().toISOString(),
       meta: { hadErrors: failedQueries.length > 0, failedQueries },
     });

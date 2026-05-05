@@ -66,7 +66,7 @@ FORMATTING:
     messages.push({ role: "user", content: question });
 
     const { text } = await invokeBedrock({
-      model: BEDROCK_MODEL_IDS.askAi,
+      model: BEDROCK_MODEL_IDS.pageSummary,
       system: systemPrompt,
       // 400 leaves room for genuinely detailed answers when the user asks for them,
       // while the prompt's "default to 2–3 sentences" rule keeps casual asks tight.

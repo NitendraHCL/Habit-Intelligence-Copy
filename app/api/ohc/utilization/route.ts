@@ -363,13 +363,52 @@ async function handler(request: NextRequest) {
       { statementTimeoutMs: 60000 }
     ), "serviceCategories");
 
+    // ── Service Category Line Items (drill-down on Category Radar) ──
+    // Top-6 service_name rows per service_type, split into "packages" vs
+    // "tests" so the drill view can show two distinct lists. Only Pathology
+    // has the package/test split — Cardiology and Radiology fall through
+    // as plain tests since the bundle naming patterns don't apply.
+    const svcLineItemsPromise = safeQuery(() => dwQuery<{
+      category: string; service_name: string; kind: string; booked: string; completed: string;
+    }>(
+      `WITH per_item AS (
+         SELECT
+           a.service_type AS category,
+           a.service_name,
+           CASE
+             WHEN a.service_type = 'Pathology' AND (
+               a.service_name ILIKE 'Health Check%' OR
+               a.service_name ILIKE 'EHC%' OR
+               a.service_name ILIKE '%Care Plan%' OR
+               a.service_name ILIKE 'Annual Health Check%'
+             ) THEN 'package'
+             ELSE 'test'
+           END AS kind,
+           COUNT(*)::bigint AS booked,
+           COUNT(*) FILTER (WHERE a.status = 'Completed')::bigint AS completed
+         FROM aggregated_table.result_entry a
+         WHERE ${svcWhere} AND a.service_name IS NOT NULL AND TRIM(a.service_name) <> ''
+         GROUP BY 1, 2, 3
+       ),
+       ranked AS (
+         SELECT *, ROW_NUMBER() OVER (PARTITION BY category, kind ORDER BY booked DESC) AS rn
+         FROM per_item
+       )
+       SELECT category, service_name, kind, booked, completed
+       FROM ranked
+       WHERE rn <= 6
+       ORDER BY category, kind, booked DESC`,
+      svcParams,
+      { statementTimeoutMs: 60000 }
+    ), "serviceCategoryLineItems");
+
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows,
+      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows,
     ] = await Promise.all([
       filterPromise, kpiPromise, specPromise, locSpecPromise,
-      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise,
+      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise,
     ]);
 
     // ── Filter options ──
@@ -609,6 +648,25 @@ async function handler(request: NextRequest) {
       return { category: r.category, booked, completed, completionRate: booked > 0 ? Math.round((completed / booked) * 100) : 0 };
     });
 
+    // ── Service Category Line Items ──
+    type LineItem = { serviceName: string; booked: number; completed: number; completionRate: number };
+    const serviceCategoryLineItems: Record<string, { packages: LineItem[]; tests: LineItem[] }> = {};
+    for (const r of svcLineRows) {
+      const booked = Number(r.booked);
+      const completed = Number(r.completed);
+      const item: LineItem = {
+        serviceName: r.service_name,
+        booked,
+        completed,
+        completionRate: booked > 0 ? Math.round((completed / booked) * 100) : 0,
+      };
+      if (!serviceCategoryLineItems[r.category]) {
+        serviceCategoryLineItems[r.category] = { packages: [], tests: [] };
+      }
+      if (r.kind === "package") serviceCategoryLineItems[r.category].packages.push(item);
+      else serviceCategoryLineItems[r.category].tests.push(item);
+    }
+
     // ── Bubble chart: group by specialty → location × ageGroup with gender split ──
     const bubbleMap: Record<string, Record<string, { male: number; female: number }>> = {};
     const bubbleSpecTotals: Record<string, number> = {};
@@ -650,7 +708,7 @@ async function handler(request: NextRequest) {
         visitTrends, avgConsults,
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
-        serviceCategories, bubbleBySpecialty, bubbleSpecialties,
+        serviceCategories, serviceCategoryLineItems, bubbleBySpecialty, bubbleSpecialties,
         repeatTrends,
       },
       lastUpdated: new Date().toISOString(),

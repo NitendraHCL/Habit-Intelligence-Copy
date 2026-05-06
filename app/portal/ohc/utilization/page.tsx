@@ -272,6 +272,7 @@ export default function OHCUtilizationPage() {
   };
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
   const [selectedBubbleSpec, setSelectedBubbleSpec] = useState<string>("");
+  const [selectedSvcCategory, setSelectedSvcCategory] = useState<string>("");
   const [repeatView, setRepeatView] = useState<"monthly" | "yearly">("monthly");
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
@@ -424,6 +425,9 @@ export default function OHCUtilizationPage() {
     });
   }, [repeatTrendData]);
   const serviceCategories = charts?.serviceCategories ?? [];
+  type SvcLineItem = { serviceName: string; booked: number; completed: number; completionRate: number };
+  const serviceCategoryLineItems: Record<string, { packages: SvcLineItem[]; tests: SvcLineItem[] }> =
+    (charts as any)?.serviceCategoryLineItems ?? {};
 
   const bubbleSpecs: string[] = charts?.bubbleSpecialties || [];
   const activeBubbleSpec = selectedBubbleSpec || bubbleSpecs[0] || "";
@@ -1736,12 +1740,43 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Booked vs completed across service categories</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("categoryRadar"), isChartVisible("serviceCategoryMatrix")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked vs Completed — non-consultation services" tooltipText="Radar chart comparing booked vs completed volumes across ancillary service categories (Consultation excluded as its volume skews the chart scale). Each axis is a service type — where the completed area is smaller than booked, it indicates higher cancellation or no-show rates for that category." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories">
+          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Click a category to drill into its line items →" tooltipText="Radar chart comparing booked vs completed volumes across ancillary service categories (Consultation excluded as its volume skews the chart scale). Click a category axis to drill down — the right-hand panel will show the top packages and tests for that category." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories">
             <div style={{ height: 340 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+                <RadarChart
+                  data={radarData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius="70%"
+                  onClick={(e: any) => {
+                    const cat = e?.activeLabel as string | undefined;
+                    if (cat) setSelectedSvcCategory((cur) => cur === cat ? "" : cat);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
                   <PolarGrid stroke="#E5E7EB" gridType="polygon" />
-                  <PolarAngleAxis dataKey="category" tick={{ fontSize: 11, fill: T.textPrimary, fontWeight: 500 }} />
+                  <PolarAngleAxis
+                    dataKey="category"
+                    tick={(props: any) => {
+                      const { x, y, payload, textAnchor } = props;
+                      const isSelected = payload.value === selectedSvcCategory;
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          textAnchor={textAnchor}
+                          dy={4}
+                          fontSize={11}
+                          fontWeight={isSelected ? 700 : 500}
+                          fill={isSelected ? "#0d9488" : T.textPrimary}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => setSelectedSvcCategory((cur) => cur === payload.value ? "" : payload.value)}
+                        >
+                          {payload.value}
+                        </text>
+                      );
+                    }}
+                  />
                   <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textMuted }} angle={30} domain={[0, "auto"]} />
                   <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }} />
                   <Radar name="Booked" dataKey="booked" stroke="#4f46e5" fill="none" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5", strokeWidth: 0 }} />
@@ -1753,35 +1788,104 @@ export default function OHCUtilizationPage() {
             <InsightBox text="Consultation is excluded from this chart — its volume is significantly higher and compresses all other axes, making patterns invisible. The radar reflects ancillary services only: Procedure, Pathology, Vaccination, Cardiology, Radiology, and similar." />
           </CVCard>}
 
-          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title="Service Category Metrics" subtitle="Booked vs completed with completion rate" tooltipText="Summary table listing each service category with booked count, completed count, and completion rate percentage. The completion rate column uses a progress bar for quick visual comparison. Low completion rates highlight categories needing scheduling or follow-up interventions." chartId="serviceCategoryMatrix" chartData={serviceCategories} chartTitle="Service Category Metrics" chartDescription="Service category breakdown with booked, completed counts and completion rates">
-            <div className="h-full overflow-auto">
-              <table className="w-full text-[12px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} subtitle={selectedSvcCategory ? "Top packages and tests by booked volume" : "Booked vs completed with completion rate · click a category on the radar to drill in"} tooltipText="Summary table of service categories with booked, completed, and completion rate. Click a category on the Category Radar to drill into its top packages and individual tests." chartId="serviceCategoryMatrix" chartData={selectedSvcCategory ? serviceCategoryLineItems[selectedSvcCategory] : serviceCategories} chartTitle={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} chartDescription="Service category breakdown with booked, completed counts and completion rates" rightHeader={<ResetFilter visible={selectedSvcCategory !== ""} onClick={() => setSelectedSvcCategory("")} />}>
+            {selectedSvcCategory ? (() => {
+              const drill = serviceCategoryLineItems[selectedSvcCategory] || { packages: [], tests: [] };
+              const renderRow = (item: SvcLineItem, idx: number) => (
+                <tr key={item.serviceName} style={{ borderBottom: `1px solid ${T.borderLight}`, background: idx % 2 === 1 ? "#fafbfd" : undefined }} className="hover:bg-[#eef2ff] transition-colors">
+                  <td className="py-2.5 px-4 font-medium truncate max-w-[260px]" style={{ color: T.textPrimary }} title={item.serviceName}>{item.serviceName}</td>
+                  <td className="py-2.5 px-4 text-right tabular-nums" style={{ color: T.textSecondary }}>{formatNum(item.booked)}</td>
+                  <td className="py-2.5 px-4 text-right font-semibold tabular-nums" style={{ color: "#0d9488" }}>{formatNum(item.completed)}</td>
+                  <td className="py-2.5 px-4 text-right">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold" style={{
+                      backgroundColor: item.completionRate >= 85 ? "rgba(13,148,136,0.08)" : item.completionRate >= 70 ? "rgba(217,119,6,0.08)" : "rgba(225,29,72,0.08)",
+                      color: item.completionRate >= 85 ? "#0d9488" : item.completionRate >= 70 ? "#d97706" : "#e11d48",
+                    }}>{item.completionRate}%</span>
+                  </td>
+                </tr>
+              );
+              const sectionHeader = (label: string) => (
+                <tr>
+                  <td colSpan={4} className="pt-4 pb-2 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted, background: "transparent" }}>{label}</td>
+                </tr>
+              );
+              const tableHeader = (
                 <thead>
                   <tr>
-                    <th className="text-left py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b", borderRadius: "12px 0 0 0" }}>Service Category</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b", borderRadius: "12px 0 0 0" }}>Service</th>
                     <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b" }}>Booked</th>
                     <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b" }}>Completed</th>
                     <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b", borderRadius: "0 12px 0 0" }}>Rate</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {(serviceCategories || []).map((sc: any, idx: number) => (
-                    <tr key={sc.category} style={{ borderBottom: `1px solid ${T.borderLight}`, background: idx % 2 === 1 ? "#fafbfd" : undefined }} className="hover:bg-[#eef2ff] transition-colors">
-                      <td className="py-3.5 px-4 font-semibold" style={{ color: T.textPrimary }}>{sc.category}</td>
-                      <td className="py-3.5 px-4 text-right tabular-nums" style={{ color: T.textSecondary }}>{formatNum(sc.booked)}</td>
-                      <td className="py-3.5 px-4 text-right font-semibold tabular-nums" style={{ color: "#0d9488" }}>{formatNum(sc.completed)}</td>
-                      <td className="py-3.5 px-4 text-right">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10.5px] font-bold" style={{
-                          backgroundColor: sc.completionRate >= 85 ? "rgba(13,148,136,0.08)" : sc.completionRate >= 70 ? "rgba(217,119,6,0.08)" : "rgba(225,29,72,0.08)",
-                          color: sc.completionRate >= 85 ? "#0d9488" : sc.completionRate >= 70 ? "#d97706" : "#e11d48",
-                        }}>{sc.completionRate}%</span>
-                      </td>
+              );
+              const hasPackages = drill.packages && drill.packages.length > 0;
+              const hasTests = drill.tests && drill.tests.length > 0;
+              if (!hasPackages && !hasTests) {
+                return <p className="text-[12px] py-8 text-center" style={{ color: T.textMuted }}>No line items found for {selectedSvcCategory} in the current filter window.</p>;
+              }
+              return (
+                <div className="h-full overflow-auto">
+                  {/* Drill-state banner with prominent reset */}
+                  <div className="flex items-center justify-between mb-3 px-3 py-2 rounded-lg" style={{ backgroundColor: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.18)" }}>
+                    <span className="text-[12px]" style={{ color: T.textSecondary }}>
+                      Drilled into <strong style={{ color: "#0d9488" }}>{selectedSvcCategory}</strong>
+                    </span>
+                    <button
+                      onClick={() => setSelectedSvcCategory("")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11.5px] font-semibold transition-colors hover:opacity-90"
+                      style={{ backgroundColor: "#0d9488", color: "#fff" }}
+                    >
+                      <RotateCcw size={12} /> Reset
+                    </button>
+                  </div>
+                  <table className="w-full text-[12px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                    {tableHeader}
+                    <tbody>
+                      {hasPackages && sectionHeader(`Top Packages (${drill.packages.length})`)}
+                      {hasPackages && drill.packages.map(renderRow)}
+                      {hasTests && sectionHeader(`Top Tests (${drill.tests.length})`)}
+                      {hasTests && drill.tests.map(renderRow)}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })() : (
+              <div className="h-full overflow-auto">
+                <table className="w-full text-[12px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                  <thead>
+                    <tr>
+                      <th className="text-left py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b", borderRadius: "12px 0 0 0" }}>Service Category</th>
+                      <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b" }}>Booked</th>
+                      <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b" }}>Completed</th>
+                      <th className="text-right py-3.5 px-4 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "#f1f5f9", background: "#1e293b", borderRadius: "0 12px 0 0" }}>Rate</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <InsightBox text="Service categories with completion rates below 85% may need scheduling or follow-up process improvements. Focus on categories with the largest booked-to-completed gaps." />
+                  </thead>
+                  <tbody>
+                    {(serviceCategories || []).map((sc: any, idx: number) => (
+                      <tr
+                        key={sc.category}
+                        style={{ borderBottom: `1px solid ${T.borderLight}`, background: idx % 2 === 1 ? "#fafbfd" : undefined, cursor: "pointer" }}
+                        className="hover:bg-[#eef2ff] transition-colors"
+                        onClick={() => setSelectedSvcCategory(sc.category)}
+                        title="Click to drill into top line items"
+                      >
+                        <td className="py-3.5 px-4 font-semibold" style={{ color: T.textPrimary }}>{sc.category} <span className="text-[10px] font-normal ml-1" style={{ color: T.textMuted }}>→</span></td>
+                        <td className="py-3.5 px-4 text-right tabular-nums" style={{ color: T.textSecondary }}>{formatNum(sc.booked)}</td>
+                        <td className="py-3.5 px-4 text-right font-semibold tabular-nums" style={{ color: "#0d9488" }}>{formatNum(sc.completed)}</td>
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10.5px] font-bold" style={{
+                            backgroundColor: sc.completionRate >= 85 ? "rgba(13,148,136,0.08)" : sc.completionRate >= 70 ? "rgba(217,119,6,0.08)" : "rgba(225,29,72,0.08)",
+                            color: sc.completionRate >= 85 ? "#0d9488" : sc.completionRate >= 70 ? "#d97706" : "#e11d48",
+                          }}>{sc.completionRate}%</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <InsightBox text={selectedSvcCategory === "Pathology" ? "Packages (Health Check / EHC / Care Plan) capture bundled offerings; Tests show individual analytes (B-12, Calcium, Pap Smear, etc.). A package-heavy mix with low individual-test volumes suggests revenue is concentrated in pre-employment and annual screenings rather than ad-hoc clinical orders." : selectedSvcCategory ? "Top line items by booked volume. Low completion rates on high-volume tests are the highest-leverage operational fix — fewer no-shows there move the headline number more than chasing tail items." : "Service categories with completion rates below 85% may need scheduling or follow-up process improvements. Click a category to see its top line items."} />
           </CVCard>}
         </div>
       </WarmSection>}

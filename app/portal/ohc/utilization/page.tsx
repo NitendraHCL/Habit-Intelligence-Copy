@@ -749,6 +749,11 @@ export default function OHCUtilizationPage() {
     ...r,
     __total: stackSpecialties.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
   }));
+  // Real clinic count excludes the synthetic "Others" pseudo-row that bundles
+  // long-tail locations on multi-site clients.
+  const realClinicCount = locationBySpecialtyData.filter((r: any) => r.location !== "Others").length;
+  const clinicChartMode: "bar" | "heatmap" | "specialtyOnly" =
+    realClinicCount <= 1 ? "specialtyOnly" : realClinicCount < 5 ? "heatmap" : "bar";
 
   const radarData = (serviceCategories || [])
     .filter((sc: any) => sc.category?.toLowerCase() !== "consultation")
@@ -1323,16 +1328,163 @@ export default function OHCUtilizationPage() {
               : "Select a date range to view demographic breakdown."} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts." tooltipText="Stacked horizontal bar chart showing consultation volume per clinic location, broken down by medical specialty. Each color segment represents a specialty. Longer bars indicate higher-traffic locations. Hover to see exact counts per specialty at each site." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Stacked bar chart showing consultation volume per location with specialty breakdown">
-            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
-              {stackSpecialties.map((spec: string, i: number) => (
-                <div key={spec} className="flex items-center gap-1">
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title={clinicChartMode === "specialtyOnly" ? "Specialty Mix" : "Clinic Utilization by Location & Specialty"} subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — colour intensity grades by consult count" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Per-clinic specialty utilisation. View adapts to clinic count: a single-clinic specialty bar chart for 1 clinic, a heatmap for 2-4 clinics, and stacked bars for 5+ clinics. Each cell / bar shows consult volume per specialty per clinic." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
+            {clinicChartMode !== "specialtyOnly" && (
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
+                {stackSpecialties.map((spec: string, i: number) => (
+                  <div key={spec} className="flex items-center gap-1">
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* ── 1 clinic: horizontal specialty bar (no clinic axis) ── */}
+            {clinicChartMode === "specialtyOnly" && (() => {
+              const row = locationBySpecialtyData[0] || {};
+              const items = stackSpecialties
+                .map((spec: string, i: number) => ({
+                  spec,
+                  value: Number(row[spec]) || 0,
+                  fill: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length],
+                }))
+                .filter((d) => d.value > 0)
+                .sort((a, b) => b.value - a.value);
+              const max = items[0]?.value || 1;
+              const total = items.reduce((s, d) => s + d.value, 0);
+              const top = items[0];
+              const top3Share = total > 0 ? Math.round((items.slice(0, 3).reduce((s, d) => s + d.value, 0) / total) * 100) : 0;
+              const tail = items.slice(3);
+              const tailShare = total > 0 ? Math.round((tail.reduce((s, d) => s + d.value, 0) / total) * 100) : 0;
+              // Bar row height auto-scales to fill the card so a CISCO-style
+              // layout (1 clinic, ~6 specialties) doesn't leave whitespace
+              // when matched against a multi-element card on the left.
+              const barRowHeight = items.length <= 4 ? 36 : items.length <= 6 ? 30 : items.length <= 9 ? 24 : 20;
+              return (
+                <div className="flex flex-col flex-1 mt-2">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total consults</p>
+                    <p className="text-[20px] font-extrabold tracking-[-0.02em]" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>{formatNum(total)}</p>
+                  </div>
+                  <div className="flex flex-col gap-2 flex-1 justify-center">
+                    {items.map((d) => {
+                      const pct = total > 0 ? (d.value / total) * 100 : 0;
+                      return (
+                        <div key={d.spec} className="flex items-center gap-3">
+                          <div className="text-[12px] font-medium truncate" style={{ width: 140, color: T.textPrimary }} title={d.spec}>{d.spec}</div>
+                          <div className="flex-1 rounded-md overflow-hidden" style={{ height: barRowHeight, backgroundColor: "#F1F5F9" }}>
+                            <div style={{ width: `${(d.value / max) * 100}%`, height: "100%", backgroundColor: d.fill, borderRadius: 6, transition: "width 200ms ease" }} />
+                          </div>
+                          <div className="text-[12px] font-bold tabular-nums" style={{ width: 60, textAlign: "right", color: T.textPrimary }}>{formatNum(d.value)}</div>
+                          <div className="text-[10.5px] tabular-nums" style={{ width: 42, textAlign: "right", color: T.textMuted }}>{pct.toFixed(0)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {items.length === 0 ? (
+                    <p className="text-center text-[12px] py-12" style={{ color: T.textMuted }}>No specialty data for this clinic in the current filter window.</p>
+                  ) : (
+                    /* Stat strip — mirrors the 3-tile rhythm of the demographics card on the left */
+                    <div className="grid grid-cols-3 gap-2.5 mt-5">
+                      <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #4f46e5, #6d28d9)", color: "#fff" }}>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Specialty</p>
+                        <p className="text-[15px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate">{top?.spec || "—"}</p>
+                        <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{top ? `${formatNum(top.value)} consults` : ""}</p>
+                      </div>
+                      <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)", color: "#fff" }}>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Specialties</p>
+                        <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{items.length}</p>
+                        <p className="text-[10.5px] mt-0.5 opacity-90">in active use</p>
+                      </div>
+                      <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }}>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top 3 Share</p>
+                        <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{top3Share}%</p>
+                        <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{tail.length > 0 ? `tail: ${tailShare}%` : "no tail"}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            <div className="overflow-x-auto">
+              );
+            })()}
+
+            {/* ── 2-4 clinics: heatmap ── */}
+            {clinicChartMode === "heatmap" && (() => {
+              const locations = locationBySpecialtyData.map((r: any) => r.location as string);
+              const cells: Array<[number, number, number]> = [];
+              let maxVal = 0;
+              for (let li = 0; li < locations.length; li++) {
+                for (let si = 0; si < stackSpecialties.length; si++) {
+                  const v = Number(locationBySpecialtyData[li][stackSpecialties[si]]) || 0;
+                  cells.push([si, li, v]);
+                  if (v > maxVal) maxVal = v;
+                }
+              }
+              return (
+                <div style={{ height: Math.max(280, 90 + locations.length * 56) }}>
+                  <ReactECharts
+                    style={{ height: "100%", width: "100%" }}
+                    option={{
+                      tooltip: {
+                        position: "top",
+                        backgroundColor: "#fff",
+                        borderColor: T.border,
+                        borderWidth: 1,
+                        textStyle: { fontSize: 12, color: T.textPrimary },
+                        extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
+                        formatter: (p: any) => {
+                          const [x, y, v] = p.data;
+                          return `<strong>${locations[y]}</strong><br/>${stackSpecialties[x]}: <strong>${formatNum(v)}</strong>`;
+                        },
+                      },
+                      grid: { left: 8, right: 16, top: 28, bottom: 64, containLabel: true },
+                      xAxis: {
+                        type: "category",
+                        data: stackSpecialties,
+                        axisTick: { show: false },
+                        axisLine: { lineStyle: { color: T.borderLight } },
+                        axisLabel: { fontSize: 10, color: T.textMuted, rotate: 25, interval: 0 },
+                        splitArea: { show: false },
+                      },
+                      yAxis: {
+                        type: "category",
+                        data: locations,
+                        axisTick: { show: false },
+                        axisLine: { lineStyle: { color: T.borderLight } },
+                        axisLabel: { fontSize: 11, color: T.textPrimary, fontWeight: 600 },
+                      },
+                      visualMap: {
+                        min: 0,
+                        max: maxVal || 1,
+                        calculable: false,
+                        orient: "horizontal",
+                        left: "center",
+                        bottom: 4,
+                        itemWidth: 12,
+                        itemHeight: 120,
+                        textStyle: { fontSize: 10, color: T.textMuted },
+                        inRange: { color: ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"] },
+                      },
+                      series: [{
+                        type: "heatmap",
+                        data: cells,
+                        label: {
+                          show: true,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "#0F172A",
+                          formatter: (p: any) => p.data[2] > 0 ? formatNum(p.data[2]) : "",
+                        },
+                        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(79,70,229,0.4)" } },
+                        itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 6 },
+                      }],
+                    }}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* ── 5+ clinics: existing stacked bar ── */}
+            {clinicChartMode === "bar" && <div className="overflow-x-auto">
             <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={locationBySpecialtyData} margin={{ top: 56, right: 10, left: 0, bottom: 45 }}>
@@ -1409,8 +1561,8 @@ export default function OHCUtilizationPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            </div>
-            {(charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
+            </div>}
+            {clinicChartMode === "bar" && (charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
               const list = charts?.othersBreakdown || [];
               const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
               return (

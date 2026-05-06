@@ -1178,7 +1178,12 @@ export default function OHCUtilizationPage() {
                 <span className="text-xs font-semibold" style={{ color: kpis.yoyConsults >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyConsults >= 0 ? "+" : ""}{kpis.yoyConsults}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
             ) : kpis?.hasInsufficientHistory ? (
-              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-help" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>First Reporting Year</span>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
+              </Tooltip>
             ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Completed consultations in selected date range</p>
             <div className="mt-auto pt-4">
@@ -1200,7 +1205,12 @@ export default function OHCUtilizationPage() {
                 <span className="text-xs font-semibold" style={{ color: kpis.yoyUnique >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyUnique >= 0 ? "+" : ""}{kpis.yoyUnique}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
             ) : kpis?.hasInsufficientHistory ? (
-              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-help" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>First Reporting Year</span>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
+              </Tooltip>
             ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Distinct employees who visited OHC in selected date range</p>
             <div className="mt-auto pt-4">
@@ -1222,7 +1232,12 @@ export default function OHCUtilizationPage() {
                 <span className="text-xs font-semibold" style={{ color: kpis.yoyRepeat >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyRepeat >= 0 ? "+" : ""}{kpis.yoyRepeat}% {kpis.yoyLabel || "vs Last Year"}</span>
               </div>
             ) : kpis?.hasInsufficientHistory ? (
-              <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>New this year</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-help" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>First Reporting Year</span>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
+              </Tooltip>
             ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Employees with 2+ OHC visits in selected date range</p>
             <div className="mt-auto pt-4">

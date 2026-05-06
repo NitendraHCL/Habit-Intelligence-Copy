@@ -83,12 +83,11 @@ export async function invokeBedrock({
   maxTokens = 1024,
   temperature = 0.7,
 }: InvokeBedrockParams): Promise<InvokeBedrockResult> {
-  if (!process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_PROFILE) {
-    throw new Error(
-      "AWS credentials are not configured. Set AWS_ACCESS_KEY_ID + " +
-        "AWS_SECRET_ACCESS_KEY, or AWS_PROFILE for IAM role auth."
-    );
-  }
+  // Don't gate on env vars — ECS task role / EKS IRSA / Lambda execution role
+  // all provide credentials via the AWS metadata service without setting any
+  // env var. The SDK's default credential chain handles all of these. Let the
+  // SDK throw its own (more informative) credential error if nothing is
+  // available, instead of false-negative-blocking valid IAM role auth.
 
   const body = {
     anthropic_version: "bedrock-2023-05-31",

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { invokeBedrock, BEDROCK_MODEL_IDS, type BedrockMessage } from "@/lib/ai/bedrock";
+import { invokeBedrock, type BedrockMessage } from "@/lib/ai/bedrock";
+
+// Hardcoded model — bypass any BEDROCK_MODEL_* env var override on prod.
+// Sonnet 4.5 cross-region inference profile; same model Page Summary uses.
+const ASK_AI_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,7 +70,7 @@ FORMATTING:
     messages.push({ role: "user", content: question });
 
     const { text } = await invokeBedrock({
-      model: BEDROCK_MODEL_IDS.pageSummary,
+      model: ASK_AI_MODEL,
       system: systemPrompt,
       // 400 leaves room for genuinely detailed answers when the user asks for them,
       // while the prompt's "default to 2–3 sentences" rule keeps casual asks tight.
@@ -78,9 +82,14 @@ FORMATTING:
 
     return NextResponse.json({ answer: text });
   } catch (error) {
-    console.error("AI Ask error:", error);
+    // Surface the underlying error so prod debugging is possible — without
+    // the message, every failure looks identical and we can't distinguish
+    // AccessDenied / Timeout / payload-too-large.
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : "Error";
+    console.error("AI Ask error:", { name, message, model: ASK_AI_MODEL });
     return NextResponse.json(
-      { error: "Failed to get AI response" },
+      { error: "Failed to get AI response", details: message, errorType: name, model: ASK_AI_MODEL },
       { status: 500 }
     );
   }

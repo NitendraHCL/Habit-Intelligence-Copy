@@ -24,7 +24,13 @@ import {
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 
-const REGION = process.env.AWS_REGION || "us-east-1";
+// Bedrock client is pinned to a region that actually hosts Anthropic models.
+// Prod ECS runs in ap-south-1 (Mumbai, near our warehouse RDS) — but Anthropic
+// is not hosted on Bedrock there, so any us.* cross-region inference profile
+// resolves to ValidationException. Allow override via BEDROCK_REGION for the
+// rare case the prod account needs a different US region; default to us-east-1
+// which has all the cross-region inference profiles we use.
+const REGION = process.env.BEDROCK_REGION || "us-east-1";
 
 // Cross-region inference profile IDs — works in us-east-1 / us-east-2 / us-west-2.
 // Sonnet 4 was marked Legacy by Anthropic on Bedrock; Sonnet 4.5 is the active

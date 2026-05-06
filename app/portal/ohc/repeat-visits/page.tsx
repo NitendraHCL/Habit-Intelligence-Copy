@@ -856,6 +856,44 @@ export default function RepeatVisitsPage() {
                     ))}
                   </div>
                   <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Click any segment or tile to filter the entire page.</p>
+
+                  {/* Top Cohort tile — fills the gap when the card stretches to
+                      match the Pyramid's height. Computed from ageGenderPyramid
+                      so no API change. */}
+                  {(() => {
+                    const pyramid: Array<{ ageGroup: string; male: number; female: number; others: number; total: number }> =
+                      demoSource?.ageGenderPyramid || [];
+                    if (!pyramid.length) return null;
+                    let bestAge = "";
+                    let bestGender: "Male" | "Female" | "Others" = "Male";
+                    let bestCount = 0;
+                    for (const row of pyramid) {
+                      if (row.male > bestCount) { bestCount = row.male; bestAge = row.ageGroup; bestGender = "Male"; }
+                      if (row.female > bestCount) { bestCount = row.female; bestAge = row.ageGroup; bestGender = "Female"; }
+                      if ((row.others || 0) > bestCount) { bestCount = row.others; bestAge = row.ageGroup; bestGender = "Others"; }
+                    }
+                    if (bestCount === 0 || !bestAge) return null;
+                    const cohortColor = GENDER_COLORS_MAP[bestGender] || PIE_COLORS[0];
+                    const cohortPct = Math.round((bestCount / total) * 1000) / 10;
+                    return (
+                      <div
+                        className="mt-4 rounded-xl px-4 py-3.5 flex items-center gap-4"
+                        style={{ border: `1px solid ${cohortColor}30`, backgroundColor: `${cohortColor}08` }}
+                      >
+                        <div className="flex flex-col">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Cohort</p>
+                          <p className="text-[15px] font-extrabold leading-tight tracking-[-0.01em] mt-0.5" style={{ color: T.textPrimary }}>
+                            {bestGender} <span style={{ color: cohortColor }}>{bestAge}</span>
+                          </p>
+                        </div>
+                        <div className="ml-auto text-right">
+                          <p className="text-[20px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: cohortColor, fontVariantNumeric: "tabular-nums" }}>{formatNum(bestCount)}</p>
+                          <p className="text-[10.5px] mt-1" style={{ color: T.textSecondary }}>{cohortPct}% of repeat pool</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <InsightBox text={`Across ${formatNum(genderTotal)} repeat patients, ${top?.label || "the largest cohort"} accounts for ${top?.pct || 0}% of visits${second ? `, with ${second.label} at ${second.pct}% (${ratio} ratio)` : ""}. Use this split to tailor program outreach and screening priorities.`} />
                 </div>
               );
@@ -926,6 +964,45 @@ export default function RepeatVisitsPage() {
                       {negligible.length > 0 && (
                         <p className="text-[10px] mt-1.5" style={{ color: T.textMuted }}>+ {negligible.length} negligible site{negligible.length > 1 ? "s" : ""} (&lt;0.5% share, {formatNum(negligibleTotal)} patients combined)</p>
                       )}
+
+                      {/* Single-location bonus content — top specialty
+                          mini-rollup at that one site. Reuses specialtyTreemap
+                          data already on the page. */}
+                      {visibleRows.length === 1 && (() => {
+                        const allSpecs: Array<{ name: string; value: number }> =
+                          (charts?.specialtyTreemap?.[treemapYear] || []) as Array<{ name: string; value: number }>;
+                        const realSpecs = allSpecs
+                          .filter((s) => s.name && s.name !== "Others")
+                          .sort((a, b) => b.value - a.value);
+                        const totalSpecConsults = realSpecs.reduce((s, r) => s + r.value, 0) || 1;
+                        const top5 = realSpecs.slice(0, 5);
+                        if (top5.length === 0) return null;
+                        return (
+                          <div className="mt-4">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] mb-2" style={{ color: T.textMuted }}>
+                              Top Specialties at {visibleRows[0].label}
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                              {top5.map((s) => {
+                                const pct = Math.round((s.value / totalSpecConsults) * 1000) / 10;
+                                const widthPct = Math.max(2, (s.value / (top5[0].value || 1)) * 100);
+                                return (
+                                  <div key={s.name} className="grid items-center gap-2.5" style={{ gridTemplateColumns: "minmax(110px, 36%) 1fr auto" }}>
+                                    <span className="text-[11.5px] font-medium truncate" style={{ color: T.textPrimary }} title={s.name}>{s.name}</span>
+                                    <span className="relative h-1.5 rounded-full" style={{ backgroundColor: "#F1F5F9" }}>
+                                      <span className="absolute left-0 top-0 h-1.5 rounded-full" style={{ width: `${widthPct}%`, backgroundColor: "#4f46e5" }} />
+                                    </span>
+                                    <span className="text-[11px] font-bold tabular-nums whitespace-nowrap" style={{ color: T.textPrimary }}>
+                                      {formatNum(s.value)} <span className="text-[10px] font-medium" style={{ color: T.textMuted }}>· {pct}%</span>
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       <InsightBox text={`${formatNum(locationTotal)} repeat patients across ${visibleRows.length} location${visibleRows.length > 1 ? "s" : ""}. ${visibleRows[0] ? `${visibleRows[0].label} carries ${Math.round(visibleRows[0].count / grandTotal * 100)}% of the repeat pool.` : ""}`} />
                     </>
                   )}

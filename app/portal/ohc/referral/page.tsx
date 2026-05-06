@@ -467,6 +467,9 @@ export default function ReferralAnalyticsPage() {
     ...r,
     __total: topBarSpecs.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
   }));
+  const realClinicCount = locationBySpecialtyData.filter((r: any) => r.location !== "Others").length;
+  const clinicChartMode: "bar" | "heatmap" | "specialtyOnly" =
+    realClinicCount <= 1 ? "specialtyOnly" : realClinicCount < 5 ? "heatmap" : "bar";
 
   if (!d && isLoading) {
     return (
@@ -1168,23 +1171,198 @@ export default function ReferralAnalyticsPage() {
         {isChartVisible("locationBySpecialty") && <CVCard
           accentColor={"#4f46e5"}
           title="Referral Volume by Specialty & Location"
-          subtitle="Where the referral pressure sits — per-clinic volume split by destination specialty"
-          tooltipText="Stacked bar per clinic. Each colored segment is a destination specialty; darker segments inside a bar carry higher referral volume at that site. Useful for matching specialist allocation to the locations that actually need them."
+          subtitle={clinicChartMode === "specialtyOnly" ? `Referral volume by destination specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic referral volumes — colour intensity grades by referral count" : "Where the referral pressure sits — per-clinic volume split by destination specialty"}
+          tooltipText="Per-clinic referral volume by destination specialty. View adapts to clinic count: a single-clinic specialty bar chart for 1 clinic, a heatmap for 2-4 clinics, and stacked bars for 5+ clinics."
           chartId="locationBySpecialty"
           chartData={charts?.locationBySpecialty}
           chartTitle="Referral Volume by Specialty & Location"
-          chartDescription="Per-clinic referral volume by destination specialty"
+          chartDescription="Adaptive view of per-clinic referral volume by destination specialty"
 
         >
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
-            {topBarSpecs.map((spec: string, i: number) => (
-              <div key={spec} className="flex items-center gap-1">
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
-                <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+          {clinicChartMode !== "specialtyOnly" && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
+              {topBarSpecs.map((spec: string, i: number) => (
+                <div key={spec} className="flex items-center gap-1">
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: T.textMuted }}>{spec}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── 1 clinic: horizontal specialty bar (no clinic axis) ── */}
+          {clinicChartMode === "specialtyOnly" && (() => {
+            const row = locationBySpecialtyData[0] || {};
+            const items = topBarSpecs
+              .map((spec: string, i: number) => ({
+                spec,
+                value: Number(row[spec]) || 0,
+                fill: SPECIALTY_COLORS[spec] || TREEMAP_COLORS[i % TREEMAP_COLORS.length],
+              }))
+              .filter((d) => d.value > 0)
+              .sort((a, b) => b.value - a.value);
+            const max = items[0]?.value || 1;
+            const total = items.reduce((s, d) => s + d.value, 0);
+            const top = items[0];
+            const top3Share = total > 0 ? Math.round((items.slice(0, 3).reduce((s, d) => s + d.value, 0) / total) * 100) : 0;
+            const tail = items.slice(3);
+            const tailShare = total > 0 ? Math.round((tail.reduce((s, d) => s + d.value, 0) / total) * 100) : 0;
+            const barRowHeight = items.length <= 4 ? 36 : items.length <= 6 ? 30 : items.length <= 9 ? 24 : 20;
+            return (
+              <div className="flex flex-col flex-1 mt-2">
+                <div className="flex items-baseline justify-between mb-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total referrals</p>
+                  <p className="text-[20px] font-extrabold tracking-[-0.02em]" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>{formatNum(total)}</p>
+                </div>
+                <div className="flex flex-col gap-2 flex-1 justify-center">
+                  {items.map((d) => {
+                    const pct = total > 0 ? (d.value / total) * 100 : 0;
+                    return (
+                      <div key={d.spec} className="flex items-center gap-3">
+                        <div className="text-[12px] font-medium truncate" style={{ width: 140, color: T.textPrimary }} title={d.spec}>{d.spec}</div>
+                        <div className="flex-1 rounded-md overflow-hidden" style={{ height: barRowHeight, backgroundColor: "#F1F5F9" }}>
+                          <div style={{ width: `${(d.value / max) * 100}%`, height: "100%", backgroundColor: d.fill, borderRadius: 6, transition: "width 200ms ease" }} />
+                        </div>
+                        <div className="text-[12px] font-bold tabular-nums" style={{ width: 60, textAlign: "right", color: T.textPrimary }}>{formatNum(d.value)}</div>
+                        <div className="text-[10.5px] tabular-nums" style={{ width: 42, textAlign: "right", color: T.textMuted }}>{pct.toFixed(0)}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {items.length === 0 ? (
+                  <p className="text-center text-[12px] py-12" style={{ color: T.textMuted }}>No specialty data for this clinic in the current filter window.</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2.5 mt-5">
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #4f46e5, #6d28d9)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Specialty</p>
+                      <p className="text-[15px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate">{top?.spec || "—"}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{top ? `${formatNum(top.value)} referrals` : ""}</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Specialties</p>
+                      <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{items.length}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90">in active use</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top 3 Share</p>
+                      <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{top3Share}%</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{tail.length > 0 ? `tail: ${tailShare}%` : "no tail"}</p>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-          <div className="overflow-x-auto">
+            );
+          })()}
+
+          {/* ── 2-4 clinics: heatmap + stat strip ── */}
+          {clinicChartMode === "heatmap" && (() => {
+            const locations = locationBySpecialtyData.map((r: any) => r.location as string);
+            const cells: Array<[number, number, number]> = [];
+            let maxVal = 0;
+            const locTotals = new Array<number>(locations.length).fill(0);
+            const specTotals = new Array<number>(topBarSpecs.length).fill(0);
+            for (let li = 0; li < locations.length; li++) {
+              for (let si = 0; si < topBarSpecs.length; si++) {
+                const v = Number(locationBySpecialtyData[li][topBarSpecs[si]]) || 0;
+                cells.push([si, li, v]);
+                locTotals[li] += v;
+                specTotals[si] += v;
+                if (v > maxVal) maxVal = v;
+              }
+            }
+            const total = locTotals.reduce((s, v) => s + v, 0);
+            const topLocIdx = locTotals.reduce((m, v, i) => (v > locTotals[m] ? i : m), 0);
+            const topSpecIdx = specTotals.reduce((m, v, i) => (v > specTotals[m] ? i : m), 0);
+            const topLoc = { name: locations[topLocIdx] || "—", count: locTotals[topLocIdx] || 0 };
+            const topSpec = { name: topBarSpecs[topSpecIdx] || "—", count: specTotals[topSpecIdx] || 0 };
+            return (
+              <div className="flex flex-col flex-1 mt-2">
+                <div className="flex-1" style={{ minHeight: 260 }}>
+                  <ReactECharts
+                    style={{ height: "100%", width: "100%", minHeight: 260 }}
+                    option={{
+                      tooltip: {
+                        position: "top",
+                        backgroundColor: "#fff",
+                        borderColor: T.border,
+                        borderWidth: 1,
+                        textStyle: { fontSize: 12, color: T.textPrimary },
+                        extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
+                        formatter: (p: any) => {
+                          const arr = Array.isArray(p.data) ? p.data : p.data.value;
+                          const [x, y, v] = arr;
+                          return `<strong>${locations[y]}</strong><br/>${topBarSpecs[x]}: <strong>${formatNum(v)}</strong>`;
+                        },
+                      },
+                      grid: { left: 8, right: 16, top: 24, bottom: 16, containLabel: true },
+                      xAxis: {
+                        type: "category",
+                        data: topBarSpecs,
+                        axisTick: { show: false },
+                        axisLine: { lineStyle: { color: T.borderLight } },
+                        axisLabel: { fontSize: 10, color: T.textMuted, rotate: 25, interval: 0 },
+                        splitArea: { show: false },
+                      },
+                      yAxis: {
+                        type: "category",
+                        data: locations,
+                        axisTick: { show: false },
+                        axisLine: { lineStyle: { color: T.borderLight } },
+                        axisLabel: { fontSize: 11, color: T.textPrimary, fontWeight: 600 },
+                      },
+                      visualMap: {
+                        min: 0,
+                        max: maxVal || 1,
+                        show: false,
+                        inRange: { color: ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"] },
+                      },
+                      series: [{
+                        type: "heatmap",
+                        data: cells.map(([x, y, v]) => {
+                          const t = maxVal > 0 ? v / maxVal : 0;
+                          const palette = ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"];
+                          const fill = v === 0 ? "#F8FAFC" : palette[Math.min(palette.length - 1, Math.floor(t * palette.length))];
+                          const textColor = t >= 0.5 ? "#FFFFFF" : "#0F172A";
+                          return {
+                            value: [x, y, v],
+                            itemStyle: { color: fill, borderColor: "#fff", borderWidth: 2, borderRadius: 6 },
+                            label: { color: textColor },
+                          };
+                        }),
+                        label: {
+                          show: true,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          formatter: (p: any) => p.data.value[2] > 0 ? formatNum(p.data.value[2]) : "",
+                        },
+                        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(79,70,229,0.4)" } },
+                      }],
+                    }}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2.5 mt-4">
+                  <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #4f46e5, #6d28d9)", color: "#fff" }}>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Clinic</p>
+                    <p className="text-[14px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate" title={topLoc.name}>{topLoc.name}</p>
+                    <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{formatNum(topLoc.count)} referrals</p>
+                  </div>
+                  <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)", color: "#fff" }}>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Specialty</p>
+                    <p className="text-[14px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate" title={topSpec.name}>{topSpec.name}</p>
+                    <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{formatNum(topSpec.count)} referrals</p>
+                  </div>
+                  <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }}>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Total</p>
+                    <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{formatNum(total)}</p>
+                    <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{locations.length} clinics · {topBarSpecs.length} specialties</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── 5+ clinics: existing stacked bar ── */}
+          {clinicChartMode === "bar" && <div className="overflow-x-auto">
             <div style={{ height: 420, minWidth: Math.max(600, (charts?.locationBySpecialty?.length || 6) * 80) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={locationBySpecialtyData} margin={{ top: 56, right: 10, left: 0, bottom: 45 }}>
@@ -1261,8 +1439,8 @@ export default function ReferralAnalyticsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
-          {(charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
+          </div>}
+          {clinicChartMode === "bar" && (charts?.othersBreakdown?.length ?? 0) > 0 && (() => {
             const list = charts?.othersBreakdown || [];
             const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
             return (

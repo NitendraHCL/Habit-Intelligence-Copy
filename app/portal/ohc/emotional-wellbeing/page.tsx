@@ -162,6 +162,23 @@ function InsightBox({ text }: { text: string }) {
   );
 }
 
+// Compact bucket stat for hero-tile footers (color dot + label + count + %).
+function BucketStat({ color, label, count, total }: { color: string; label: string; count: number; total: number }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+        <span className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{label}</span>
+      </div>
+      <div className="text-[16px] font-extrabold mt-0.5 leading-none tracking-[-0.01em]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>
+        {formatNum(count)}
+        <span className="text-[11px] font-medium ml-1" style={{ color: T.textMuted }}>· {pct}%</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Multi-select filter ───
 function FilterMultiSelect({ label, options, selected, onChange }: {
   label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void;
@@ -336,12 +353,17 @@ export default function EmotionalWellbeingPage() {
       criticalRisk?: { suicidalThoughts: number; attemptedSelfHarm: number; previousAttempts: number; totalCases: number };
       substanceUsePct?: number;
       sleepQuality?: Array<{ label: string; count: number }>;
+      sleepDuration?: Array<{ label: string; count: number }>;
       alcoholHabit?: Array<{ label: string; count: number }>;
       smokingHabit?: Array<{ label: string; count: number }>;
       smokingTrend?: Array<{ period: string; pct: number }>;
       visitPattern?: Array<{ label: string; count: number }>;
       impressions?: Array<{ label: string; count: number }>;
+      impressionSubcategories?: Record<string, Array<{ label: string; count: number }>>;
+      impressionsByVisitBucket?: Record<string, Array<{ label: string; count: number }>>;
       anxietyScale?: Array<{ label: string; count: number }>;
+      depressionScale?: Array<{ label: string; count: number }>;
+      selfEsteemScale?: Array<{ label: string; count: number }>;
     };
   }>("ohc/emotional-wellbeing", ewbExtraParams);
 
@@ -382,10 +404,7 @@ export default function EmotionalWellbeingPage() {
 
   const charts = useMemo(() => {
     // KPI / Demographics / Consult Trends → from agg_kpi (Psychologist slice).
-    // Critical Risk / Substance Use / Sleep / Alcohol / Smoking / Anxiety /
-    // Visit Pattern / Impressions → from hra_kpi_summary.
-    // Sleep Duration / Self Esteem / Depression Scale don't have source
-    // columns yet — empty defaults until the warehouse grows them.
+    // All EWB charts now sourced from aggregated_table.emotional_wellbeing.
     const c = ewbApi?.charts;
     return {
       demographics: {
@@ -398,17 +417,17 @@ export default function EmotionalWellbeingPage() {
       criticalRisk: c?.criticalRisk ?? { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 },
       substanceUsePct: c?.substanceUsePct ?? 0,
       sleepQuality: c?.sleepQuality ?? [],
-      sleepDuration: [] as Array<{ label: string; count: number }>,
+      sleepDuration: c?.sleepDuration ?? [],
       alcoholHabit: c?.alcoholHabit ?? [],
       smokingHabit: c?.smokingHabit ?? [],
       smokingTrend: c?.smokingTrend ?? [],
       visitPattern: c?.visitPattern ?? [],
       impressions: c?.impressions ?? [],
-      impressionSubcategories: {} as Record<string, Array<{ label: string; count: number }>>,
-      impressionsByVisitBucket: {} as Record<string, Array<{ label: string; count: number }>>,
+      impressionSubcategories: c?.impressionSubcategories ?? {},
+      impressionsByVisitBucket: c?.impressionsByVisitBucket ?? {},
       anxietyScale: c?.anxietyScale ?? [],
-      depressionScale: [] as Array<{ label: string; count: number }>,
-      selfEsteemScale: [] as Array<{ label: string; count: number }>,
+      depressionScale: c?.depressionScale ?? [],
+      selfEsteemScale: c?.selfEsteemScale ?? [],
     };
   }, [ewbApi?.charts]);
 
@@ -986,24 +1005,62 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
           <InsightBox text="Poor sleep quality is strongly linked to anxiety and depression. If the majority of patients report average or poor sleep, consider sleep hygiene workshops and integrating sleep screening into routine assessments." />
         </CVCard>}
 
-        {/* Sleep Duration */}
-        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="Sleep Duration Analysis" tooltipText="Donut chart displaying the proportion of patients by sleep duration buckets. Each slice represents a duration range. Larger slices for shorter sleep durations may signal sleep deprivation trends in the population." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Sleep Duration Analysis">
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: 300, height: 240 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={sleepDuration.map((d) => ({ name: d.label, value: d.count }))} cx="50%" cy="50%"
-                    innerRadius={55} outerRadius={90} paddingAngle={2} dataKey="value"
-                    label={({ percent }: any) => `${((percent || 0) * 100).toFixed(0)}%`} labelLine={{ stroke: T.textMuted, strokeWidth: 1 }}>
-                    {sleepDuration.map((_, i) => <Cell key={i} fill={SLEEP_DURATION_COLORS[i % SLEEP_DURATION_COLORS.length]} />)}
-                  </Pie>
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <InsightBox text="Employees sleeping less than 7 hours are at higher risk for burnout and reduced cognitive function. If a significant proportion falls in the 'Less than 7 hrs' bucket, consider flexible scheduling or workload reviews." />
+        {/* Sleep Duration — hero stat tile */}
+        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="How many of your employees get less than 7 hours of sleep" tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours">
+          {(() => {
+            const enough = sleepDuration.find((d) => d.label === "≥7 hours")?.count || 0;
+            const notEnough = sleepDuration.find((d) => d.label === "<7 hours")?.count || 0;
+            const nr = sleepDuration.find((d) => d.label === "Not Reported")?.count || 0;
+            const total = enough + notEnough + nr;
+            const reported = enough + notEnough;
+            const deprivedPct = reported > 0 ? Math.round((notEnough / reported) * 100) : 0;
+            const oneIn = notEnough > 0 ? Math.max(2, Math.round(reported / notEnough)) : 0;
+            const COLORS = { deprived: "#dc2626", rested: "#0d9488", nr: "#cbd5e1" };
+            return (
+              <div className="flex flex-col" style={{ minHeight: 240 }}>
+                {/* Hero */}
+                <div className="flex flex-col items-center justify-center py-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: T.textMuted }}>
+                    Sleep Deprived
+                  </p>
+                  <p className="text-[44px] font-extrabold leading-none tracking-[-0.03em] font-[var(--font-inter)] mt-1.5"
+                     style={{ color: COLORS.deprived, fontVariantNumeric: "tabular-nums" }}>
+                    {oneIn > 0 ? `1 in ${oneIn}` : "—"}
+                  </p>
+                  <p className="text-[12px] mt-2" style={{ color: T.textSecondary }}>
+                    <strong style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(notEnough)}</strong>
+                    {" of "}
+                    <strong style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(reported)}</strong>
+                    {" reported"} sleep less than 7 hours nightly
+                  </p>
+                </div>
+
+                {/* Proportional bar (segments only on reported responses) */}
+                <div className="mt-2">
+                  <div className="flex w-full h-2 rounded-full overflow-hidden bg-[#F1F5F9]">
+                    {reported > 0 && (
+                      <>
+                        <div style={{ width: `${(notEnough / reported) * 100}%`, backgroundColor: COLORS.deprived }} />
+                        <div style={{ width: `${(enough / reported) * 100}%`, backgroundColor: COLORS.rested }} />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between mt-1.5 text-[11px]" style={{ color: T.textMuted }}>
+                    <span>{deprivedPct}% sleep &lt;7 hours</span>
+                    <span>{reported > 0 ? 100 - deprivedPct : 0}% well-rested</span>
+                  </div>
+                </div>
+
+                {/* Bucket footer */}
+                <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t" style={{ borderColor: T.border }}>
+                  <BucketStat color={COLORS.rested} label="≥7 hours" count={enough} total={total} />
+                  <BucketStat color={COLORS.deprived} label="<7 hours" count={notEnough} total={total} />
+                  <BucketStat color={COLORS.nr}      label="Not Reported" count={nr} total={total} />
+                </div>
+              </div>
+            );
+          })()}
+          <InsightBox text="Employees sleeping less than 7 hours are at higher risk for burnout and reduced cognitive function. If a significant proportion falls in the '<7 hours' bucket, consider flexible scheduling or workload reviews." />
         </CVCard>}
       </div>
 

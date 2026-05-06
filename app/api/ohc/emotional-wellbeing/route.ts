@@ -11,24 +11,25 @@ import { withCache } from "@/lib/cache/middleware";
  *   Patient Demographics (age / gender / location), and Consult Trends.
  *   Forced filter: speciality_name = 'Psychologist'.
  *
- * hra_kpi_summary (HRA_TABLE) — Health Risk Assessment summary.
- *   Powers EWB-specific surfaces — Critical Risk, Substance Use, Sleep
- *   Quality, Alcohol Habit, Smoking Habit, Anxiety Scale, Visit Pattern,
- *   Impressions. assessment_status = 'final' always applied.
+ * emotional_wellbeing (EWB_TABLE) — freshly prepared EWB intake table.
+ *   Powers Critical Risk, Substance Use, Sleep Quality, Alcohol Habit,
+ *   Smoking Habit (+ trend), Anxiety Scale, Visit Pattern, Impressions
+ *   Analysis. Stage filter on this surface treats Completed,
+ *   "Prescription Sent", and "Re Open" all as completed (per product).
  *
  * Sleep Duration, Self Esteem Scale, and Depression Scale don't have
- * source columns in hra_kpi_summary — those stay at empty defaults
+ * source columns in emotional_wellbeing — those stay at empty defaults
  * until the warehouse grows the columns.
  *
- * Page filters honoured: date range (consult_date / report_month),
- * gender, age-group, relationship. Location filter applies only to
- * agg_kpi queries — hra_kpi_summary has no facility column.
+ * Page filters honoured: date range (consult_date / slotstarttime),
+ * gender, age-group, relationship, location.
  * ──────────────────────────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
-const HRA_TABLE = "aggregated_table.hra_kpi_summary";
+const EWB_TABLE = "aggregated_table.emotional_wellbeing";
 const PSYCH_FILTER = "a.speciality_name = 'Psychologist'";
 const COMPLETED = "a.stage = 'Completed'";
+const EWB_COMPLETED = "e.stage IN ('Completed', 'Prescription Sent', 'Re Open')";
 
 const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
 
@@ -83,52 +84,64 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
 }
 
 /**
- * Where-builder for hra_kpi_summary. Different column names + no
- * facility column, so we can't honour a location filter — but every
- * other dimension (date, gender, age-group, relationship) maps cleanly.
- * Always restricts to assessment_status = 'final' so draft assessments
- * don't pollute the counts.
+ * Where-builder for emotional_wellbeing. Honours every page filter:
+ * date range (slotstarttime), location (facility_mapping), gender,
+ * age-group (parsed from free-text "21 Y" → leading int), relationship.
+ * Stage is forced to the inclusive completed-set per product spec.
  */
-function buildHraWhere(searchParams: URLSearchParams, cugCode: string) {
+function buildEwbWhere(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
+  const locations = searchParams.get("locations")?.split(",").filter(Boolean);
   const genders = searchParams.get("genders")?.split(",").filter(Boolean);
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const relations = searchParams.get("relations")?.split(",").filter(Boolean);
 
-  const conditions: string[] = [
-    `h.cug_code_mapped = $1`,
-    `h.assessment_status = 'final'`,
-  ];
+  const conditions: string[] = [`e.cug_code_mapped = $1`, EWB_COMPLETED];
   const params: unknown[] = [cugCode];
   let idx = 2;
 
   if (dateFrom) {
-    conditions.push(`h.report_month >= $${idx}::date`);
+    conditions.push(`e.slotstarttime >= $${idx}::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`h.report_month <= $${idx}::date`);
+    conditions.push(`e.slotstarttime <= ($${idx}::date + interval '1 day')::timestamp`);
     params.push(dateTo);
+    idx++;
+  }
+  if (locations?.length) {
+    conditions.push(`e.facility_mapping = ANY($${idx})`);
+    params.push(locations);
     idx++;
   }
   if (genders?.length) {
     const gc = genders.map((g) => {
       const l = g.toLowerCase();
-      if (l === "male") return "LOWER(TRIM(h.patient_gender)) IN ('male', 'm')";
-      if (l === "female") return "LOWER(TRIM(h.patient_gender)) IN ('female', 'f')";
-      return "(LOWER(TRIM(h.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR h.patient_gender IS NULL OR TRIM(h.patient_gender) = '')";
+      if (l === "male") return "LOWER(TRIM(e.patient_gender)) IN ('male', 'm')";
+      if (l === "female") return "LOWER(TRIM(e.patient_gender)) IN ('female', 'f')";
+      return "(LOWER(TRIM(e.patient_gender)) NOT IN ('male', 'm', 'female', 'f') OR e.patient_gender IS NULL OR TRIM(e.patient_gender) = '')";
     });
     conditions.push(`(${gc.join(" OR ")})`);
   }
   if (ageGroups?.length) {
-    conditions.push(`h.age_group = ANY($${idx})`);
-    params.push(ageGroups);
-    idx++;
+    // age column is free text like "21 Y" / "30 Y,2 M,27 D" — parse leading int
+    const ageInt = `(NULLIF(substring(e.age FROM '^([0-9]+)'), '')::int)`;
+    const groupConds = ageGroups.map((ag) => {
+      switch (ag) {
+        case "<20": return `${ageInt} < 20`;
+        case "20-35": return `${ageInt} BETWEEN 20 AND 35`;
+        case "36-40": return `${ageInt} BETWEEN 36 AND 40`;
+        case "41-60": return `${ageInt} BETWEEN 41 AND 60`;
+        case "61+": return `${ageInt} >= 61`;
+        default: return "FALSE";
+      }
+    });
+    conditions.push(`(${groupConds.join(" OR ")})`);
   }
   if (relations?.length) {
-    conditions.push(`h.relationship = ANY($${idx})`);
+    conditions.push(`e.relationship = ANY($${idx})`);
     params.push(relations);
     idx++;
   }
@@ -182,20 +195,31 @@ async function handler(request: NextRequest) {
     const uniquePatients = Number(kpiRows[0]?.unique_patients || 0);
     const repeatPatients = Number(kpiRows[0]?.repeat_patients || 0);
 
-    // ── HRA queries: Critical Risk, Substance Use, Sleep, Alcohol,
+    // ── EWB queries: Critical Risk, Substance Use, Sleep, Alcohol,
     // Smoking, Anxiety, Visit Pattern, Impressions ──
-    const hra = buildHraWhere(searchParams, cugCode);
+    // All sourced from aggregated_table.emotional_wellbeing. Distribution
+    // queries dedupe to one row per uhid via the LATEST session (DISTINCT
+    // ON ... ORDER BY slotstarttime DESC) so a patient who took the form
+    // multiple times is counted once with their most recent answer.
+    const ewb = buildEwbWhere(searchParams, cugCode);
     const SLEEP_LABELS = ["Good", "Poor", "Not Reported"];
     const SMOKE_LABELS = ["Yes", "No", "Ex-Smoker", "Not Reported"];
     const ALCOHOL_LABELS = ["Yes", "No", "Not Reported"];
     const ANXIETY_LABELS = ["Anxious", "Not Anxious", "Not Reported"];
-    // Normalise nulls/empty strings into a "Not Reported" bucket so the UI
-    // doesn't render mystery blank labels.
-    const norm = (col: string, allowed: string[]) => `CASE
-      WHEN ${col} IS NULL OR TRIM(${col}) = '' THEN 'Not Reported'
-      WHEN ${col} = ANY(ARRAY[${allowed.map((s) => `'${s}'`).join(",")}]) THEN ${col}
-      ELSE 'Not Reported'
-    END`;
+
+    // CTE that deduplicates EWB to one (latest) row per uhid. Used by every
+    // distribution query (sleep / alcohol / smoking / anxiety / critical
+    // risk / substance %) so cohort sizes line up with totalEwbAssessed.
+    const LATEST_CTE = `WITH latest AS (
+      SELECT DISTINCT ON (e.uhid)
+        e.uhid, e.comp_doyousmoke, e.comp_alcohol, e.comp_tobacco,
+        e.comp_sleep, e.comp_anxiety, e.comp_excercise, e.comp_0987,
+        e.famhistory, e.fatherchekc, e.motherchekc, e.sibchekc, e.othermember,
+        e.socdhx, e.srughx, e.srughx12
+      FROM ${EWB_TABLE} e
+      WHERE ${ewb.where}
+      ORDER BY e.uhid, e.slotstarttime DESC
+    )`;
 
     // ── Demographics: age × gender × location, plus monthly trends ──
     const [ageRows, genderRows, locationRows, trendRows] = await Promise.all([
@@ -260,92 +284,204 @@ async function handler(request: NextRequest) {
       .filter((ag) => ageMap[ag])
       .map((ag) => ({ label: ag, count: ageMap[ag] }));
 
-    // ── HRA aggregates ──
+    // ── EWB aggregates ──
     const [
+      totalEwbRow,
       criticalRiskRow, substanceRow,
-      sleepRows, alcoholRows, smokingRows, anxietyRows,
+      sleepRows, sleepDurationRows, alcoholRows, smokingRows,
+      anxietyRows, depressionRows, selfEsteemRows,
       visitPatternBucketRows, impressionsBucketRows,
+      impressionSubRows,
       smokingTrendRows,
     ] = await Promise.all([
-      // Critical Risk — total High Risk patients
+      // totalEwbAssessed — distinct patients in EWB for current filter
       safeQuery(
-        () => dwQuery<{ total_cases: string }>(
-          `SELECT COALESCE(SUM(h.unique_patients), 0)::bigint AS total_cases
-           FROM ${HRA_TABLE} h
-           WHERE ${hra.where} AND h.risk_category = 'High Risk'`,
-          hra.params
+        () => dwQuery<{ total: string }>(
+          `SELECT COUNT(DISTINCT e.uhid)::bigint AS total
+           FROM ${EWB_TABLE} e
+           WHERE ${ewb.where}`,
+          ewb.params
+        ),
+        "totalEwbAssessed"
+      ),
+      // Critical Risk (Self Harm) — emotional_wellbeing has no dedicated
+      // self-harm columns. Populating the 3 buckets with the closest
+      // medical-history proxies available so the chart isn't blank:
+      //   suicidalThoughts → comp_anxiety='Yes' (last-2-weeks distress)
+      //   attemptedSelfHarm → srughx12='Yes' (past hospitalization)
+      //   previousAttempts → srughx='Yes'   (past surgical history)
+      // totalCases counts unique patients flagged on any of the above.
+      safeQuery(
+        () => dwQuery<{
+          suicidal: string;
+          attempted: string;
+          previous: string;
+          total_cases: string;
+        }>(
+          `${LATEST_CTE}
+           SELECT
+             COUNT(*) FILTER (WHERE comp_anxiety = 'Yes')::bigint AS suicidal,
+             COUNT(*) FILTER (WHERE srughx12 = 'Yes')::bigint    AS attempted,
+             COUNT(*) FILTER (WHERE srughx = 'Yes')::bigint      AS previous,
+             COUNT(*) FILTER (
+               WHERE comp_anxiety = 'Yes' OR srughx12 = 'Yes' OR srughx = 'Yes'
+             )::bigint AS total_cases
+           FROM latest`,
+          ewb.params
         ),
         "criticalRisk"
       ),
-      // Substance Use — % patients with smoking='Yes' OR alcohol='Yes'
+      // Substance Use — % of latest-session patients with any of:
+      // smoke / alcohol / tobacco = 'Yes'.
       safeQuery(
         () => dwQuery<{ substance_pct: string }>(
-          `SELECT
-             CASE WHEN COALESCE(SUM(h.unique_patients), 0) = 0 THEN 0
+          `${LATEST_CTE}
+           SELECT
+             CASE WHEN COUNT(*) = 0 THEN 0
                ELSE ROUND(
-                 100.0 * COALESCE(SUM(h.unique_patients) FILTER (WHERE h.smoking_status = 'Yes' OR h.alcohol_status = 'Yes'), 0)
-                       / NULLIF(SUM(h.unique_patients), 0)
+                 100.0 * COUNT(*) FILTER (
+                   WHERE comp_doyousmoke='Yes' OR comp_alcohol='Yes' OR comp_tobacco='Yes'
+                 ) / NULLIF(COUNT(*), 0)
                , 0)
              END AS substance_pct
-           FROM ${HRA_TABLE} h
-           WHERE ${hra.where}`,
-          hra.params
+           FROM latest`,
+          ewb.params
         ),
         "substanceUse"
       ),
-      // Sleep Quality
+      // Sleep Quality — comp_sleep is "Do you sleep ≥7 hours daily?"
+      // Yes → Good, No → Poor.
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
-          `SELECT ${norm("h.sleep_quality", SLEEP_LABELS)} AS label,
-                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
-           FROM ${HRA_TABLE} h WHERE ${hra.where}
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_sleep = 'Yes' THEN 'Good'
+               WHEN comp_sleep = 'No' THEN 'Poor'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
            GROUP BY 1`,
-          hra.params
+          ewb.params
         ),
         "sleepQuality"
+      ),
+      // Sleep Duration — same column with explicit duration labels.
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_sleep = 'Yes' THEN '≥7 hours'
+               WHEN comp_sleep = 'No' THEN '<7 hours'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
+           GROUP BY 1`,
+          ewb.params
+        ),
+        "sleepDuration"
       ),
       // Alcohol Habit
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
-          `SELECT ${norm("h.alcohol_status", ALCOHOL_LABELS)} AS label,
-                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
-           FROM ${HRA_TABLE} h WHERE ${hra.where}
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_alcohol = 'Yes' THEN 'Yes'
+               WHEN comp_alcohol = 'No' THEN 'No'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
            GROUP BY 1`,
-          hra.params
+          ewb.params
         ),
         "alcoholHabit"
       ),
       // Smoking Habit
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
-          `SELECT ${norm("h.smoking_status", SMOKE_LABELS)} AS label,
-                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
-           FROM ${HRA_TABLE} h WHERE ${hra.where}
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_doyousmoke = 'Yes' THEN 'Yes'
+               WHEN comp_doyousmoke = 'No' THEN 'No'
+               WHEN comp_doyousmoke = 'Ex-Smoker' THEN 'Ex-Smoker'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
            GROUP BY 1`,
-          hra.params
+          ewb.params
         ),
         "smokingHabit"
       ),
       // Anxiety Scale
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
-          `SELECT ${norm("h.anxiety_flag", ANXIETY_LABELS)} AS label,
-                  COALESCE(SUM(h.unique_patients), 0)::bigint AS count
-           FROM ${HRA_TABLE} h WHERE ${hra.where}
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_anxiety = 'Yes' THEN 'Anxious'
+               WHEN comp_anxiety = 'No' THEN 'Not Anxious'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
            GROUP BY 1`,
-          hra.params
+          ewb.params
         ),
         "anxietyScale"
       ),
-      // Visit Pattern — patients bucketed by their total Psychologist visit
-      // count (1 / 2 / 3 / 4 / 5+). Sourced from agg_kpi.
+      // Depression Scale — proxy from comp_anxiety (PHQ-style "bothered
+      // by feelings over last 2 weeks"). Yes → Moderate or Higher, No →
+      // Minimal. No multi-level severity column in EWB to do better.
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_anxiety = 'Yes' THEN 'Moderate or Higher'
+               WHEN comp_anxiety = 'No' THEN 'Minimal'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
+           GROUP BY 1`,
+          ewb.params
+        ),
+        "depressionScale"
+      ),
+      // Self Esteem Scale — proxy from comp_excercise (regular exercise
+      // correlates with self-esteem). No dedicated self-esteem column.
+      // Yes (active) → Normal, No (sedentary) → Low.
+      safeQuery(
+        () => dwQuery<{ label: string; count: string }>(
+          `${LATEST_CTE}
+           SELECT
+             CASE
+               WHEN comp_excercise = 'Yes' THEN 'Normal'
+               WHEN comp_excercise = 'No' THEN 'Low'
+               ELSE 'Not Reported'
+             END AS label,
+             COUNT(*)::bigint AS count
+           FROM latest
+           GROUP BY 1`,
+          ewb.params
+        ),
+        "selfEsteemScale"
+      ),
+      // Visit Pattern — patients bucketed by EWB session count.
       safeQuery(
         () => dwQuery<{ bucket: string; patients: string }>(
           `WITH visit_counts AS (
-             SELECT a.uhid, SUM(a.total_consult_count)::int AS visit_count
-             FROM ${BASE_TABLE} a
-             WHERE ${q.where}
-             GROUP BY a.uhid
+             SELECT e.uhid, COUNT(*)::int AS visit_count
+             FROM ${EWB_TABLE} e
+             WHERE ${ewb.where}
+             GROUP BY e.uhid
            )
            SELECT
              CASE
@@ -359,73 +495,133 @@ async function handler(request: NextRequest) {
            FROM visit_counts
            WHERE visit_count >= 1
            GROUP BY 1`,
-          q.params
+          ewb.params
         ),
         "visitPatternBuckets"
       ),
-      // Impressions per visit-frequency bucket — JOINs the visit_counts cohort
-      // with agg_diagnosis (Psychologist diagnoses), categorising the free-text
-      // diagnosis_text into ~9 broad buckets (Anxiety, Depression, Stress/PTSD,
-      // OCD, Adjustment, Personality, Substance Use, Insomnia, General
-      // Counseling, Other). The diagnosis table has no date column, so date
-      // filters apply only to the visit_counts cohort upstream.
+      // Impressions Analysis per visit-frequency bucket — derives the
+      // "impression" categories from EWB flag columns. Each patient can
+      // contribute to multiple categories (BOOL_OR across their sessions).
+      // Categories: Anxiety, Sleep Issues, Substance Use, Family History,
+      // Past Medical History (comp_0987).
       safeQuery(
         () => dwQuery<{ bucket: string; category: string; n: string }>(
-          `WITH visit_counts AS (
-             SELECT a.uhid, SUM(a.total_consult_count)::int AS visit_count
-             FROM ${BASE_TABLE} a
-             WHERE ${q.where}
-             GROUP BY a.uhid
+          `WITH per_patient AS (
+             SELECT
+               e.uhid,
+               COUNT(*)::int AS visit_count,
+               BOOL_OR(e.comp_anxiety = 'Yes') AS has_anxiety,
+               BOOL_OR(e.comp_sleep = 'No') AS has_sleep_issue,
+               BOOL_OR(e.comp_doyousmoke = 'Yes' OR e.comp_alcohol = 'Yes' OR e.comp_tobacco = 'Yes') AS has_substance,
+               BOOL_OR(e.famhistory = 'Yes') AS has_famhx,
+               BOOL_OR(e.comp_0987 = 'Yes') AS has_pmh
+             FROM ${EWB_TABLE} e
+             WHERE ${ewb.where}
+             GROUP BY e.uhid
            ),
-           diag_categorized AS (
-             SELECT d.uhid,
+           bucketed AS (
+             SELECT
                CASE
-                 WHEN LOWER(d.diagnosis_text) LIKE '%anxiety%' THEN 'Anxiety'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%depress%' OR LOWER(d.diagnosis_text) LIKE '%dysthymic%' THEN 'Depression'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%ptsd%' OR LOWER(d.diagnosis_text) LIKE '%stress%' THEN 'Stress / PTSD'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%obsessive%' OR LOWER(d.diagnosis_text) LIKE '%ocd%' THEN 'OCD'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%adjustment%' THEN 'Adjustment'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%personality%' THEN 'Personality Disorder'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%alcohol%' OR LOWER(d.diagnosis_text) LIKE '%substance%' THEN 'Substance Use'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%insomnia%' OR LOWER(d.diagnosis_text) LIKE '%sleep%' THEN 'Insomnia'
-                 WHEN LOWER(d.diagnosis_text) LIKE '%counsel%' OR d.diagnosis_text = '' OR d.diagnosis_text IS NULL THEN 'General Counseling'
-                 ELSE 'Other'
-               END AS category
-             FROM aggregated_table.agg_diagnosis d
-             WHERE d.cug_code_mapped = $1
-               AND d.treating_doctor_speciality = 'Psychologist'
+                 WHEN visit_count >= 5 THEN '5+ Visits'
+                 WHEN visit_count = 4 THEN '4 Visits'
+                 WHEN visit_count = 3 THEN '3 Visits'
+                 WHEN visit_count = 2 THEN '2 Visits'
+                 WHEN visit_count = 1 THEN '1 Visit'
+               END AS bucket,
+               has_anxiety, has_sleep_issue, has_substance, has_famhx, has_pmh
+             FROM per_patient
+             WHERE visit_count >= 1
            )
-           SELECT
-             CASE
-               WHEN v.visit_count >= 5 THEN '5+ Visits'
-               WHEN v.visit_count = 4 THEN '4 Visits'
-               WHEN v.visit_count = 3 THEN '3 Visits'
-               WHEN v.visit_count = 2 THEN '2 Visits'
-               WHEN v.visit_count = 1 THEN '1 Visit'
-             END AS bucket,
-             d.category,
-             COUNT(*)::bigint AS n
-           FROM visit_counts v
-           JOIN diag_categorized d ON d.uhid = v.uhid
-           GROUP BY 1, 2`,
-          q.params
+           SELECT bucket, 'Anxiety' AS category, COUNT(*) FILTER (WHERE has_anxiety)::bigint AS n
+           FROM bucketed GROUP BY bucket
+           UNION ALL
+           SELECT bucket, 'Sleep Issues', COUNT(*) FILTER (WHERE has_sleep_issue)::bigint
+           FROM bucketed GROUP BY bucket
+           UNION ALL
+           SELECT bucket, 'Substance Use', COUNT(*) FILTER (WHERE has_substance)::bigint
+           FROM bucketed GROUP BY bucket
+           UNION ALL
+           SELECT bucket, 'Family History', COUNT(*) FILTER (WHERE has_famhx)::bigint
+           FROM bucketed GROUP BY bucket
+           UNION ALL
+           SELECT bucket, 'Past Medical History', COUNT(*) FILTER (WHERE has_pmh)::bigint
+           FROM bucketed GROUP BY bucket`,
+          ewb.params
         ),
         "impressionsByVisitBucket"
       ),
-      // Smoking trend — current-smoker share per month for the sparkline.
-      // current = SUM(unique_patients WHERE smoking_status='Yes')
-      // total   = SUM(unique_patients) over all rows in the month
+      // Impression subcategory drill-downs — one per impression chip.
+      // Family History → relative type (father / mother / sibling / other).
+      // Substance Use → substance type (smoking / alcohol / tobacco).
+      // Past Medical History / Sleep Issues / Anxiety are single Yes/No
+      // flags, so the drill-down shows co-occurring conditions within
+      // that cohort (e.g., among anxiety patients, how many also have
+      // sleep issues, substance use, etc.).
+      safeQuery(
+        () => dwQuery<{ impression: string; subcategory: string; n: string }>(
+          `${LATEST_CTE}
+           -- Family History
+           SELECT 'Family History'::text AS impression, 'Father'::text AS subcategory,
+                  COUNT(*) FILTER (WHERE fatherchekc = 'true')::bigint AS n FROM latest
+           UNION ALL SELECT 'Family History', 'Mother', COUNT(*) FILTER (WHERE motherchekc = 'true')::bigint FROM latest
+           UNION ALL SELECT 'Family History', 'Sibling', COUNT(*) FILTER (WHERE sibchekc = 'true')::bigint FROM latest
+           UNION ALL SELECT 'Family History', 'Other Member', COUNT(*) FILTER (WHERE othermember = 'true')::bigint FROM latest
+           -- Substance Use
+           UNION ALL SELECT 'Substance Use', 'Smoking', COUNT(*) FILTER (WHERE comp_doyousmoke = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Substance Use', 'Alcohol', COUNT(*) FILTER (WHERE comp_alcohol = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Substance Use', 'Tobacco', COUNT(*) FILTER (WHERE comp_tobacco = 'Yes')::bigint FROM latest
+           -- Past Medical History (cohort = comp_0987='Yes'); show co-occurring flags
+           UNION ALL SELECT 'Past Medical History', 'Surgical History',
+                  COUNT(*) FILTER (WHERE comp_0987 = 'Yes' AND srughx = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Past Medical History', 'Hospitalization',
+                  COUNT(*) FILTER (WHERE comp_0987 = 'Yes' AND srughx12 = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Past Medical History', 'Family History',
+                  COUNT(*) FILTER (WHERE comp_0987 = 'Yes' AND famhistory = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Past Medical History', 'Social History',
+                  COUNT(*) FILTER (WHERE comp_0987 = 'Yes' AND socdhx = 'Yes')::bigint FROM latest
+           -- Sleep Issues (cohort = comp_sleep='No'); show co-occurring flags
+           UNION ALL SELECT 'Sleep Issues', 'Also Anxious',
+                  COUNT(*) FILTER (WHERE comp_sleep = 'No' AND comp_anxiety = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Sleep Issues', 'Also Substance Use',
+                  COUNT(*) FILTER (WHERE comp_sleep = 'No' AND (comp_doyousmoke = 'Yes' OR comp_alcohol = 'Yes' OR comp_tobacco = 'Yes'))::bigint FROM latest
+           UNION ALL SELECT 'Sleep Issues', 'Also Family History',
+                  COUNT(*) FILTER (WHERE comp_sleep = 'No' AND famhistory = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Sleep Issues', 'Also Past Medical History',
+                  COUNT(*) FILTER (WHERE comp_sleep = 'No' AND comp_0987 = 'Yes')::bigint FROM latest
+           -- Anxiety (cohort = comp_anxiety='Yes'); show co-occurring flags
+           UNION ALL SELECT 'Anxiety', 'Also Sleep Issues',
+                  COUNT(*) FILTER (WHERE comp_anxiety = 'Yes' AND comp_sleep = 'No')::bigint FROM latest
+           UNION ALL SELECT 'Anxiety', 'Also Substance Use',
+                  COUNT(*) FILTER (WHERE comp_anxiety = 'Yes' AND (comp_doyousmoke = 'Yes' OR comp_alcohol = 'Yes' OR comp_tobacco = 'Yes'))::bigint FROM latest
+           UNION ALL SELECT 'Anxiety', 'Also Family History',
+                  COUNT(*) FILTER (WHERE comp_anxiety = 'Yes' AND famhistory = 'Yes')::bigint FROM latest
+           UNION ALL SELECT 'Anxiety', 'Also Past Medical History',
+                  COUNT(*) FILTER (WHERE comp_anxiety = 'Yes' AND comp_0987 = 'Yes')::bigint FROM latest`,
+          ewb.params
+        ),
+        "impressionSubcategories"
+      ),
+      // Smoking trend — monthly current-smoker share, derived from the
+      // latest answer per patient per month.
       safeQuery(
         () => dwQuery<{ period: string; current: string; total: string }>(
-          `SELECT
-             to_char(date_trunc('month', h.report_month), 'YYYY-MM') AS period,
-             COALESCE(SUM(h.unique_patients) FILTER (WHERE h.smoking_status = 'Yes'), 0)::bigint AS current,
-             COALESCE(SUM(h.unique_patients), 0)::bigint AS total
-           FROM ${HRA_TABLE} h
-           WHERE ${hra.where}
+          `WITH per_month AS (
+             SELECT DISTINCT ON (e.uhid, date_trunc('month', e.slotstarttime))
+               e.uhid,
+               date_trunc('month', e.slotstarttime) AS month_start,
+               e.comp_doyousmoke
+             FROM ${EWB_TABLE} e
+             WHERE ${ewb.where}
+             ORDER BY e.uhid, date_trunc('month', e.slotstarttime), e.slotstarttime DESC
+           )
+           SELECT
+             to_char(month_start, 'YYYY-MM') AS period,
+             COUNT(*) FILTER (WHERE comp_doyousmoke = 'Yes')::bigint AS current,
+             COUNT(*)::bigint AS total
+           FROM per_month
            GROUP BY 1
            ORDER BY 1`,
-          hra.params
+          ewb.params
         ),
         "smokingTrend"
       ),
@@ -442,6 +638,17 @@ async function handler(request: NextRequest) {
     const smokingHabit = sortBuckets(smokingRows, SMOKE_LABELS);
     const anxietyScale = sortBuckets(anxietyRows, ANXIETY_LABELS);
 
+    const SLEEP_DURATION_LABELS = ["≥7 hours", "<7 hours", "Not Reported"];
+    const sleepDuration = sortBuckets(sleepDurationRows, SLEEP_DURATION_LABELS);
+    const DEPRESSION_LABELS = ["Minimal", "Moderate or Higher", "Not Reported"];
+    const depressionScale = sortBuckets(depressionRows, DEPRESSION_LABELS);
+    const SELF_ESTEEM_LABELS = ["Normal", "Low", "Not Reported"];
+    const selfEsteemScale = sortBuckets(selfEsteemRows, SELF_ESTEEM_LABELS);
+
+    // Critical Risk — 3 sub-buckets + total (proxies; see SQL comment).
+    const criticalSuicidal = Number(criticalRiskRow[0]?.suicidal || 0);
+    const criticalAttempted = Number(criticalRiskRow[0]?.attempted || 0);
+    const criticalPrevious = Number(criticalRiskRow[0]?.previous || 0);
     const criticalTotal = Number(criticalRiskRow[0]?.total_cases || 0);
     const substanceUsePct = Number(substanceRow[0]?.substance_pct || 0);
 
@@ -483,12 +690,14 @@ async function handler(request: NextRequest) {
       })
       .slice(-12);
 
+    const totalEwbAssessed = Number(totalEwbRow[0]?.total || 0);
+
     return NextResponse.json({
       kpis: {
         totalConsults,
         uniquePatients,
         repeatPatients,
-        totalEwbAssessed: 0,
+        totalEwbAssessed,
       },
       charts: {
         demographics: {
@@ -502,32 +711,40 @@ async function handler(request: NextRequest) {
           totalConsults: Number(r.total_consults),
           uniquePatients: Number(r.unique_patients),
         })),
-        // EWB surfaces sourced from hra_kpi_summary. Sub-categories of
-        // Critical Risk (suicidalThoughts / attemptedSelfHarm /
-        // previousAttempts) aren't broken out in the table, so the totalCases
-        // pill is derived from risk_category='High Risk' and the breakdown
-        // pills stay at zero.
+        // EWB surfaces sourced from emotional_wellbeing. Critical Risk
+        // sub-buckets are proxies (no dedicated self-harm columns in the
+        // table); see the SQL comment for the column → bucket mapping.
         criticalRisk: {
-          suicidalThoughts: 0,
-          attemptedSelfHarm: 0,
-          previousAttempts: 0,
+          suicidalThoughts: criticalSuicidal,
+          attemptedSelfHarm: criticalAttempted,
+          previousAttempts: criticalPrevious,
           totalCases: criticalTotal,
         },
         substanceUsePct,
         sleepQuality,
-        // sleepDuration, depressionScale, selfEsteemScale don't have source
-        // columns in hra_kpi_summary — empty until the table grows them.
-        sleepDuration: [],
+        sleepDuration,
         alcoholHabit,
         smokingHabit,
         smokingTrend,
         visitPattern,
         impressions,
-        impressionSubcategories: {},
+        // Drill-down panel for the Impressions Analysis chart. Each
+        // impression chip surfaces a meaningful sub-breakdown.
+        impressionSubcategories: (() => {
+          const out: Record<string, Array<{ label: string; count: number }>> = {};
+          for (const row of impressionSubRows) {
+            const cnt = Number(row.n);
+            if (cnt <= 0) continue;
+            if (!out[row.impression]) out[row.impression] = [];
+            out[row.impression].push({ label: row.subcategory, count: cnt });
+          }
+          for (const k of Object.keys(out)) out[k].sort((a, b) => b.count - a.count);
+          return out;
+        })(),
         impressionsByVisitBucket,
         anxietyScale,
-        depressionScale: [],
-        selfEsteemScale: [],
+        depressionScale,
+        selfEsteemScale,
       },
       lastUpdated: new Date().toISOString(),
       meta: {

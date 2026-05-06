@@ -1328,7 +1328,7 @@ export default function OHCUtilizationPage() {
               : "Select a date range to view demographic breakdown."} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title={clinicChartMode === "specialtyOnly" ? "Specialty Mix" : "Clinic Utilization by Location & Specialty"} subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — colour intensity grades by consult count" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Per-clinic specialty utilisation. View adapts to clinic count: a single-clinic specialty bar chart for 1 clinic, a heatmap for 2-4 clinics, and stacked bars for 5+ clinics. Each cell / bar shows consult volume per specialty per clinic." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — colour intensity grades by consult count" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Per-clinic specialty utilisation. View adapts to clinic count: a single-clinic specialty bar chart for 1 clinic, a heatmap for 2-4 clinics, and stacked bars for 5+ clinics. Each cell / bar shows consult volume per specialty per clinic." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
             {clinicChartMode !== "specialtyOnly" && (
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {stackSpecialties.map((spec: string, i: number) => (
@@ -1407,78 +1407,120 @@ export default function OHCUtilizationPage() {
               );
             })()}
 
-            {/* ── 2-4 clinics: heatmap ── */}
+            {/* ── 2-4 clinics: heatmap + stat strip ── */}
             {clinicChartMode === "heatmap" && (() => {
               const locations = locationBySpecialtyData.map((r: any) => r.location as string);
               const cells: Array<[number, number, number]> = [];
               let maxVal = 0;
+              const locTotals = new Array<number>(locations.length).fill(0);
+              const specTotals = new Array<number>(stackSpecialties.length).fill(0);
               for (let li = 0; li < locations.length; li++) {
                 for (let si = 0; si < stackSpecialties.length; si++) {
                   const v = Number(locationBySpecialtyData[li][stackSpecialties[si]]) || 0;
                   cells.push([si, li, v]);
+                  locTotals[li] += v;
+                  specTotals[si] += v;
                   if (v > maxVal) maxVal = v;
                 }
               }
+              const total = locTotals.reduce((s, v) => s + v, 0);
+              const topLocIdx = locTotals.reduce((m, v, i) => (v > locTotals[m] ? i : m), 0);
+              const topSpecIdx = specTotals.reduce((m, v, i) => (v > specTotals[m] ? i : m), 0);
+              const topLoc = { name: locations[topLocIdx] || "—", count: locTotals[topLocIdx] || 0 };
+              const topSpec = { name: stackSpecialties[topSpecIdx] || "—", count: specTotals[topSpecIdx] || 0 };
               return (
-                <div style={{ height: Math.max(280, 90 + locations.length * 56) }}>
-                  <ReactECharts
-                    style={{ height: "100%", width: "100%" }}
-                    option={{
-                      tooltip: {
-                        position: "top",
-                        backgroundColor: "#fff",
-                        borderColor: T.border,
-                        borderWidth: 1,
-                        textStyle: { fontSize: 12, color: T.textPrimary },
-                        extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
-                        formatter: (p: any) => {
-                          const [x, y, v] = p.data;
-                          return `<strong>${locations[y]}</strong><br/>${stackSpecialties[x]}: <strong>${formatNum(v)}</strong>`;
+                <div className="flex flex-col flex-1 mt-2">
+                  {/* Heatmap fills available vertical space */}
+                  <div className="flex-1" style={{ minHeight: 260 }}>
+                    <ReactECharts
+                      style={{ height: "100%", width: "100%", minHeight: 260 }}
+                      option={{
+                        tooltip: {
+                          position: "top",
+                          backgroundColor: "#fff",
+                          borderColor: T.border,
+                          borderWidth: 1,
+                          textStyle: { fontSize: 12, color: T.textPrimary },
+                          extraCssText: "border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);",
+                          formatter: (p: any) => {
+                            const arr = Array.isArray(p.data) ? p.data : p.data.value;
+                            const [x, y, v] = arr;
+                            return `<strong>${locations[y]}</strong><br/>${stackSpecialties[x]}: <strong>${formatNum(v)}</strong>`;
+                          },
                         },
-                      },
-                      grid: { left: 8, right: 16, top: 28, bottom: 64, containLabel: true },
-                      xAxis: {
-                        type: "category",
-                        data: stackSpecialties,
-                        axisTick: { show: false },
-                        axisLine: { lineStyle: { color: T.borderLight } },
-                        axisLabel: { fontSize: 10, color: T.textMuted, rotate: 25, interval: 0 },
-                        splitArea: { show: false },
-                      },
-                      yAxis: {
-                        type: "category",
-                        data: locations,
-                        axisTick: { show: false },
-                        axisLine: { lineStyle: { color: T.borderLight } },
-                        axisLabel: { fontSize: 11, color: T.textPrimary, fontWeight: 600 },
-                      },
-                      visualMap: {
-                        min: 0,
-                        max: maxVal || 1,
-                        calculable: false,
-                        orient: "horizontal",
-                        left: "center",
-                        bottom: 4,
-                        itemWidth: 12,
-                        itemHeight: 120,
-                        textStyle: { fontSize: 10, color: T.textMuted },
-                        inRange: { color: ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"] },
-                      },
-                      series: [{
-                        type: "heatmap",
-                        data: cells,
-                        label: {
-                          show: true,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: "#0F172A",
-                          formatter: (p: any) => p.data[2] > 0 ? formatNum(p.data[2]) : "",
+                        grid: { left: 8, right: 16, top: 24, bottom: 16, containLabel: true },
+                        xAxis: {
+                          type: "category",
+                          data: stackSpecialties,
+                          axisTick: { show: false },
+                          axisLine: { lineStyle: { color: T.borderLight } },
+                          axisLabel: { fontSize: 10, color: T.textMuted, rotate: 25, interval: 0 },
+                          splitArea: { show: false },
                         },
-                        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(79,70,229,0.4)" } },
-                        itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 6 },
-                      }],
-                    }}
-                  />
+                        yAxis: {
+                          type: "category",
+                          data: locations,
+                          axisTick: { show: false },
+                          axisLine: { lineStyle: { color: T.borderLight } },
+                          axisLabel: { fontSize: 11, color: T.textPrimary, fontWeight: 600 },
+                        },
+                        // Visual map drives the cell coloring but its on-canvas
+                        // legend was rendering inside the grid as a stray
+                        // vertical strip — show: false hides the legend, the
+                        // cell numbers themselves are the legend.
+                        visualMap: {
+                          min: 0,
+                          max: maxVal || 1,
+                          show: false,
+                          inRange: { color: ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"] },
+                        },
+                        series: [{
+                          type: "heatmap",
+                          // Pre-color each cell directly (skip visualMap) so
+                          // we can pair each cell with a matching label color
+                          // and keep numbers legible on dark cells.
+                          data: cells.map(([x, y, v]) => {
+                            const t = maxVal > 0 ? v / maxVal : 0;
+                            // Same 5-stop palette, picked by quintile
+                            const palette = ["#EEF2FF", "#A5B4FC", "#6366F1", "#4338CA", "#312E81"];
+                            const fill = v === 0 ? "#F8FAFC" : palette[Math.min(palette.length - 1, Math.floor(t * palette.length))];
+                            // Dark cells need white text; light cells dark text
+                            const textColor = t >= 0.5 ? "#FFFFFF" : "#0F172A";
+                            return {
+                              value: [x, y, v],
+                              itemStyle: { color: fill, borderColor: "#fff", borderWidth: 2, borderRadius: 6 },
+                              label: { color: textColor },
+                            };
+                          }),
+                          label: {
+                            show: true,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            formatter: (p: any) => p.data.value[2] > 0 ? formatNum(p.data.value[2]) : "",
+                          },
+                          emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(79,70,229,0.4)" } },
+                        }],
+                      }}
+                    />
+                  </div>
+                  {/* Stat strip — mirrors demographics card rhythm */}
+                  <div className="grid grid-cols-3 gap-2.5 mt-4">
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #4f46e5, #6d28d9)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Clinic</p>
+                      <p className="text-[14px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate" title={topLoc.name}>{topLoc.name}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{formatNum(topLoc.count)} consults</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top Specialty</p>
+                      <p className="text-[14px] font-extrabold leading-tight tracking-[-0.01em] mt-1 truncate" title={topSpec.name}>{topSpec.name}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{formatNum(topSpec.count)} consults</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }}>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Total</p>
+                      <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{formatNum(total)}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{locations.length} clinics · {stackSpecialties.length} specialties</p>
+                    </div>
+                  </div>
                 </div>
               );
             })()}

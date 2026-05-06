@@ -877,6 +877,83 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               <ResetFilter visible={trendView !== "month"} onClick={() => setTrendView("month")} />
             </div>
           }>
+          {/* KPI strip: Period Total · MoM/YoY % · Peak — all computed from trendData */}
+          {(() => {
+            if (!trendData.length) return null;
+            const periodTotal = trendData.reduce((s, r) => s + r.totalConsults, 0);
+            const last = trendData[trendData.length - 1];
+            const prev = trendData.length >= 2 ? trendData[trendData.length - 2] : null;
+            const deltaPct = prev && prev.totalConsults > 0
+              ? ((last.totalConsults - prev.totalConsults) / prev.totalConsults) * 100
+              : null;
+            const peak = trendData.reduce((m, r) => (r.totalConsults > m.totalConsults ? r : m), trendData[0]);
+            const formatPeriod = (p: string) => {
+              if (trendView === "year") return p;
+              const [y, m] = p.split("-");
+              if (!y || !m) return p;
+              const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+              return `${months[parseInt(m, 10) - 1] || m} ${y}`;
+            };
+            const deltaLabel = trendView === "year" ? "YoY" : "MoM";
+            const peakLabel = trendView === "year" ? "Peak Year" : "Peak Month";
+            const deltaPositive = deltaPct != null && deltaPct >= 0;
+            const deltaColor = deltaPct == null ? T.textMuted : deltaPositive ? "#0d9488" : "#dc2626";
+
+            const periodTotalTip = `Sum of total consults across all ${trendView === "year" ? "years" : "months"} in the current filter window. Counts every Psychologist consult — repeat visits by the same patient are counted each time.`;
+            const deltaTip = trendView === "year"
+              ? `Year-over-year change in total consults — compares the most recent year against the year before. ▲ green = growth, ▼ red = decline. Shows "—" when only one year is in range.`
+              : `Month-over-month change in total consults — compares the latest month against the month before. ▲ green = growth, ▼ red = decline. Shows "—" when only one month is in range.`;
+            const peakTip = trendView === "year"
+              ? `The single year with the highest total consult count in the current filter window. Useful for spotting outlier years driven by campaigns, incidents, or seasonality.`
+              : `The single month with the highest total consult count in the current filter window. Helps spot demand spikes (e.g., post-appraisal cycles, exam stress windows).`;
+
+            return (
+              <div className="grid grid-cols-3 gap-3 mb-4 mt-1">
+                <div className="rounded-xl border px-3.5 py-2.5" style={{ borderColor: T.border, backgroundColor: T.white }}>
+                  <div className="flex items-center gap-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Period Total</p>
+                    <Tooltip>
+                      <TooltipTrigger><Info size={11} style={{ color: T.textMuted }} /></TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">{periodTotalTip}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <p className="text-[20px] font-extrabold leading-tight tracking-[-0.02em] mt-0.5" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(periodTotal)}</p>
+                  <p className="text-[10.5px] mt-0.5" style={{ color: T.textSecondary }}>consults</p>
+                </div>
+                <div className="rounded-xl border px-3.5 py-2.5" style={{ borderColor: T.border, backgroundColor: T.white }}>
+                  <div className="flex items-center gap-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{deltaLabel} Change</p>
+                    <Tooltip>
+                      <TooltipTrigger><Info size={11} style={{ color: T.textMuted }} /></TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">{deltaTip}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <p className="text-[20px] font-extrabold leading-tight tracking-[-0.02em] mt-0.5 flex items-center gap-1" style={{ color: deltaColor, fontVariantNumeric: "tabular-nums" }}>
+                    {deltaPct == null ? "—" : (
+                      <>
+                        <span aria-hidden>{deltaPositive ? "▲" : "▼"}</span>
+                        {Math.abs(deltaPct).toFixed(1)}%
+                      </>
+                    )}
+                  </p>
+                  <p className="text-[10.5px] mt-0.5 truncate" style={{ color: T.textSecondary }}>
+                    {prev ? `vs ${formatPeriod(prev.period)}` : "no prior period"}
+                  </p>
+                </div>
+                <div className="rounded-xl border px-3.5 py-2.5" style={{ borderColor: T.border, backgroundColor: T.white }}>
+                  <div className="flex items-center gap-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>{peakLabel}</p>
+                    <Tooltip>
+                      <TooltipTrigger><Info size={11} style={{ color: T.textMuted }} /></TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">{peakTip}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <p className="text-[20px] font-extrabold leading-tight tracking-[-0.02em] mt-0.5 truncate" style={{ color: T.textPrimary }}>{formatPeriod(peak.period)}</p>
+                  <p className="text-[10.5px] mt-0.5" style={{ color: T.textSecondary, fontVariantNumeric: "tabular-nums" }}>{formatNum(peak.totalConsults)} consults</p>
+                </div>
+              </div>
+            );
+          })()}
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(trendData.length * 50, 400), height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">

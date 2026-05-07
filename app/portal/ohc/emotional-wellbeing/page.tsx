@@ -368,7 +368,7 @@ export default function EmotionalWellbeingPage() {
   }>({
     locations: [],
     genders: ["Male", "Female", "Others"],
-    ageGroups: ["<20", "20-35", "36-40", "41-60", "61+"],
+    ageGroups: ["<20", "21-30", "31-40", "41-50", "51-60", "60+"],
     specialties: [],
     relations: [],
   });
@@ -1187,17 +1187,16 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
             const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
             const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
             const nr = alcoholHabit.find((d) => d.label === "Not Reported")?.count || 0;
-            const total = yes + no + nr;
-            const yesPct = total > 0 ? Math.round((yes / total) * 100) : 0;
-            const noPct = total > 0 ? Math.round((no / total) * 100) : 0;
-            const nrPct = total > 0 ? Math.max(0, 100 - yesPct - noPct) : 0;
+            const reported = yes + no;
+            // Percentages base on REPORTED responses only — Not Reported is
+            // shown as a side note, never as part of the share denominator.
+            const yesPct = reported > 0 ? Math.round((yes / reported) * 100) : 0;
+            const noPct = reported > 0 ? Math.max(0, 100 - yesPct) : 0;
             const COLORS = { yes: "#d97706", no: "#0d9488", nr: "#cbd5e1" };
-            // Allocate the 100 cells in order: drinkers first, then non-drinkers,
-            // then not-reported. Each cell = exactly 1% of the assessed population.
-            const cells: ("yes" | "no" | "nr")[] = [];
+            // 100-dot waffle filled by drinker / non-drinker share of reported.
+            const cells: ("yes" | "no")[] = [];
             for (let i = 0; i < yesPct; i++) cells.push("yes");
-            for (let i = 0; i < noPct; i++) cells.push("no");
-            while (cells.length < 100) cells.push("nr");
+            while (cells.length < 100) cells.push("no");
             const oneInX = yesPct >= 2 ? Math.max(2, Math.round(100 / yesPct)) : null;
             return (
               <div className="flex flex-col items-center mt-2">
@@ -1206,10 +1205,10 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                   {oneInX ? `1 in ${oneInX}` : `${yesPct}%`}
                 </p>
                 <p className="text-[12.5px] mt-2 text-center" style={{ color: T.textSecondary }}>
-                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(total)}</span> assessed employees consume alcohol
+                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(reported)}</span> who reported consume alcohol
                 </p>
 
-                {/* Waffle: 10 × 10 grid, each cell = 1% */}
+                {/* Waffle: 10 × 10 grid, each cell = 1% of reported. */}
                 <div
                   className="mt-5 grid"
                   style={{
@@ -1218,16 +1217,16 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                     width: "100%",
                     maxWidth: 240,
                   }}
-                  aria-label={`Pictograph: ${yesPct}% drinkers, ${noPct}% non-drinkers, ${nrPct}% not reported`}
+                  aria-label={`Pictograph: ${yesPct}% drinkers, ${noPct}% non-drinkers (of reported)`}
                 >
                   {cells.map((c, i) => (
                     <div
                       key={i}
                       className="aspect-square rounded-[3px] transition-transform"
                       style={{
-                        backgroundColor: c === "yes" ? COLORS.yes : c === "no" ? COLORS.no : COLORS.nr,
+                        backgroundColor: c === "yes" ? COLORS.yes : COLORS.no,
                       }}
-                      title={c === "yes" ? `Drinker (${yesPct}% of assessed)` : c === "no" ? `Non-drinker (${noPct}% of assessed)` : `Not reported (${nrPct}% of assessed)`}
+                      title={c === "yes" ? `Drinker (${yesPct}% of reported)` : `Non-drinker (${noPct}% of reported)`}
                     />
                   ))}
                 </div>
@@ -1244,14 +1243,12 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                     Doesn&apos;t <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(no)}</span>
                     <span className="tabular-nums" style={{ color: T.textMuted }}>({noPct}%)</span>
                   </span>
-                  {nr > 0 && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.nr }} />
-                      Not reported <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(nr)}</span>
-                      <span className="tabular-nums" style={{ color: T.textMuted }}>({nrPct}%)</span>
-                    </span>
-                  )}
                 </div>
+                {nr > 0 && (
+                  <p className="text-[10.5px] mt-2 tabular-nums" style={{ color: T.textMuted }}>
+                    {formatNum(nr)} not reported (excluded from share)
+                  </p>
+                )}
               </div>
             );
           })()}
@@ -1265,12 +1262,13 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
             const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
             const ex = smokingHabit.find((d) => d.label === "Ex-Smoker")?.count || 0;
             const nr = smokingHabit.find((d) => d.label === "Not Reported")?.count || 0;
-            const total = current + never + ex + nr;
-            const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+            const reported = current + never + ex;
+            // Percentages base on REPORTED responses only — Not Reported is
+            // shown as a side note, never as part of the share denominator.
+            const pct = (n: number) => (reported > 0 ? Math.round((n / reported) * 100) : 0);
             const currentPct = pct(current);
-            const neverPct = pct(never);
             const exPct = pct(ex);
-            const nrPct = total > 0 ? Math.max(0, 100 - currentPct - neverPct - exPct) : 0;
+            const neverPct = reported > 0 ? Math.max(0, 100 - currentPct - exPct) : 0;
             const COLORS = {
               current: { bg: "#FEF3C7", fg: "#92400E", border: "#FDE68A" },   // amber
               ex: { bg: "#E0E7FF", fg: "#3730A3", border: "#C7D2FE" },        // indigo (positive — they quit)
@@ -1283,7 +1281,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                   {currentPct}%
                 </p>
                 <p className="text-[12.5px] mt-2 text-center" style={{ color: T.textSecondary }}>
-                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(total)}</span> assessed employees currently smoke
+                  of <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(reported)}</span> who reported currently smoke
                 </p>
 
                 {/* Three mini-tiles */}
@@ -1305,9 +1303,9 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                   </div>
                 </div>
 
-                {nrPct > 0 && (
+                {nr > 0 && (
                   <p className="text-[10.5px] mt-3 tabular-nums" style={{ color: T.textMuted }}>
-                    {formatNum(nr)} not reported ({nrPct}% of assessed)
+                    {formatNum(nr)} not reported (excluded from share)
                   </p>
                 )}
 

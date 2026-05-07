@@ -32,7 +32,24 @@ const PSYCH_FILTER = "a.speciality_name = 'Psychologist'";
 const COMPLETED = "a.stage = 'Completed'";
 const EWB_COMPLETED = "e.stage IN ('Completed', 'Prescription Sent', 'Re Open')";
 
-const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
+// Page-specific decade-style age buckets. We compute them server-side
+// from the raw `age` integer instead of using agg_kpi.age_group (which
+// is pre-bucketed with the older 5-bucket scheme), so swapping these
+// stays scoped to the EWB page and doesn't churn other dashboards.
+const AGE_ORDER = ["<20", "21-30", "31-40", "41-50", "51-60", "60+"];
+
+// Same CASE expression for both surfaces — agg_kpi (alias `a`) and the
+// EWB intake table (alias `e`) — so a row's bucket is identical no
+// matter which query labels it. `WHEN age < 21` captures 0-20 inclusive
+// and matches the "<20" label semantically.
+const ageGroupCase = (col: string) => `CASE
+  WHEN ${col} < 21 THEN '<20'
+  WHEN ${col} <= 30 THEN '21-30'
+  WHEN ${col} <= 40 THEN '31-40'
+  WHEN ${col} <= 50 THEN '41-50'
+  WHEN ${col} <= 60 THEN '51-60'
+  ELSE '60+'
+END`;
 
 function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -71,7 +88,9 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
     conditions.push(`(${gc.join(" OR ")})`);
   }
   if (ageGroups?.length) {
-    conditions.push(`a.age_group = ANY($${idx})`);
+    // Filter on raw `a.age` via the shared CASE so the dropdown labels
+    // ("<20", "21-30", …) line up with the new buckets the chart shows.
+    conditions.push(`${ageGroupCase("a.age")} = ANY($${idx})`);
     params.push(ageGroups);
     idx++;
   }
@@ -127,18 +146,10 @@ function buildEwbWhere(searchParams: URLSearchParams, cugCode: string) {
     conditions.push(`(${gc.join(" OR ")})`);
   }
   if (ageGroups?.length) {
-    // age is INT in the new schema — direct comparison.
-    const groupConds = ageGroups.map((ag) => {
-      switch (ag) {
-        case "<20": return `e.age < 20`;
-        case "20-35": return `e.age BETWEEN 20 AND 35`;
-        case "36-40": return `e.age BETWEEN 36 AND 40`;
-        case "41-60": return `e.age BETWEEN 41 AND 60`;
-        case "61+": return `e.age >= 61`;
-        default: return "FALSE";
-      }
-    });
-    conditions.push(`(${groupConds.join(" OR ")})`);
+    // Same CASE as the agg_kpi side — keeps both surfaces self-consistent.
+    conditions.push(`${ageGroupCase("e.age")} = ANY($${idx})`);
+    params.push(ageGroups);
+    idx++;
   }
   if (relations?.length) {
     conditions.push(`e.relationship = ANY($${idx})`);
@@ -229,10 +240,11 @@ async function handler(request: NextRequest) {
     const [ageRows, genderRows, locationRows, trendRows] = await Promise.all([
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
-          `SELECT a.age_group AS label, COALESCE(SUM(a.total_consult_count), 0)::bigint AS count
+          `SELECT ${ageGroupCase("a.age")} AS label,
+                  COALESCE(SUM(a.total_consult_count), 0)::bigint AS count
            FROM ${BASE_TABLE} a
-           WHERE ${q.where} AND a.age_group IS NOT NULL
-           GROUP BY a.age_group`,
+           WHERE ${q.where} AND a.age IS NOT NULL
+           GROUP BY 1`,
           q.params
         ),
         "ageDemo"

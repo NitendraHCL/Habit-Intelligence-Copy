@@ -535,23 +535,41 @@ export default function OHCUtilizationPage() {
   const sunburstOption = {
     tooltip: {
       trigger: "item",
+      // Keep the tooltip inside the chart so the overflow-hidden card
+      // boundary doesn't clip it when hovering the left-side slices.
+      confine: true,
       backgroundColor: "#fff",
       borderColor: T.border,
       borderWidth: 1,
       padding: [10, 14],
       textStyle: { fontSize: 12, fontFamily: "var(--font-inter), system-ui, sans-serif", color: T.textPrimary },
-      extraCssText: "border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,0.10);",
+      extraCssText: "border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,0.10);max-width:320px;white-space:normal;",
       formatter: (p: any) => {
         if (!p.data) return "";
+        type SunburstNode = { name: string; value?: number; children?: SunburstNode[] };
+        const tree = (charts?.demographicSunburst || []) as SunburstNode[];
+        // ECharts top-level nodes only carry `children` (it sums on render),
+        // so derive node values manually for the percentage math.
+        const nodeValue = (n: SunburstNode | undefined): number => {
+          if (!n) return 0;
+          if (typeof n.value === "number") return n.value;
+          return (n.children || []).reduce((s, c) => s + nodeValue(c), 0);
+        };
+        const grandTotal = tree.reduce((s, n) => s + nodeValue(n), 0);
         const genderOf = (v: unknown) => v === "M" ? "Male" : v === "F" ? "Female" : v === "O" ? "Others" : "";
         const path: string[] = (p.treePathInfo || []).map((n: any) => n?.name).filter(Boolean);
         const [ageGroup, gender] = path;
+        const value = Number(p.data.value || p.value || 0);
+        const pctTotal = grandTotal > 0 ? (value / grandTotal) * 100 : 0;
+        const fmtPct = (n: number) => `${n.toFixed(1)}%`;
         if (ageGroup && gender) {
-          return `<strong>${ageGroup} yrs · ${genderOf(gender)}</strong><br/>Consults: ${formatNum(p.data.value || p.value)}`;
+          const ageTotal = nodeValue(tree.find((n) => n.name === ageGroup));
+          const pctAge = ageTotal > 0 ? (value / ageTotal) * 100 : 0;
+          return `<strong>${ageGroup} yrs · ${genderOf(gender)}</strong><br/>Consults: ${formatNum(value)} <span style="color:${T.textMuted};">(${fmtPct(pctTotal)} of total · ${fmtPct(pctAge)} of ${ageGroup})</span>`;
         }
         if (ageGroup) {
           const label = genderOf(ageGroup) || `${ageGroup} yrs`;
-          return `<strong>${label}</strong><br/>Consults: ${formatNum(p.data.value || p.value)}`;
+          return `<strong>${label}</strong><br/>Consults: ${formatNum(value)} <span style="color:${T.textMuted};">(${fmtPct(pctTotal)} of total)</span>`;
         }
         return `<strong>← Back</strong><br/><span style="font-size:11px;color:#6B7280">Click to zoom out</span>`;
       },

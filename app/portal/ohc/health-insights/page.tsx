@@ -27,6 +27,7 @@ import {
 import { format } from "date-fns";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
+import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import {
   Tooltip,
@@ -420,12 +421,7 @@ export default function HealthInsightsPage() {
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
-  const isChartVisible = (chartId: string) => {
-    if (!previewConfig) return true;
-    const cc = previewConfig.charts[chartId];
-    if (!cc) return true;
-    return cc.visible;
-  };
+  const isChartVisible = useChartVisibility("/portal/ohc/health-insights", previewConfig);
 
   // Fetch real filter options from API
   const [filterOptions, setFilterOptions] = useState({

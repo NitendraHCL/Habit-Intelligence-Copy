@@ -21,6 +21,7 @@ import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
+import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import {
   Info,
   Maximize2,
@@ -264,12 +265,7 @@ export default function OHCUtilizationPage() {
   const { activeClientId } = useAuth();
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
-  const isChartVisible = (chartId: string) => {
-    if (!previewConfig) return true;
-    const cc = previewConfig.charts[chartId];
-    if (!cc) return true;
-    return cc.visible;
-  };
+  const isChartVisible = useChartVisibility("/portal/ohc/utilization", previewConfig);
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
   const [selectedBubbleSpec, setSelectedBubbleSpec] = useState<string>("");
   const [selectedSvcCategory, setSelectedSvcCategory] = useState<string>("");

@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
+import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -338,12 +339,7 @@ export default function RepeatVisitsPage() {
   const [spOthersSearch, setSpOthersSearch] = useState("");
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
-  const isChartVisible = (chartId: string) => {
-    if (!previewConfig) return true;
-    const cc = previewConfig.charts[chartId];
-    if (!cc) return true;
-    return cc.visible;
-  };
+  const isChartVisible = useChartVisibility("/portal/ohc/repeat-visits", previewConfig);
 
   // Sourced from /api/ohc/repeat-visits → agg_diagnosis. The previous flow
   // (raw appointments → client-side aggregateRepeatVisits) was scanning a

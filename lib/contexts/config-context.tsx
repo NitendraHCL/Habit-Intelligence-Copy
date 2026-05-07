@@ -25,8 +25,10 @@ interface ConfigContextValue {
 
 const ConfigContext = createContext<ConfigContextValue | null>(null);
 
-/** Roles that bypass config restrictions and see everything. */
-const INTERNAL_ROLES = new Set(["SUPER_ADMIN", "INTERNAL_OPS", "KAM"]);
+/** Roles that bypass config restrictions and see everything.
+ *  KAM is intentionally NOT in this set — KAMs view a client and must
+ *  see exactly what's been published for that client. */
+const INTERNAL_ROLES = new Set(["SUPER_ADMIN", "INTERNAL_OPS"]);
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const { user, activeClientId } = useAuth();

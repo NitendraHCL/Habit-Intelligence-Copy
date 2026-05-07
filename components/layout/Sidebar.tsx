@@ -489,10 +489,15 @@ export function Sidebar() {
           {dynamicNavigation.filter((item) => {
             // Filter by required role
             if (item.requiredRole && user?.role !== item.requiredRole) return false;
-            // Filter by CUG-level page enablement
-            if (!isPageEnabledForClient(item.href)) return false;
-            // Filter parent page visibility (per-page configure)
-            if (!isPageVisible(item.href)) return false;
+            // Group/parent nodes (with children) aren't real pages — their
+            // href (e.g. /portal/ohc) is never in enabledPages, so checking
+            // it here would nuke the whole group whenever any sub-page is
+            // disabled. Defer their visibility to the children filter +
+            // the "hide parent if all children empty" rule below.
+            if (!item.children || item.children.length === 0) {
+              if (!isPageEnabledForClient(item.href)) return false;
+              if (!isPageVisible(item.href)) return false;
+            }
             return true;
           }).map((item, index) => {
             // Filter children visibility — both CUG-level + per-page config

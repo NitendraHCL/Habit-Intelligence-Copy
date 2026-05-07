@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
+import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Button } from "@/components/ui/button";
 import {
@@ -302,12 +303,7 @@ export default function LSMPPage() {
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
-  const isChartVisible = (chartId: string) => {
-    if (!previewConfig) return true;
-    const cc = previewConfig.charts[chartId];
-    if (!cc) return true;
-    return cc.visible;
-  };
+  const isChartVisible = useChartVisibility("/portal/employee-experience/lsmp", previewConfig);
 
   // Fetch real filter options from API
   const [filterOptions, setFilterOptions] = useState({

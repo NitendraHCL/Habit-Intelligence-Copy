@@ -3,11 +3,14 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
 import { AVAILABLE_PAGES } from "@/lib/config/available-pages";
 
 /**
- * Hook that checks if the current page slug is enabled for the active client.
- * If not, redirects to the first enabled page. Call at the top of any page:
+ * Hook that checks if the current page slug is allowed for the user.
+ * Two gates: CUG-level enabledPages (auth) AND per-client published
+ * page-visibility (config). If either says no, redirect to the first
+ * enabled+visible page. Call at the top of any page:
  *
  *   usePageAccess("/portal/ohc/utilization");
  *
@@ -15,14 +18,17 @@ import { AVAILABLE_PAGES } from "@/lib/config/available-pages";
  */
 export function usePageAccess(slug: string) {
   const { isPageEnabledForClient, loading } = useAuth();
+  const { isPageVisible, loading: configLoading } = useConfig();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return;
-    if (!isPageEnabledForClient(slug)) {
-      // Find the first enabled page to redirect to
-      const firstEnabled = AVAILABLE_PAGES.find((p) => isPageEnabledForClient(p.slug));
-      router.replace(firstEnabled?.slug ?? "/portal/home");
+    if (loading || configLoading) return;
+    const allowed = isPageEnabledForClient(slug) && isPageVisible(slug);
+    if (!allowed) {
+      const firstAllowed = AVAILABLE_PAGES.find(
+        (p) => isPageEnabledForClient(p.slug) && isPageVisible(p.slug),
+      );
+      router.replace(firstAllowed?.slug ?? "/portal/home");
     }
-  }, [slug, isPageEnabledForClient, loading, router]);
+  }, [slug, isPageEnabledForClient, isPageVisible, loading, configLoading, router]);
 }

@@ -87,8 +87,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Normalize email so login (which lowercases input) always matches.
+    const normalizedEmail = String(email).toLowerCase().trim();
+
     // Check duplicate email
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 });
     }
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.create({
       data: {
         name,
-        email,
+        email: normalizedEmail,
         passwordHash: await hashPassword(password),
         role: role as any,
         clientId: ["CLIENT_ADMIN", "CLIENT_VIEWER"].includes(role) ? clientId : null,

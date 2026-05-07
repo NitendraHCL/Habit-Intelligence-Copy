@@ -19,7 +19,7 @@ export async function PUT(
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
-    if (email !== undefined) updateData.email = email;
+    if (email !== undefined) updateData.email = String(email).toLowerCase().trim();
     if (password) updateData.passwordHash = await hashPassword(password);
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;

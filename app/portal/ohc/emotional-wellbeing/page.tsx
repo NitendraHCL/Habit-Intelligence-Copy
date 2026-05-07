@@ -1118,9 +1118,15 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
         {/* Sleep Duration — hero stat tile */}
         {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="How many of your employees get less than 7 hours of sleep" tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours">
           {(() => {
-            const enough = sleepDuration.find((d) => d.label === "≥7 hours")?.count || 0;
-            const notEnough = sleepDuration.find((d) => d.label === "<7 hours")?.count || 0;
-            const nr = sleepDuration.find((d) => d.label === "Not Reported")?.count || 0;
+            // API returns the warehouse's native sleep_duration buckets:
+            // "7-9 hrs" / "Less than 7 hrs" / "More than 9 hrs". Fold the
+            // two ≥7-hour buckets into a single well-rested count.
+            const findCount = (label: string) => sleepDuration.find((d) => d.label === label)?.count || 0;
+            const sevenToNine = findCount("7-9 hrs");
+            const moreThanNine = findCount("More than 9 hrs");
+            const enough = sevenToNine + moreThanNine;
+            const notEnough = findCount("Less than 7 hrs");
+            const nr = findCount("Not Reported");
             const total = enough + notEnough + nr;
             const reported = enough + notEnough;
             const deprivedPct = reported > 0 ? Math.round((notEnough / reported) * 100) : 0;
@@ -1163,8 +1169,8 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
 
                 {/* Bucket footer */}
                 <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t" style={{ borderColor: T.border }}>
-                  <BucketStat color={COLORS.rested} label="≥7 hours" count={enough} total={total} />
-                  <BucketStat color={COLORS.deprived} label="<7 hours" count={notEnough} total={total} />
+                  <BucketStat color={COLORS.rested} label="≥7 hrs" count={enough} total={total} />
+                  <BucketStat color={COLORS.deprived} label="<7 hrs" count={notEnough} total={total} />
                   <BucketStat color={COLORS.nr}      label="Not Reported" count={nr} total={total} />
                 </div>
               </div>

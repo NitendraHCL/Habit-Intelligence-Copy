@@ -4,9 +4,17 @@ import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
 /* ────────────────────────────────────────────────────────────────────
- * OHC Repeat Visits API — sourced from aggregated_table.agg_diagnosis.
+ * OHC Repeat Visits API — sourced exclusively from
+ * aggregated_table.health_diagnosis.
  *
- * Visit count = COUNT(DISTINCT d._id) per uhid (one _id per appointment).
+ * Row grain: ONE diagnosis (ICD code) per row. A single appointment
+ * (one bill_no) typically carries multiple ICD rows, so visit count is
+ * COUNT(DISTINCT bill_no) per uhid — NOT COUNT(*).
+ *
+ * Chronic vs Acute uses the native `icd_status` column:
+ *   'Chronic' / 'Acute or Chronic'  → chronic
+ *   'Acute'                         → acute
+ *   'Not Applicable'                → neither (excluded from chronic side)
  *
  * Pre-computes 12 slices (4 visit-buckets × 3 condition types) in a
  * single per_uhid scan and ships them all in one payload so the page
@@ -14,18 +22,19 @@ import { withCache } from "@/lib/cache/middleware";
  * without re-hitting the warehouse.
  * ──────────────────────────────────────────────────────────────────── */
 
-const DIAG_TABLE = "aggregated_table.agg_diagnosis";
+const DIAG_TABLE = "aggregated_table.health_diagnosis";
 
-const CHRONIC_CASE = `(
-  LOWER(d.icd_description) ~* '(diabet|hyperten|hyperlipid|asthma|arthrit|copd|chronic|thyroid|cardiac|hypothyr|hyperthyr|coronary|ischaem|ischem|kidney disease|ckd|cancer|tumor|tumour|psori|ecz|migraine|epileps|alzheim|parkinson|depress|anxiety|bipolar)'
-)`;
+// Patient-level chronic flag — true if any of their diagnoses carry a
+// chronic ICD status. Aggregated with BOOL_OR over the per-uhid scan.
+const CHRONIC_ROW_EXPR = `(LOWER(d.icd_status) IN ('chronic', 'acute or chronic'))`;
+const ACUTE_ROW_EXPR   = `(LOWER(d.icd_status) = 'acute')`;
 
 const AGE_GROUP_CASE = `CASE
-  WHEN d.patient_age < 20 THEN '<20'
-  WHEN d.patient_age BETWEEN 20 AND 35 THEN '20-35'
-  WHEN d.patient_age BETWEEN 36 AND 40 THEN '36-40'
-  WHEN d.patient_age BETWEEN 41 AND 60 THEN '41-60'
-  WHEN d.patient_age > 60 THEN '61+'
+  WHEN d.age < 20 THEN '<20'
+  WHEN d.age BETWEEN 20 AND 35 THEN '20-35'
+  WHEN d.age BETWEEN 36 AND 40 THEN '36-40'
+  WHEN d.age BETWEEN 41 AND 60 THEN '41-60'
+  WHEN d.age > 60 THEN '61+'
 END`;
 
 // Slice combinations for the multi-FILTER aggregation. The SQL emits 12
@@ -36,12 +45,6 @@ const VC_THRESHOLDS = [2, 3, 4, 5] as const;
 const COND_TYPES = ["a", "c", "x"] as const;
 type Cond = typeof COND_TYPES[number];
 
-// `template` receives the `FILTER (WHERE ...)` clause and returns the
-// full SQL expression. Postgres requires FILTER to attach directly to the
-// aggregate function (e.g. `COUNT(*) FILTER(...)` or `COALESCE(SUM(vc)
-// FILTER(...), 0)`), so this indirection lets each row decide where the
-// FILTER goes. `extraWhere` is appended inside the WHERE clause for rows
-// that need an additional per-uhid predicate (e.g. spec_count <= 1).
 const filterCol = (
   template: (filter: string) => string,
   vc: number,
@@ -74,17 +77,17 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   let idx = 2;
 
   if (dateFrom) {
-    conditions.push(`d.g_creation_time >= $${idx}::timestamp`);
+    conditions.push(`d.slotstarttime >= $${idx}::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`d.g_creation_time <= ($${idx}::date + interval '1 day')::timestamp`);
+    conditions.push(`d.slotstarttime <= ($${idx}::date + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
   if (locations?.length) {
-    conditions.push(`d.facility_name = ANY($${idx})`);
+    conditions.push(`d.facility_mapping = ANY($${idx})`);
     params.push(locations);
     idx++;
   }
@@ -137,23 +140,19 @@ async function handler(request: NextRequest) {
     type SliceCols = Record<string, string>;
 
     // ── Big consolidated query — one per_uhid pass, all 12 slices.
+    // vc = DISTINCT bill_no (each appointment groups multiple ICD rows).
     const patientStatsRows = await safeQuery(
       () => dwQuery<{ kind: string; bucket: string } & SliceCols>(
         `WITH per_uhid AS (
           SELECT
             d.uhid,
-            -- _id is unique per row (1 row = 1 appointment), so COUNT(*) is
-            -- equivalent to COUNT(DISTINCT _id) but ~5× faster on Postgres.
-            COUNT(*)::int AS vc,
-            MAX(d.patient_age) AS age_years,
+            COUNT(DISTINCT d.bill_no)::int AS vc,
+            MAX(d.age) AS age_years,
             MAX(d.patient_gender) AS gender,
-            MAX(d.facility_name) AS facility,
-            MIN(d.g_creation_time) AS first_at,
-            MAX(d.g_creation_time) AS last_at,
-            BOOL_OR(${CHRONIC_CASE}) AS has_chronic,
-            -- distinct specialties seen by this uhid across all visits;
-            -- drives the same/different specialty split on the Repeat
-            -- Visit Frequency chart.
+            MAX(d.facility_mapping) AS facility,
+            MIN(d.slotstarttime) AS first_at,
+            MAX(d.slotstarttime) AS last_at,
+            BOOL_OR(${CHRONIC_ROW_EXPR}) AS has_chronic,
             COUNT(DISTINCT NULLIF(TRIM(d.treating_doctor_speciality), ''))::int AS spec_count
           FROM ${DIAG_TABLE} d
           WHERE ${q.where}
@@ -171,10 +170,6 @@ async function handler(request: NextRequest) {
           ${allFilterCols((f) => `ROUND(COALESCE(AVG(vc) ${f}, 0) * 10)`)}
         FROM per_uhid
         UNION ALL
-        -- frequentRepeaters = patients with ≥5 visits. Since vc >= 5 is
-        -- strictly tighter than vc >= 2/3/4, every column in the row is
-        -- the same number for a given condition type. Hand-written to
-        -- avoid nested FILTER (Postgres rejects FILTER(...) FILTER(...)).
         SELECT 'kpi' AS kind, 'frequentRepeaters' AS bucket,
           COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n2a,
           COUNT(*) FILTER (WHERE vc >= 5 AND has_chronic)::bigint AS n2c,
@@ -215,9 +210,6 @@ async function handler(request: NextRequest) {
             ${allFilterCols((f) => `COUNT(*) ${f}`)}
           FROM per_uhid GROUP BY 2
         UNION ALL
-        -- visitFreqSame — patients in each visit bucket who saw only ONE
-        -- specialty across all visits. Same-specialty side of the
-        -- Repeat Visit Frequency stacked bar.
           SELECT 'visitFreqSame', CASE
             WHEN vc >= 10 THEN '10+'
             WHEN vc BETWEEN 5 AND 9 THEN '5-9'
@@ -226,7 +218,6 @@ async function handler(request: NextRequest) {
             ${allFilterCols((f) => `COUNT(*) ${f}`, "spec_count <= 1")}
           FROM per_uhid GROUP BY 2
         UNION ALL
-        -- visitFreqDiff — patients with multiple specialties.
           SELECT 'visitFreqDiff', CASE
             WHEN vc >= 10 THEN '10+'
             WHEN vc BETWEEN 5 AND 9 THEN '5-9'
@@ -290,20 +281,17 @@ async function handler(request: NextRequest) {
       recurringRows,
       specialtyRows,
     ] = await Promise.all([
-      // Chronic vs Acute uses ROW-LEVEL counts of ICD diagnoses (each row =
-      // one ICD code recorded for a patient). At the row level acute >
-      // chronic in this dataset; at the patient level chronic >> acute
-      // because most patients carry at least one chronic ICD. Filtered to
-      // diagnoses belonging to repeat patients (uhid with ≥2 visits).
+      // Chronic vs Acute uses ROW-LEVEL counts of ICD diagnoses, scoped
+      // to repeat patients (uhid with ≥2 distinct bill_no).
       safeQuery(
         () => dwQuery<{ chronic: string; acute: string }>(
           `WITH repeaters AS (
             SELECT d.uhid FROM ${DIAG_TABLE} d WHERE ${q.where}
-            GROUP BY d.uhid HAVING COUNT(*) >= 2
+            GROUP BY d.uhid HAVING COUNT(DISTINCT d.bill_no) >= 2
           )
           SELECT
-            COUNT(*) FILTER (WHERE ${CHRONIC_CASE})::bigint AS chronic,
-            COUNT(*) FILTER (WHERE NOT ${CHRONIC_CASE})::bigint AS acute
+            COUNT(*) FILTER (WHERE ${CHRONIC_ROW_EXPR})::bigint AS chronic,
+            COUNT(*) FILTER (WHERE ${ACUTE_ROW_EXPR})::bigint AS acute
           FROM ${DIAG_TABLE} d
           WHERE ${q.where} AND d.uhid IN (SELECT uhid FROM repeaters)`,
           q.params,
@@ -316,13 +304,13 @@ async function handler(request: NextRequest) {
           `WITH dx AS (
             SELECT d.uhid,
                    d.icd_description AS condition,
-                   ${CHRONIC_CASE} AS is_chronic,
+                   ${CHRONIC_ROW_EXPR} AS is_chronic,
                    COUNT(*)::int AS occ
             FROM ${DIAG_TABLE} d
             WHERE ${q.where}
               AND d.icd_description IS NOT NULL
               AND TRIM(d.icd_description) <> ''
-            GROUP BY d.uhid, d.icd_description
+            GROUP BY d.uhid, d.icd_description, ${CHRONIC_ROW_EXPR}
             HAVING COUNT(*) >= 2
           )
           SELECT
@@ -342,17 +330,17 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ speciality: string; year: string; count: string }>(
           `WITH per_uhid AS (
-            SELECT d.uhid, COUNT(*) AS vc
+            SELECT d.uhid, COUNT(DISTINCT d.bill_no) AS vc
             FROM ${DIAG_TABLE} d WHERE ${q.where}
             GROUP BY d.uhid
           )
           SELECT
             COALESCE(NULLIF(TRIM(d.treating_doctor_speciality), ''), 'Unknown') AS speciality,
-            EXTRACT(YEAR FROM d.g_creation_time)::int::text AS year,
-            COUNT(*)::bigint AS count
+            EXTRACT(YEAR FROM d.slotstarttime)::int::text AS year,
+            COUNT(DISTINCT d.bill_no)::bigint AS count
           FROM ${DIAG_TABLE} d
           WHERE ${q.where}
-            AND d.g_creation_time IS NOT NULL
+            AND d.slotstarttime IS NOT NULL
             AND d.uhid IN (SELECT uhid FROM per_uhid WHERE vc >= 2)
           GROUP BY 1, 2
           ORDER BY 3 DESC`,
@@ -488,10 +476,6 @@ async function handler(request: NextRequest) {
       const chronicLoc = withLocationRollup(demoChronic.locationDistribution);
       const acuteLoc = withLocationRollup(demoAcute.locationDistribution);
 
-      // Repeat Visit Frequency — stacked bar: bucket × (same / different
-      // specialty). Each bucket carries `bucket`, `count` (total) plus
-      // `sameSpecialty` and `differentSpecialty` so the chart's two
-      // dataKeys render correctly.
       const freqMap = stats.visitFreq || {};
       const sameMap = stats.visitFreqSame || {};
       const diffMap = stats.visitFreqDiff || {};

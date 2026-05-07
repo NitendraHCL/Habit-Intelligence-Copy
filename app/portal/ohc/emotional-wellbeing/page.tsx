@@ -12,7 +12,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -287,7 +286,6 @@ export default function EmotionalWellbeingPage() {
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1), to: new Date(2026, 2, 31),
   });
-  const [dateOpen, setDateOpen] = useState(false);
   const [pageFilters, setPageFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], relations: [] as string[],
   });
@@ -483,7 +481,20 @@ const impressionsByBucket: Record<string, Array<{ category: string; count: numbe
     allImpressions.forEach((im, i) => { map[im.category] = getImpressionColor(i); });
     return map;
   }, [allImpressions]);
-  const selectedImpression = activeImpression || impressions[0]?.category || "";
+  // Section 6 (Impressions Analysis Detail) uses a fixed taxonomy of
+  // consultation reasons. Tabs render even when the warehouse has no
+  // matching data — counts default to 0 and the subcategory panel will
+  // show its empty state until backend wiring lands.
+  const IMPRESSION_DETAIL_TABS = ["Family", "Career", "Self Improvement", "Health", "Relationship", "Financial", "Psychological disorders", "Sexual Wellness", "LGBTQIA"];
+  const detailImpressions = IMPRESSION_DETAIL_TABS.map((category) => {
+    const found = impressions.find((i) => i.category === category);
+    return { category, count: found?.count || 0 };
+  });
+  const detailTotal = detailImpressions.reduce((s, i) => s + i.count, 0);
+  const detailColorMap: Record<string, string> = Object.fromEntries(
+    IMPRESSION_DETAIL_TABS.map((c, i) => [c, getImpressionColor(i)])
+  );
+  const selectedImpression = activeImpression || IMPRESSION_DETAIL_TABS[0];
 const subcategories: Array<{ subcategory: string; count: number }> = (charts?.impressionSubcategories?.[selectedImpression] || []).map((i: { label?: string; subcategory?: string; count: number }) => ({ subcategory: i.subcategory ?? i.label ?? "Unknown", count: i.count }));
 
   // Scales
@@ -529,20 +540,46 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* ── Filters ── */}
       <div className="flex items-center gap-2 flex-wrap px-5 py-3.5 rounded-2xl"
         style={{ backgroundColor: T.white, border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-        <Popover open={dateOpen} onOpenChange={setDateOpen}>
-          <PopoverTrigger asChild>
-            <button className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-medium border hover:border-gray-300 transition-colors"
-              style={{ borderColor: T.border, color: T.textPrimary, backgroundColor: T.white }}>
-              <CalendarDays size={14} style={{ color: T.textMuted }} />
-              {format(dateRange.from, "dd-MM-yyyy")} &mdash; {format(dateRange.to, "dd-MM-yyyy")}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-3" align="start">
-            <Calendar mode="range" selected={{ from: dateRange.from, to: dateRange.to }}
-              onSelect={(range) => { if (range?.from && range?.to) setDateRange({ from: range.from, to: range.to }); }}
-              numberOfMonths={2} defaultMonth={dateRange.from} />
-          </PopoverContent>
-        </Popover>
+        <div className="inline-flex items-center gap-1">
+          <div className="inline-flex items-center gap-1 h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+            <CalendarDays size={13} style={{ color: T.textMuted }} />
+            <input
+              type="date"
+              value={format(dateRange.from, "yyyy-MM-dd")}
+              max={format(dateRange.to, "yyyy-MM-dd")}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const d = new Date(v + "T00:00:00");
+                if (isNaN(d.getTime())) return;
+                const to = d > dateRange.to ? d : dateRange.to;
+                setDateRange({ from: d, to });
+              }}
+              aria-label="Start date"
+              className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+              style={{ color: T.textPrimary }}
+            />
+          </div>
+          <span className="text-[12.5px]" style={{ color: T.textMuted }}>–</span>
+          <div className="inline-flex items-center h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+            <input
+              type="date"
+              value={format(dateRange.to, "yyyy-MM-dd")}
+              min={format(dateRange.from, "yyyy-MM-dd")}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const d = new Date(v + "T00:00:00");
+                if (isNaN(d.getTime())) return;
+                const from = d < dateRange.from ? d : dateRange.from;
+                setDateRange({ from, to: d });
+              }}
+              aria-label="End date"
+              className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+              style={{ color: T.textPrimary }}
+            />
+          </div>
+        </div>
         <FilterMultiSelect label="Location" options={filterOptions.locations} selected={pageFilters.locations} onChange={(v) => setPageFilters((p) => ({ ...p, locations: v }))} />
         <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
@@ -1464,15 +1501,15 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 6: Impressions Detail (clickable) */}
       {/* ══════════════════════════════════════════ */}
-      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Click a category to see subcategory breakdown" tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
+      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Click a category to see subcategory breakdown" tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={detailImpressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
         {/* Stacked bar at top */}
         <div className="mb-4">
-          <div className="flex h-8 rounded-lg overflow-hidden">
-            {impressions.map((im) => {
-              const pct = totalImpressions > 0 ? (im.count / totalImpressions) * 100 : 0;
+          <div className="flex h-8 rounded-lg overflow-hidden" style={{ backgroundColor: T.borderLight }}>
+            {detailImpressions.map((im) => {
+              const pct = detailTotal > 0 ? (im.count / detailTotal) * 100 : 0;
               return (
                 <div key={im.category} className="flex items-center justify-center text-[10px] font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
-                  style={{ width: `${pct}%`, backgroundColor: impressionColorMap[im.category] || "#9399AB", minWidth: pct > 3 ? 40 : 0 }}
+                  style={{ width: `${pct}%`, backgroundColor: detailColorMap[im.category] || "#9399AB", minWidth: pct > 3 ? 40 : 0 }}
                   onClick={() => setActiveImpression(im.category)}>
                   {pct > 5 ? `${pct.toFixed(1)}%` : ""}
                 </div>
@@ -1480,9 +1517,9 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
             })}
           </div>
           <div className="flex flex-wrap gap-3 mt-2">
-            {impressions.map((im) => (
+            {detailImpressions.map((im) => (
               <div key={im.category} className="flex items-center gap-1.5 text-[11px]" style={{ color: T.textSecondary }}>
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: impressionColorMap[im.category] || "#9399AB" }} />
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: detailColorMap[im.category] || "#9399AB" }} />
                 {im.category}
               </div>
             ))}
@@ -1491,13 +1528,13 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
 
         {/* Clickable tabs */}
         <div className="flex flex-wrap gap-2 mb-5 items-center">
-          {impressions.map((im) => (
+          {detailImpressions.map((im) => (
             <button key={im.category} onClick={() => setActiveImpression(im.category)}
               className={`px-4 py-2 rounded-lg text-[13px] font-semibold border-2 transition-all ${selectedImpression === im.category ? "shadow-sm" : ""}`}
               style={{
-                borderColor: selectedImpression === im.category ? (impressionColorMap[im.category] || "#4f46e5") : T.border,
-                backgroundColor: selectedImpression === im.category ? (impressionColorMap[im.category] || "#4f46e5") + "10" : T.white,
-                color: selectedImpression === im.category ? (impressionColorMap[im.category] || "#4f46e5") : T.textSecondary,
+                borderColor: selectedImpression === im.category ? (detailColorMap[im.category] || "#4f46e5") : T.border,
+                backgroundColor: selectedImpression === im.category ? (detailColorMap[im.category] || "#4f46e5") + "10" : T.white,
+                color: selectedImpression === im.category ? (detailColorMap[im.category] || "#4f46e5") : T.textSecondary,
               }}>
               {im.category}
             </button>

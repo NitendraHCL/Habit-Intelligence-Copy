@@ -201,12 +201,18 @@ async function handler(request: NextRequest) {
       q.params
     ), "specialtyTreemap");
 
+    // Keep every row (no specialty / facility filter) so per-clinic
+    // bar totals reconcile to the headline totalConsults KPI. Missing
+    // specialty falls into the "Other" bar segment in JS below; missing
+    // facility falls into an "Unknown" location bucket.
     const locSpecPromise = safeQuery(() => dwQuery<{ location: string; specialty: string; total_consults: string }>(
-      `SELECT a.facility_mapping AS location, a.speciality_name AS specialty,
-       COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
+      `SELECT
+         COALESCE(NULLIF(TRIM(a.facility_mapping), ''), 'Unknown') AS location,
+         COALESCE(NULLIF(TRIM(a.speciality_name), ''), '') AS specialty,
+         COALESCE(SUM(a.total_consult_count), 0)::bigint AS total_consults
       FROM ${BASE_TABLE} a
-      WHERE ${q.currentWhere} AND a.facility_mapping IS NOT NULL AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
-      GROUP BY a.facility_mapping, a.speciality_name ORDER BY total_consults DESC`,
+      WHERE ${q.currentWhere}
+      GROUP BY 1, 2 ORDER BY total_consults DESC`,
       q.params
     ), "locSpec");
 
@@ -558,14 +564,39 @@ async function handler(request: NextRequest) {
     const specialtyTreemap = specRows.map((r) => ({ name: r.name, value: Number(r.value) }));
 
     // ── Location × Specialty ──
+    // Rank top 6 from labelled specialties only; NULL/empty rows always
+    // fall into the per-clinic "Other" bucket so the stacked bar totals
+    // reconcile to the headline totalConsults KPI in every case.
     const specTotals: Record<string, number> = {};
-    for (const row of locSpecRows) specTotals[row.specialty] = (specTotals[row.specialty] || 0) + Number(row.total_consults);
+    for (const row of locSpecRows) {
+      if (!row.specialty) continue;
+      specTotals[row.specialty] = (specTotals[row.specialty] || 0) + Number(row.total_consults);
+    }
     const topSpecialties = Object.entries(specTotals).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([s]) => s);
     const locationMap: Record<string, Record<string, number>> = {};
     for (const row of locSpecRows) {
       if (!locationMap[row.location]) locationMap[row.location] = {};
-      if (topSpecialties.includes(row.specialty)) locationMap[row.location][row.specialty] = Number(row.total_consults);
+      const v = Number(row.total_consults);
+      if (row.specialty && topSpecialties.includes(row.specialty)) {
+        locationMap[row.location][row.specialty] = (locationMap[row.location][row.specialty] || 0) + v;
+      } else {
+        locationMap[row.location]["Other"] = (locationMap[row.location]["Other"] || 0) + v;
+      }
     }
+    const hasOther = Object.values(locationMap).some((m) => (m["Other"] || 0) > 0);
+    const stackKeys = hasOther ? [...topSpecialties, "Other"] : topSpecialties;
+    // Aggregated breakdown of what's hiding inside the "Other" bar segment —
+    // tail specialties (rank 7+) plus any unlabeled rows, summed across
+    // every clinic. Powers the "View breakdown" pill below the chart.
+    const otherSpecMap: Record<string, number> = {};
+    for (const row of locSpecRows) {
+      if (row.specialty && topSpecialties.includes(row.specialty)) continue;
+      const label = row.specialty || "Unspecified";
+      otherSpecMap[label] = (otherSpecMap[label] || 0) + Number(row.total_consults);
+    }
+    const otherSpecialtyBreakdown = Object.entries(otherSpecMap)
+      .map(([specialty, total]) => ({ specialty, total }))
+      .sort((a, b) => b.total - a.total);
     const sumSpecs = (obj: Record<string, unknown>) =>
       Object.entries(obj).filter(([k]) => k !== "location").reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
     const allLocationsSorted = Object.entries(locationMap)
@@ -579,7 +610,7 @@ async function handler(request: NextRequest) {
     for (const loc of restLocations) {
       const locTotal = sumSpecs(loc);
       if (locTotal > 0) othersBreakdown.push({ location: loc.location as string, total: locTotal });
-      for (const spec of topSpecialties) {
+      for (const spec of stackKeys) {
         othersEntry[spec] = ((othersEntry[spec] as number) || 0) + ((loc as any)[spec] || 0);
       }
     }
@@ -704,7 +735,7 @@ async function handler(request: NextRequest) {
           topGender: topGenderEntry ? { gender: gl(topGenderEntry[0]), count: topGenderEntry[1] } : null,
           topAgeGroup: topAgeEntry ? { ageGroup: topAgeEntry[0], count: topAgeEntry[1] } : null,
         },
-        locationBySpecialty, topSpecialties, othersBreakdown,
+        locationBySpecialty, topSpecialties: stackKeys, othersBreakdown, otherSpecialtyBreakdown,
         visitTrends, avgConsults,
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },

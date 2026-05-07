@@ -277,6 +277,8 @@ export default function OHCUtilizationPage() {
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
+  const [otherSpecModalOpen, setOtherSpecModalOpen] = useState(false);
+  const [otherSpecSearch, setOtherSpecSearch] = useState("");
   const [specOthersModalOpen, setSpecOthersModalOpen] = useState(false);
   const [specOthersSearch, setSpecOthersSearch] = useState("");
   const sunburstRef = useRef<any>(null);
@@ -1369,9 +1371,16 @@ export default function OHCUtilizationPage() {
                   <div className="flex flex-col gap-2 flex-1 justify-center">
                     {items.map((d) => {
                       const pct = total > 0 ? (d.value / total) * 100 : 0;
+                      const clickable = d.spec === "Other";
+                      const onClick = clickable ? () => { setOtherSpecSearch(""); setOtherSpecModalOpen(true); } : undefined;
                       return (
-                        <div key={d.spec} className="flex items-center gap-3">
-                          <div className="text-[12px] font-medium truncate" style={{ width: 140, color: T.textPrimary }} title={d.spec}>{d.spec}</div>
+                        <div
+                          key={d.spec}
+                          className={`flex items-center gap-3 ${clickable ? "cursor-pointer rounded-md px-1 -mx-1 hover:bg-gray-50" : ""}`}
+                          onClick={onClick}
+                          title={clickable ? "Click to view specialties inside Other" : d.spec}
+                        >
+                          <div className="text-[12px] font-medium truncate" style={{ width: 140, color: T.textPrimary }}>{d.spec}{clickable && <span className="ml-1 text-[10px] font-semibold" style={{ color: "#4f46e5" }}>›</span>}</div>
                           <div className="flex-1 rounded-md overflow-hidden" style={{ height: barRowHeight, backgroundColor: "#F1F5F9" }}>
                             <div style={{ width: `${(d.value / max) * 100}%`, height: "100%", backgroundColor: d.fill, borderRadius: 6, transition: "width 200ms ease" }} />
                           </div>
@@ -1623,6 +1632,25 @@ export default function OHCUtilizationPage() {
                 </button>
               );
             })()}
+            {(charts?.otherSpecialtyBreakdown?.length ?? 0) > 0 && (() => {
+              const list = charts?.otherSpecialtyBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              return (
+                <button
+                  onClick={() => { setOtherSpecSearch(""); setOtherSpecModalOpen(true); }}
+                  className="mt-2 w-full flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-left transition hover:shadow-sm hover:border-indigo-300"
+                  style={{ borderColor: T.border, background: "#fafafa" }}
+                >
+                  <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#94a3b8" }} />
+                    <span>
+                      <strong style={{ color: T.textPrimary }}>Other specialties:</strong> {list.length} tail specialties · <strong style={{ color: T.textPrimary }}>{formatNum(total)}</strong> consults
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
+                </button>
+              );
+            })()}
             <InsightBox text="Location-wise specialty breakdown reveals regional demand patterns. Use this to optimize specialist allocation and identify underserved locations." />
           </CVCard>}
         </div>
@@ -1652,6 +1680,46 @@ export default function OHCUtilizationPage() {
                       ))}
                       {filtered.length === 0 && (
                         <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No locations match &ldquo;{othersSearch}&rdquo;</div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+        <Dialog open={otherSpecModalOpen} onOpenChange={setOtherSpecModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Other — Specialty Breakdown</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const list = charts?.otherSpecialtyBreakdown || [];
+              const total = list.reduce((s: number, b: any) => s + (b.total || 0), 0);
+              const q = otherSpecSearch.trim().toLowerCase();
+              const filtered = q ? list.filter((b: any) => b.specialty.toLowerCase().includes(q)) : list;
+              return (
+                <>
+                  <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
+                    <strong>{list.length}</strong> tail specialties grouped · <strong>{formatNum(total)}</strong> total consults
+                  </div>
+                  <Input placeholder="Search specialty…" value={otherSpecSearch} onChange={(e) => setOtherSpecSearch(e.target.value)} className="mb-3" />
+                  <ScrollArea className="h-[360px] pr-3">
+                    <div className="space-y-1">
+                      {filtered.map((b: any) => {
+                        const pct = total > 0 ? (b.total / total) * 100 : 0;
+                        return (
+                          <div key={b.specialty} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                            <span className="truncate" style={{ color: T.textSecondary }} title={b.specialty}>{b.specialty}</span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10.5px] tabular-nums" style={{ color: T.textMuted }}>{pct.toFixed(1)}%</span>
+                              <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(b.total)}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {filtered.length === 0 && (
+                        <div className="text-xs text-center py-6" style={{ color: T.textMuted }}>No specialties match &ldquo;{otherSpecSearch}&rdquo;</div>
                       )}
                     </div>
                   </ScrollArea>

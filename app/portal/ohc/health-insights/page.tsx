@@ -724,65 +724,72 @@ export default function HealthInsightsPage() {
         <ActiveFilterChips filters={appliedFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
       )}
 
+      {/* TODO: chronic-only summary — uses all-categories aggregates as a
+          temporary stand-in until the new chronic-data warehouse table lands. */}
       <PageGlanceBox
         pageTitle="Health Insights Overview"
-        pageSubtitle="Diagnosis patterns, condition trends and vital sign analytics"
+        pageSubtitle="Chronic diagnosis patterns and condition trends"
         kpis={{}}
         fallbackSummary={categoryTreemap.length > 0
-          ? `${displayCat(categoryTreemap[0]?.name || "")} leads with ${formatNum(categoryTreemap[0]?.value || 0)} consultations (${categoryTreemap[0]?.percentage || 0}% of total across ${categories.length} ICD categories). ${ca.chronicPatients && ca.acutePatients ? `${Math.round(ca.chronicPatients / (ca.chronicPatients + ca.acutePatients) * 100)}% of patients carry chronic conditions.` : ""}`
-          : "Diagnosis patterns, condition trends and vital sign analytics across all consultations."}
+          ? `${displayCat(categoryTreemap[0]?.name || "")} leads chronic care with ${formatNum(categoryTreemap[0]?.value || 0)} consults (${categoryTreemap[0]?.percentage || 0}% of chronic total across ${categories.length} chronic ICD categories). ${formatNum(ca.chronicPatients || 0)} unique patients carry chronic conditions.`
+          : "Chronic diagnosis patterns and condition trends across the assessed population."}
         fallbackChips={categoryTreemap.length > 0 ? [
-          { label: "Top Category", value: displayCat(categoryTreemap[0]?.name || "—") },
-          { label: "Total Diagnoses", value: formatNum(categoryTreemap.reduce((s: number, c: any) => s + c.value, 0)) },
-          { label: "ICD Categories", value: String(categories.length) },
+          { label: "Top Chronic Category", value: displayCat(categoryTreemap[0]?.name || "—") },
+          { label: "Total Chronic Diagnosis", value: formatNum(categoryTreemap.reduce((s: number, c: any) => s + c.value, 0)) },
           { label: "Chronic Patients", value: formatNum(ca.chronicPatients || 0) },
+          { label: "ICD Categories", value: String(categories.length) },
         ] : [
-          { label: "Top Condition", value: "Musculoskeletal" },
-          { label: "Total Cases", value: "2,847" },
-          { label: "Categories Tracked", value: "10+" },
-          { label: "YoY Trend", value: "+14.2%" },
+          { label: "Top Chronic Category", value: "—" },
+          { label: "Total Chronic Diagnosis", value: "0" },
+          { label: "Chronic Patients", value: "0" },
+          { label: "ICD Categories", value: "0" },
         ]}
       />
 
-      {/* ── KPI Stat Cards ── */}
-      {isChartVisible("healthKpis") && categoryTreemap.length > 0 && (() => {
-        const totalDiagnoses = categoryTreemap.reduce((s: number, c: any) => s + c.value, 0);
-        const chronicCount = ca.chronicPatients || 0;
-        const acuteCount = ca.acutePatients || 0;
-        const totalPt = chronicCount + acuteCount;
+      {/* ── KPI Stat Cards (chronic-only) ── */}
+      {/* TODO: rewire numeric values once the new chronic-data warehouse
+          table lands. Labels / sub-text / tooltips already reflect the
+          new chronic-only spec; numeric bindings below are temporary —
+          totalChronicDiagnoses + chronicIcdCategories fall back to the
+          all-categories aggregate, chronicRepeatPatients to 0. */}
+      {isChartVisible("healthKpis") && (() => {
+        const totalChronicDiagnoses = categoryTreemap.reduce((s: number, c: any) => s + c.value, 0); // TODO: chronic-only consult count
+        const chronicPatients = ca.chronicPatients || 0;
+        const chronicRepeatPatients = 0; // TODO: distinct UHIDs with chronic consult count >= 2
+        const chronicIcdCategories = categories.length || 0; // TODO: count of chronic ICD categories only
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard
-              label="Total Diagnoses"
-              value={formatNum(totalDiagnoses)}
+              label="Total Chronic Diagnosis"
+              value={formatNum(totalChronicDiagnoses)}
               color="#4f46e5"
-              sub="Across all ICD categories"
-              tooltip="Sum of diagnosis records across every ICD category in the selected period"
-              insight="Counts every recorded diagnosis — patients with multiple conditions are counted once per condition"
+              sub="Total chronic consult count"
+              tooltip="Total number of chronic diagnosis consults recorded in the selected period"
+              insight="Tracks the volume of chronic-condition encounters — a rising count signals growing long-term care load"
             />
             <StatCard
               label="Chronic Patients"
-              value={formatNum(chronicCount)}
+              value={formatNum(chronicPatients)}
               color="#4f46e5"
-              sub={`${totalPt > 0 ? Math.round(chronicCount / totalPt * 100) : 0}% of patient pool`}
-              tooltip="Distinct patients carrying at least one chronic condition (diabetes, hypertension, hyperlipidemia, asthma, COPD, etc.)"
-              insight="A growing chronic share signals long-term care demand — prioritize continuity-of-care programs for these patients"
+              sub="Unique UHIDs with chronic conditions"
+              tooltip="Count of distinct patients (UHIDs) with at least one chronic diagnosis on record in the selected period"
+              insight="A growing chronic patient base signals long-term care demand — prioritise continuity-of-care programs"
             />
             <StatCard
-              label="Acute Patients"
-              value={formatNum(acuteCount)}
+              label="Chronic Repeat Patients"
+              value={formatNum(chronicRepeatPatients)}
               color="#0d9488"
-              sub={`${totalPt > 0 ? Math.round(acuteCount / totalPt * 100) : 0}% of patient pool`}
-              tooltip="Distinct patients seen for short-term, episodic conditions only (no chronic diagnosis on record)"
-              insight="High acute volume tends to track seasonal / infection cycles — monitor surges to staff appropriately"
+              sub="Chronic UHIDs with ≥ 2 consults"
+              tooltip="Distinct chronic patients (UHIDs) who have had two or more consults in the selected period"
+              insight="Repeat chronic visits indicate patients actively engaged in care — a signal of programme effectiveness"
             />
             <StatCard
               label="ICD Categories"
-              value={categories.length || 0}
+              value={chronicIcdCategories}
               color="#7c3aed"
-              sub="Tracked disease categories"
-              tooltip="Number of distinct ICD-derived disease categories with at least one diagnosis in the selected period"
-              insight="Wide category coverage suggests a broad care portfolio; narrow coverage may indicate a specialized cohort"
+              sub="Tracked chronic ICD categories"
+              tooltip="Number of distinct chronic ICD categories with at least one diagnosis in the selected period"
+              insight="Wide chronic category coverage suggests broad disease burden; narrow coverage points to a focused cohort"
             />
           </div>
         );

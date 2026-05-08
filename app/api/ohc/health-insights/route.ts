@@ -356,7 +356,10 @@ async function handler(request: NextRequest) {
         ),
         "facilities"
       ),
-      // 9) conditionTrends — monthly time series for the filter context
+      // 9) conditionTrends — monthly time series for the filter context.
+      // Health Insights is chronic-only: the chronic predicate restricts
+      // both monthly and yearly views (yearly is rolled up in JS from
+      // these monthly buckets, so a single AND keeps both consistent).
       safeQuery(
         () => dwQuery<{ period: string; count: string; unique_patients: string }>(
           `SELECT to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
@@ -365,6 +368,7 @@ async function handler(request: NextRequest) {
            FROM ${DIAG_TABLE} d
            WHERE ${q.where}
              AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
+             AND ${CHRONIC_CASE}
              ${selectedCondition ? `AND d.icd_description = $${q.params.length + 1}` : (selectedCategory ? `AND ${CATEGORY_CASE} = $${q.params.length + 1}` : "")}
            GROUP BY 1 ORDER BY 1`,
           selectedCondition

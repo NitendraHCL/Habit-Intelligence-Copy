@@ -40,6 +40,7 @@ import {
   AreaChart,
   Area,
   Line,
+  ComposedChart,
   BarChart,
   Bar,
   XAxis,
@@ -543,8 +544,40 @@ export default function HealthInsightsPage() {
   const ca = d?.chronicAcute || {};
   const categoryTreemap = d?.categoryTreemap || [];
 
-  // Trends
-  const trendData = trendView === "yearly" ? (d?.conditionTrendsYearly || []) : (d?.conditionTrends || []);
+  // Latch the last non-empty category list + per-category conditions so the
+  // dropdown / subcategory pills don't disappear when picking a category
+  // changes the SWR cache key (the new fetch starts undefined, and the
+  // current API can return empty rows when the warehouse table is missing).
+  const [cachedCategoryTreemap, setCachedCategoryTreemap] = useState<any[]>([]);
+  const [cachedConditionsByCategory, setCachedConditionsByCategory] = useState<Record<string, Array<{ name: string; value: number; uniquePatients: number }>>>({});
+  useEffect(() => {
+    if (categoryTreemap.length > 0) setCachedCategoryTreemap(categoryTreemap);
+  }, [categoryTreemap]);
+  useEffect(() => {
+    if (Object.keys(conditionsByCategory).length > 0) setCachedConditionsByCategory(conditionsByCategory);
+  }, [conditionsByCategory]);
+  const categoriesForSelect = categoryTreemap.length > 0 ? categoryTreemap : cachedCategoryTreemap;
+  const conditionsForSelect = Object.keys(conditionsByCategory).length > 0 ? conditionsByCategory : cachedConditionsByCategory;
+
+  // Trends — for the yearly view, fill any year in the applied window
+  // that the warehouse didn't return so the x-axis always spans the full
+  // selected range (zero-data years render as a flat baseline instead of
+  // disappearing).
+  const trendData = useMemo(() => {
+    if (trendView !== "yearly") return d?.conditionTrends || [];
+    const raw: Array<{ period: string; count: number; uniquePatients: number }> = d?.conditionTrendsYearly || [];
+    const fromYr = appliedDateRange.from.getFullYear();
+    const toYr = appliedDateRange.to.getFullYear();
+    if (!Number.isFinite(fromYr) || !Number.isFinite(toYr) || toYr < fromYr) return raw;
+    const byYr: Record<string, { period: string; count: number; uniquePatients: number }> = {};
+    for (const r of raw) byYr[r.period] = r;
+    const filled: Array<{ period: string; count: number; uniquePatients: number }> = [];
+    for (let y = fromYr; y <= toYr; y++) {
+      const key = String(y);
+      filled.push(byYr[key] || { period: key, count: 0, uniquePatients: 0 });
+    }
+    return filled;
+  }, [trendView, d?.conditionTrends, d?.conditionTrendsYearly, appliedDateRange]);
 
   // Demographics
   const demoData = demoTab === "age" ? d?.demoAge : demoTab === "gender" ? d?.demoGender : d?.demoLocation;
@@ -1274,13 +1307,13 @@ export default function HealthInsightsPage() {
       {isChartVisible("trendsOverTime") && <WarmSection>
         <AccentBar color="#4f46e5" colorEnd="#6366f1" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Trends Over Time</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Year-on-year and month-on-month condition consultation patterns</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Year-on-year and month-on-month chronic-condition consultation patterns</p>
       {/* ── Condition Trends ── */}
       <CVCard
         accentColor="#4f46e5"
         title="Year on Year Trends"
-        subtitle="Tracks how prevalence of key conditions changes over time."
-        tooltipText="Line chart tracking how the selected condition's consultation volume changes over time. Toggle between yearly and monthly views."
+        subtitle="Tracks how the prevalence of chronic conditions changes over time."
+        tooltipText="Line chart tracking how the selected chronic condition's consultation volume changes over time. Toggle between yearly and monthly views. Acute diagnoses are excluded."
         chartId="trendsOverTime"
         chartData={trendData}
         chartDescription="Condition consultation volume trends over time"
@@ -1299,78 +1332,135 @@ export default function HealthInsightsPage() {
           </div>
         }
       >
-        {/* Condition selector dropdown */}
-        {conditionBreakdown.length > 0 && (
-          <div className="mb-4">
-            <select
-              value={effectiveCondition}
-              onChange={(e) => setSelectedCondition(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg border text-[13px] font-medium"
-              style={{ borderColor: T.border, color: T.textPrimary }}
-            >
-              {conditionBreakdown.map((c: any) => (
-                <option key={c.name} value={c.name}>{displaySub(c.name)}</option>
-              ))}
-            </select>
-            {/* Condition chips */}
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {conditionBreakdown.map((c: any) => (
+        {/* Category dropdown + subcategory pills.
+            Dropdown picks the parent chronic ICD category. Pills show the
+            subcategories of that category plus an "All" pill at the front
+            that clears selectedCondition so the chart shows the entire
+            category's trend. Sources from latched lists so the controls
+            stay populated when the SWR cache key changes (selecting a new
+            category triggers a fresh fetch — without latching the dropdown
+            would briefly disappear). The same controls drive both Yearly
+            and Monthly views since they share this CVCard body. */}
+        {(categoriesForSelect.length > 0 || selectedCategory) && (() => {
+          const sortedCats = [...categoriesForSelect].sort((a: any, b: any) => b.value - a.value);
+          const activeCat = selectedCategory || sortedCats[0]?.name || "";
+          const subs = (conditionsForSelect[activeCat] || []).slice().sort((a, b) => b.value - a.value);
+          const isAllSelected = !selectedCondition;
+          return (
+            <div className="mb-4">
+              <select
+                value={activeCat}
+                onChange={(e) => { setSelectedCategory(e.target.value); setSelectedCondition(""); }}
+                className="w-full h-9 px-3 rounded-lg border text-[13px] font-medium"
+                style={{ borderColor: T.border, color: T.textPrimary }}
+              >
+                {sortedCats.map((c: any) => (
+                  <option key={c.name} value={c.name}>{displayCat(c.name)}</option>
+                ))}
+              </select>
+              {/* Subcategory chips — leading "All" pill aggregates the
+                  whole category by clearing selectedCondition. */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <button
-                  key={c.name}
-                  onClick={() => setSelectedCondition(c.name)}
-                  className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
-                    (effectiveCondition === c.name) ? "text-white border-transparent" : ""
-                  }`}
+                  onClick={() => setSelectedCondition("")}
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${isAllSelected ? "text-white border-transparent" : ""}`}
                   style={{
-                    backgroundColor: effectiveCondition === c.name ? "#4f46e5" : "transparent",
-                    borderColor: effectiveCondition === c.name ? "#4f46e5" : T.border,
-                    color: effectiveCondition === c.name ? "#fff" : T.textSecondary,
+                    backgroundColor: isAllSelected ? "#4f46e5" : "transparent",
+                    borderColor: isAllSelected ? "#4f46e5" : T.border,
+                    color: isAllSelected ? "#fff" : T.textSecondary,
                   }}
                 >
-                  {displaySub(c.name)}
+                  All
                 </button>
-              ))}
-              <ResetFilter visible={selectedCondition !== ""} onClick={() => setSelectedCondition("")} />
+                {subs.map((c) => (
+                  <button
+                    key={c.name}
+                    onClick={() => setSelectedCondition(c.name)}
+                    className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                      (selectedCondition === c.name) ? "text-white border-transparent" : ""
+                    }`}
+                    style={{
+                      backgroundColor: selectedCondition === c.name ? "#4f46e5" : "transparent",
+                      borderColor: selectedCondition === c.name ? "#4f46e5" : T.border,
+                      color: selectedCondition === c.name ? "#fff" : T.textSecondary,
+                    }}
+                  >
+                    {displaySub(c.name)}
+                  </button>
+                ))}
+                {subs.length === 0 && (
+                  <span className="text-[11px]" style={{ color: T.textMuted }}>No subcategories recorded for this category in the selected window.</span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="overflow-x-auto">
           <div style={{ height: 320, minWidth: Math.max(trendData.length * 60, 500) }}>
             {trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
-                  <defs>
-                    <linearGradient id="gradTotalConsults" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="gradUniquePatients" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#818cf8" stopOpacity={0.18} />
-                      <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: T.textMuted }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: T.textMuted }} />
-                  <RechartsTooltip
-                    content={({ active, payload, label }: any) => {
-                      if (!active || !payload?.length) return null;
-                      const dd = payload[0]?.payload;
-                      return (
-                        <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                          <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                          <p style={{ color: "#4f46e5" }}>Total Consultations : <strong>{formatNum(dd?.count || 0)}</strong></p>
-                          <p style={{ color: "#818cf8" }}>Unique Patients : <strong>{formatNum(dd?.uniquePatients || 0)}</strong></p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={7} />
-                  <Area yAxisId="left" type="monotone" dataKey="count" name="Total Consultations" stroke="#4f46e5" fill="url(#gradTotalConsults)" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5", stroke: "#fff", strokeWidth: 2 }} />
-                  <Area yAxisId="right" type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#818cf8" fill="url(#gradUniquePatients)" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#818cf8", strokeWidth: 2 }} />
-                </AreaChart>
+                {trendView === "yearly" ? (
+                  // Yearly: combo chart — bars for Total Consultations,
+                  // line for Unique Patients (right axis).
+                  <ComposedChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <RechartsTooltip
+                      cursor={{ fill: "rgba(79,70,229,0.06)" }}
+                      content={({ active, payload, label }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const dd = payload[0]?.payload;
+                        return (
+                          <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                            <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                            <p style={{ color: "#4f46e5" }}>Total Consultations : <strong>{formatNum(dd?.count || 0)}</strong></p>
+                            <p style={{ color: "#0d9488" }}>Unique Patients : <strong>{formatNum(dd?.uniquePatients || 0)}</strong></p>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={7} />
+                    <Bar yAxisId="left" dataKey="count" name="Total Consultations" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={64} />
+                    <Line yAxisId="right" type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2.5} dot={{ r: 4, fill: "#0d9488", stroke: "#fff", strokeWidth: 2 }} activeDot={{ r: 5 }} />
+                  </ComposedChart>
+                ) : (
+                  // Monthly: keep the dual-area trend.
+                  <AreaChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="gradTotalConsults" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="gradUniquePatients" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#818cf8" stopOpacity={0.18} />
+                        <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: T.textMuted }} />
+                    <RechartsTooltip
+                      content={({ active, payload, label }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const dd = payload[0]?.payload;
+                        return (
+                          <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                            <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                            <p style={{ color: "#4f46e5" }}>Total Consultations : <strong>{formatNum(dd?.count || 0)}</strong></p>
+                            <p style={{ color: "#818cf8" }}>Unique Patients : <strong>{formatNum(dd?.uniquePatients || 0)}</strong></p>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={7} />
+                    <Area yAxisId="left" type="monotone" dataKey="count" name="Total Consultations" stroke="#4f46e5" fill="url(#gradTotalConsults)" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5", stroke: "#fff", strokeWidth: 2 }} />
+                    <Area yAxisId="right" type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#818cf8" fill="url(#gradUniquePatients)" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#818cf8", strokeWidth: 2 }} />
+                  </AreaChart>
+                )}
               </ResponsiveContainer>
             ) : (
               <div className="flex items-center justify-center h-full text-[13px]" style={{ color: T.textMuted }}>

@@ -261,14 +261,14 @@ function FilterMultiSelect({ label, options, selected, onChange }: {
             <button onClick={() => onChange([])} className="text-[10px] font-medium hover:underline" style={{ color: T.coral }}>Clear</button>
           )}
         </div>
-        <ScrollArea className="max-h-52">
-          <div className="space-y-0.5">
+        <ScrollArea className="h-52 overflow-hidden">
+          <div className="space-y-0.5 pr-3">
             {options.map((opt) => (
               <label key={opt} className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-[12px]" style={{ color: T.textPrimary }}>
                 <Checkbox checked={selected.includes(opt)} onCheckedChange={() =>
                   onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt])
-                } className="h-3.5 w-3.5" />
-                {opt}
+                } className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate" title={opt}>{opt}</span>
               </label>
             ))}
           </div>
@@ -616,27 +616,46 @@ export default function HealthInsightsPage() {
         className="flex items-center gap-2 flex-wrap px-5 py-3.5 rounded-2xl"
         style={{ backgroundColor: T.white, border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
       >
-        <Popover open={dateOpen} onOpenChange={setDateOpen}>
-          <PopoverTrigger asChild>
-            <button
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-medium border hover:border-gray-300 transition-colors"
-              style={{ borderColor: T.border, color: T.textPrimary, backgroundColor: T.white }}
-            >
-              <CalendarDays size={14} style={{ color: T.textMuted }} />
-              {format(dateRange.from, "dd-MM-yyyy")} &mdash; {format(dateRange.to, "dd-MM-yyyy")}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-3" align="start">
-            <Calendar
-              mode="range"
-              selected={{ from: dateRange.from, to: dateRange.to }}
-              onSelect={(range) => {
-                if (range?.from && range?.to) setDateRange({ from: range.from, to: range.to });
+        <div className="inline-flex items-center gap-1">
+          <div className="inline-flex items-center gap-1 h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+            <CalendarDays size={13} style={{ color: T.textMuted }} />
+            <input
+              type="date"
+              value={format(dateRange.from, "yyyy-MM-dd")}
+              max={format(dateRange.to, "yyyy-MM-dd")}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const d = new Date(v + "T00:00:00");
+                if (isNaN(d.getTime())) return;
+                const to = d > dateRange.to ? d : dateRange.to;
+                setDateRange({ from: d, to });
               }}
-              numberOfMonths={2}
+              aria-label="Start date"
+              className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+              style={{ color: T.textPrimary }}
             />
-          </PopoverContent>
-        </Popover>
+          </div>
+          <span className="text-[12.5px]" style={{ color: T.textMuted }}>–</span>
+          <div className="inline-flex items-center h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
+            <input
+              type="date"
+              value={format(dateRange.to, "yyyy-MM-dd")}
+              min={format(dateRange.from, "yyyy-MM-dd")}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                const d = new Date(v + "T00:00:00");
+                if (isNaN(d.getTime())) return;
+                const from = d < dateRange.from ? d : dateRange.from;
+                setDateRange({ from, to: d });
+              }}
+              aria-label="End date"
+              className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
+              style={{ color: T.textPrimary }}
+            />
+          </div>
+        </div>
 
         <FilterMultiSelect label="Location" options={filterOptions.locations} selected={pageFilters.locations} onChange={(v) => setPageFilters((p) => ({ ...p, locations: v }))} />
         <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />

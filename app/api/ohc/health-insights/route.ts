@@ -9,7 +9,7 @@ import { withCache } from "@/lib/cache/middleware";
  *
  * Columns we use: cug_code_mapped, last_diagnosis_date,
  * first_diagnosis_date, facility_mapping, uhid, age, patient_gender,
- * status, category, icd_code, icd_description, total_diagnosis_records,
+ * status, disease, icd_code, icd_description, total_diagnosis_records,
  * encounter_count.
  *
  * Row grain: ONE row per (uhid × icd_code). total_diagnosis_records is
@@ -19,9 +19,14 @@ import { withCache } from "@/lib/cache/middleware";
  *
  * Key column semantics (per product):
  *   uhid               — unique patient identifier
- *   category           — chronic ICD parent category (used directly,
- *                        no regex derivation)
+ *   disease            — curated chronic disease group (the master
+ *                        bucket across the dashboard, e.g. "Diabetes
+ *                        mellitus (DM)", "Dyslipidemia", "Obesity").
+ *                        Replaced WHO ICD-10 chapter (`category`) as
+ *                        the parent grouping — diseases are far more
+ *                        actionable than chapter names.
  *   icd_description    — chronic ICD subcategory / condition name
+ *                        (the leaf grouping under each disease)
  *   status             — 'Chronic' / 'Acute or Chronic' / 'Acute' /
  *                        'Not Applicable' (used directly for chronic
  *                        filtering, no description regex)
@@ -36,10 +41,17 @@ const DIAG_TABLE = "aggregated_table.agg_diagnosis";
 // landed. "Acute or Chronic" rolls up into chronic per product.
 const CHRONIC_CASE = `(LOWER(d.status) IN ('chronic', 'acute or chronic'))`;
 
-// Native parent category — was a regex switch on icd_description before
-// the new schema landed. Wrap in COALESCE so NULL/empty rows still
-// land in a valid bucket.
-const CATEGORY_CASE = `COALESCE(NULLIF(TRIM(d.category), ''), 'Other')`;
+// Master disease bucket. Sourced from the `disease` column on
+// agg_diagnosis (populated upstream by joining icd_code against
+// aggregated_table.chronic_icd). Wrap in COALESCE so NULL/empty rows
+// still land in a valid bucket.
+//
+// NOTE: identifier kept as CATEGORY_CASE for blast radius — the JSON
+// response keys (`categories`, `categoryTreemap`, `conditionsByCategory`,
+// etc.) and page state names still use the word "category" but the
+// values now flow from `d.disease`. UI copy refers to these as
+// "diseases" / "disease groups".
+const CATEGORY_CASE = `COALESCE(NULLIF(TRIM(d.disease), ''), 'Other')`;
 
 const AGE_GROUP_CASE = `CASE
   WHEN d.age < 20 THEN '<20'

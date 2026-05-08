@@ -832,18 +832,18 @@ export default function HealthInsightsPage() {
         pageSubtitle="Chronic diagnosis patterns and condition trends"
         kpis={{}}
         fallbackSummary={categoryTreemap.length > 0
-          ? `${displayCat(categoryTreemap[0]?.name || "")} is the biggest chronic-care category — ${formatNum(categoryTreemap[0]?.value || 0)} visits, about ${categoryTreemap[0]?.percentage || 0}% of all chronic visits across ${categories.length} categories. ${formatNum(ca.chronicPatients || 0)} different employees are living with at least one chronic condition.`
+          ? `${displayCat(categoryTreemap[0]?.name || "")} is the biggest chronic disease — ${formatNum(categoryTreemap[0]?.value || 0)} visits, about ${categoryTreemap[0]?.percentage || 0}% of all chronic visits across ${categories.length} diseases. ${formatNum(ca.chronicPatients || 0)} different employees are living with at least one chronic condition.`
           : "Patterns in chronic diagnoses and how conditions trend over time."}
         fallbackChips={categoryTreemap.length > 0 ? [
-          { label: "Top Chronic Category", value: displayCat(categoryTreemap[0]?.name || "—") },
+          { label: "Top Chronic Disease", value: displayCat(categoryTreemap[0]?.name || "—") },
           { label: "Total Chronic Diagnosis", value: formatNum(categoryTreemap.reduce((s: number, c: any) => s + c.value, 0)) },
           { label: "Chronic Patients", value: formatNum(ca.chronicPatients || 0) },
-          { label: "ICD Categories", value: String(categories.length) },
+          { label: "Chronic Diseases", value: String(categories.length) },
         ] : [
-          { label: "Top Chronic Category", value: "—" },
+          { label: "Top Chronic Disease", value: "—" },
           { label: "Total Chronic Diagnosis", value: "0" },
           { label: "Chronic Patients", value: "0" },
-          { label: "ICD Categories", value: "0" },
+          { label: "Chronic Diseases", value: "0" },
         ]}
       />
 
@@ -885,12 +885,12 @@ export default function HealthInsightsPage() {
               insight="Repeat chronic visits indicate patients actively engaged in care — a signal of programme effectiveness"
             />
             <StatCard
-              label="ICD Categories"
+              label="Chronic Diseases"
               value={chronicIcdCategories}
               color="#7c3aed"
-              sub="Tracked chronic ICD categories"
-              tooltip="Number of distinct chronic ICD categories with at least one diagnosis in the selected period"
-              insight="Wide chronic category coverage suggests broad disease burden; narrow coverage points to a focused cohort"
+              sub="Tracked chronic diseases"
+              tooltip="Number of distinct chronic diseases with at least one diagnosis in the selected period"
+              insight="Wide chronic disease coverage suggests broad disease burden; narrow coverage points to a focused cohort"
             />
           </div>
         );
@@ -900,7 +900,7 @@ export default function HealthInsightsPage() {
       {isChartVisible("diseaseLandscape") && <WarmSection>
         <AccentBar color="#4f46e5" colorEnd="#6366f1" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Disease Landscape</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top 5 chronic condition categories by diagnosis count, plus an Others bucket for the remaining categories</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top 5 chronic diseases by diagnosis count, plus an Others bucket for the remaining diseases</p>
 
         {/* 5 top-category cards + 1 "Others" rollup card.
             Warehouse already emits a literal "Other" category — keep it
@@ -938,12 +938,12 @@ export default function HealthInsightsPage() {
               <div
                 className="bg-white px-5 py-4 transition-all duration-200 rounded-2xl flex flex-col gap-1"
                 style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow, opacity: tail.length > 0 ? 1 : 0.6 }}
-                title={tail.length > 0 ? `${tail.length} categories: ${tail.map((c: any) => displayCat(c.name)).join(", ")}` : "No additional categories"}
+                title={tail.length > 0 ? `${tail.length} diseases: ${tail.map((c: any) => displayCat(c.name)).join(", ")}` : "No additional diseases"}
               >
                 <p className="text-[11px] font-bold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>Others</p>
                 <p className="text-[28px] font-extrabold tracking-[-0.025em] leading-none" style={{ color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{formatNum(othersValue)}</p>
                 <p className="text-[12px] font-semibold" style={{ color: "#94a3b8" }}>{othersPct}% of total</p>
-                <p className="text-[11px]" style={{ color: T.textSecondary }}>{tail.length > 0 ? `${tail.length} more categor${tail.length === 1 ? "y" : "ies"} · ${formatNum(othersUnique)} unique patients` : "No additional categories"}</p>
+                <p className="text-[11px]" style={{ color: T.textSecondary }}>{tail.length > 0 ? `${tail.length} more disease${tail.length === 1 ? "" : "s"} · ${formatNum(othersUnique)} unique patients` : "No additional diseases"}</p>
               </div>
             </div>
           );
@@ -955,7 +955,7 @@ export default function HealthInsightsPage() {
       {isChartVisible("categoryBreakdown") && <WarmSection>
         <AccentBar color="#6366f1" colorEnd="#818cf8" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Category Breakdown</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>ICD category distribution and condition-level breakdown for the selected category</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Disease distribution and condition-level breakdown for the selected disease</p>
       {/* ── ICD Category Treemap + Condition Treemap (50/50) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ICD Category Distribution Treemap — same styling as Repeat Patients
@@ -965,12 +965,12 @@ export default function HealthInsightsPage() {
         <div>
           <CVCard
             accentColor="#4f46e5"
-            title="ICD Category Distribution"
-            subtitle="Diagnosis Count vs. Unique UHIDs per chronic ICD category — scroll for the full list. Click any category to drill into its conditions →"
-            tooltipText="Horizontal grouped bar chart of all chronic ICD categories. Indigo bar = diagnosis count, teal bar = unique UHIDs. Sorted by diagnosis volume; scroll vertically for the full list. Click a category to drill it into the right panel."
+            title="Chronic Disease Distribution"
+            subtitle="Diagnosis Count vs. Unique UHIDs per chronic disease — scroll for the full list. Click any disease to drill into its conditions →"
+            tooltipText="Horizontal grouped bar chart of all chronic diseases. Indigo bar = diagnosis count, teal bar = unique UHIDs. Sorted by diagnosis volume; scroll vertically for the full list. Click a disease to drill it into the right panel."
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
-            chartDescription="Grouped horizontal bars: diagnosis count vs. unique UHIDs per chronic ICD category"
+            chartDescription="Grouped horizontal bars: diagnosis count vs. unique UHIDs per chronic disease"
           >
             {(() => {
               const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
@@ -997,7 +997,7 @@ export default function HealthInsightsPage() {
                       label row vs. the number row, causing misalignment). */}
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="grid grid-cols-3 gap-x-5 gap-y-0.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Categories</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Diseases</p>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Consults</p>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Unique UHIDs</p>
                       <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{sorted.length}</p>
@@ -1005,7 +1005,7 @@ export default function HealthInsightsPage() {
                       <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(totalUhids)}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Top Category</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Top Disease</p>
                       <p className="text-[13px] font-extrabold leading-tight truncate max-w-[220px] mt-1" style={{ color: COLOR_CONSULTS }}>
                         {dominant ? displayCat(dominant.name) : "—"}
                         <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
@@ -1104,7 +1104,7 @@ export default function HealthInsightsPage() {
                     </div>
                   </div>
                   {categoryTreemap.length > 0 && (
-                    <InsightBox text={`${sorted.length} chronic categories in total. The biggest is ${displayCat(dominant?.name || "")} — ${formatNum(dominant?.value || 0)} visits (${dominantPct}% of all chronic visits) from ${formatNum(dominant?.uniquePatients || 0)} different employees. Indigo bars are total visits; teal bars are unique people. A big gap between them means the same people are coming back many times.`} />
+                    <InsightBox text={`${sorted.length} chronic diseases in total. The biggest is ${displayCat(dominant?.name || "")} — ${formatNum(dominant?.value || 0)} visits (${dominantPct}% of all chronic visits) from ${formatNum(dominant?.uniquePatients || 0)} different employees. Indigo bars are total visits; teal bars are unique people. A big gap between them means the same people are coming back many times.`} />
                   )}
                 </div>
               );
@@ -1121,11 +1121,11 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#6366f1"
             title="Condition Share Distribution"
-            subtitle="Every chronic ICD category — click a row to expand its subcategory breakdown with diagnosis count and unique UHIDs"
-            tooltipText="Table of all chronic ICD categories with diagnosis count and unique UHIDs per row. Click the chevron on any row to expand and see every ICD subcategory inside it with the same two metrics."
+            subtitle="Every chronic disease — click a row to expand the ICD condition breakdown with diagnosis count and unique UHIDs"
+            tooltipText="Table of all chronic diseases with diagnosis count and unique UHIDs per row. Click the chevron on any row to expand and see every specific ICD condition inside it with the same two metrics."
             chartId="conditionShareDistribution"
             chartData={categoryTreemap}
-            chartDescription="Expandable table of chronic ICD categories and their subcategories"
+            chartDescription="Expandable table of chronic diseases and their ICD conditions"
           >
             {categoryTreemap.length > 0 ? (() => {
               const sortedCats = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
@@ -1143,7 +1143,7 @@ export default function HealthInsightsPage() {
                   {/* Hero strip — totals + expanded count */}
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="grid grid-cols-3 gap-x-5 gap-y-0.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Categories</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Diseases</p>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Consults</p>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Unique UHIDs</p>
                       <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{sortedCats.length}</p>
@@ -1169,7 +1169,7 @@ export default function HealthInsightsPage() {
                     {/* Header row */}
                     <div className="grid items-center px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: "24px 1fr 110px 110px", background: "#F5F6FA", color: T.textMuted, borderBottom: `1px solid ${T.borderLight}` }}>
                       <span />
-                      <span>Category</span>
+                      <span>Disease</span>
                       <span className="text-right">Consults</span>
                       <span className="text-right">Unique UHIDs</span>
                     </div>
@@ -1200,7 +1200,7 @@ export default function HealthInsightsPage() {
                             {isOpen && (
                               <div style={{ background: "#FBFBFE", borderBottom: `1px solid ${T.borderLight}` }}>
                                 {subs.length === 0 ? (
-                                  <p className="px-9 py-3 text-[11.5px]" style={{ color: T.textMuted }}>No subcategories recorded for this category in the selected window.</p>
+                                  <p className="px-9 py-3 text-[11.5px]" style={{ color: T.textMuted }}>No ICD conditions recorded for this disease in the selected window.</p>
                                 ) : (
                                   subs.map((s) => (
                                     <div
@@ -1222,12 +1222,12 @@ export default function HealthInsightsPage() {
                       })}
                     </div>
                   </div>
-                  <InsightBox text={`${sortedCats.length} chronic categories listed. Click any row to expand it and see every specific condition (subcategory) inside, with how many visits they got and how many different people had them.`} />
+                  <InsightBox text={`${sortedCats.length} chronic diseases listed. Click any row to expand it and see every specific ICD condition inside, with how many visits they got and how many different people had them.`} />
                 </div>
               );
             })() : (
               <div className="flex-1 flex items-center justify-center text-[13px]" style={{ color: T.textMuted, minHeight: 320 }}>
-                No category data available
+                No disease data available
               </div>
             )}
           </CVCard>
@@ -1244,7 +1244,7 @@ export default function HealthInsightsPage() {
       <CVCard
         accentColor="#0d9488"
         title="Condition & Demographic Insights"
-        subtitle="Explore how each chronic condition within your selected ICD Category is distributed across demographic segments."
+        subtitle="Explore how each chronic condition within your selected disease is distributed across demographic segments."
         tooltipText="Heatmap matrix showing chronic-condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination. Acute diagnoses are excluded."
         chartId="demographicAnalysis"
         chartData={demoMatrix}
@@ -1302,7 +1302,7 @@ export default function HealthInsightsPage() {
                             <p className="font-bold">Condition: {displaySub(row.condition)}</p>
                             <p>Demographic: {demoSegments[i]}</p>
                             <p>Consults: {formatNum(val)}</p>
-                            <p>% of ICD Category: {row.total > 0 ? Math.round(val / row.total * 100) : 0}%</p>
+                            <p>% of Disease: {row.total > 0 ? Math.round(val / row.total * 100) : 0}%</p>
                           </TooltipContent>
                         </Tooltip>
                       </td>
@@ -1314,7 +1314,7 @@ export default function HealthInsightsPage() {
             </table>
           </div>
         ) : (
-          <div className="py-10 text-center text-[13px]" style={{ color: T.textMuted }}>Select a category to view demographic breakdown</div>
+          <div className="py-10 text-center text-[13px]" style={{ color: T.textMuted }}>Select a disease to view demographic breakdown</div>
         )}
 
         {/* Insights */}
@@ -1427,7 +1427,7 @@ export default function HealthInsightsPage() {
                   </button>
                 ))}
                 {subs.length === 0 && (
-                  <span className="text-[11px]" style={{ color: T.textMuted }}>No subcategories recorded for this category in the selected window.</span>
+                  <span className="text-[11px]" style={{ color: T.textMuted }}>No ICD conditions recorded for this disease in the selected window.</span>
                 )}
               </div>
             </div>
@@ -1502,7 +1502,7 @@ export default function HealthInsightsPage() {
               </ResponsiveContainer>
             ) : (
               <div className="flex items-center justify-center h-full text-[13px]" style={{ color: T.textMuted }}>
-                Select a category and condition to view trends
+                Select a disease and condition to view trends
               </div>
             )}
           </div>
@@ -1521,12 +1521,12 @@ export default function HealthInsightsPage() {
       {/* ── Co-Occurrence Venn (full width) ── */}
       <CVCard
           accentColor="#7c3aed"
-          title="Chronic Category Co-Occurrence"
-          subtitle="Pick up to 3 chronic ICD categories — the venn shows unique-UHID overlap, with an age + gender breakdown of patients carrying ALL selected categories"
-          tooltipText="Multi-select chronic ICD parent categories (cap 3). Circles in the venn diagram are sized by the unique UHID count of each category; overlap regions show how many patients carry the intersecting set. The panel beside it breaks down the all-overlap intersection by age group and gender."
+          title="Chronic Disease Co-Occurrence"
+          subtitle="Pick up to 3 chronic diseases — the venn shows unique-UHID overlap, with an age + gender breakdown of patients carrying ALL selected diseases"
+          tooltipText="Multi-select chronic diseases (cap 3). Circles in the venn diagram are sized by the unique UHID count of each disease; overlap regions show how many patients carry the intersecting set. The panel beside it breaks down the all-overlap intersection by age group and gender."
           chartId="coOccurrence"
           chartData={coOccApi?.coOccurrenceVenn}
-          chartDescription="Venn diagram of unique UHID overlap across selected chronic ICD categories with age + gender breakdown of the intersection"
+          chartDescription="Venn diagram of unique UHID overlap across selected chronic diseases with age + gender breakdown of the intersection"
           headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={coOccYear} onChange={setCoOccYear} includeAll /><ResetFilter visible={coOccYear !== 2025} onClick={() => setCoOccYear(2025)} /></div>}
         >
           {(() => {
@@ -1595,7 +1595,7 @@ export default function HealthInsightsPage() {
                     className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-[13px] font-medium hover:border-gray-300 transition-colors"
                     style={{ borderColor: T.border, color: T.textPrimary, background: T.white }}
                   >
-                    Categories
+                    Diseases
                     <span className="ml-0.5 h-[18px] min-w-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: "#7c3aed" }}>
                       {coOccCats.length}/{cap}
                     </span>
@@ -1648,7 +1648,7 @@ export default function HealthInsightsPage() {
                   <div className="rounded-xl border p-4" style={{ borderColor: T.borderLight, background: "#FAFBFD" }}>
                     {N === 0 ? (
                       <div className="h-[300px] flex flex-col items-center justify-center text-center text-[13px] gap-2" style={{ color: T.textMuted }}>
-                        <p className="font-semibold" style={{ color: T.textSecondary }}>Pick at least 2 chronic ICD categories</p>
+                        <p className="font-semibold" style={{ color: T.textSecondary }}>Pick at least 2 chronic diseases</p>
                         <p className="text-[11.5px]">Selections appear as overlapping circles sized by unique UHID count.</p>
                       </div>
                     ) : (
@@ -1680,7 +1680,7 @@ export default function HealthInsightsPage() {
                           ))}
                         </div>
                         <div className="mt-2 text-[11px] tabular-nums" style={{ color: T.textMuted }}>
-                          {N >= 2 ? <>Patients in <strong style={{ color: T.textPrimary }}>all {N}</strong> selected: <strong style={{ color: "#7c3aed" }}>{formatNum(intersection)}</strong> of <strong style={{ color: T.textPrimary }}>{formatNum(totalUhids)}</strong> total</> : <>Single-category view — pick another to see overlap.</>}
+                          {N >= 2 ? <>Patients in <strong style={{ color: T.textPrimary }}>all {N}</strong> selected: <strong style={{ color: "#7c3aed" }}>{formatNum(intersection)}</strong> of <strong style={{ color: T.textPrimary }}>{formatNum(totalUhids)}</strong> total</> : <>Single-disease view — pick another to see overlap.</>}
                         </div>
                       </div>
                     )}
@@ -1690,7 +1690,7 @@ export default function HealthInsightsPage() {
                   <div className="rounded-xl border p-4" style={{ borderColor: T.borderLight, background: T.white }}>
                     <p className="text-[11px] font-bold uppercase tracking-[0.06em] mb-1" style={{ color: T.textMuted }}>Intersection demographics</p>
                     <p className="text-[12px] mb-3" style={{ color: T.textSecondary }}>
-                      {N >= 2 ? <>Patients carrying <strong style={{ color: T.textPrimary }}>all {N}</strong> selected categories</> : "Pick 2+ categories to see the breakdown"}
+                      {N >= 2 ? <>Patients carrying <strong style={{ color: T.textPrimary }}>all {N}</strong> selected diseases</> : "Pick 2+ diseases to see the breakdown"}
                     </p>
                     {N >= 2 && intersection > 0 ? (
                       <>
@@ -1734,12 +1734,12 @@ export default function HealthInsightsPage() {
                       </>
                     ) : (
                       <div className="text-[12px] py-8 text-center" style={{ color: T.textMuted }}>
-                        {N >= 2 ? "No patients carry all selected categories." : "—"}
+                        {N >= 2 ? "No patients carry all selected diseases." : "—"}
                       </div>
                     )}
                   </div>
                 </div>
-                <InsightBox text="Pick up to three chronic categories from the dropdown to compare them. Each circle's size is how many different people have that condition. Where the circles overlap shows people who have all of them at once. The panel on the right tells you the age and gender of those overlap patients — handy for designing programmes that target multiple conditions together." />
+                <InsightBox text="Pick up to three chronic diseases from the dropdown to compare them. Each circle's size is how many different people have that disease. Where the circles overlap shows people who have all of them at once. The panel on the right tells you the age and gender of those overlap patients — handy for designing programmes that target multiple diseases together." />
               </div>
             );
           })()}
@@ -1751,7 +1751,7 @@ export default function HealthInsightsPage() {
       {isChartVisible("seasonalPatterns") && <WarmSection>
         <AccentBar color="#0d9488" colorEnd="#14b8a6" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Monthly Patterns</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top chronic ICD parent categories per month, with diagnosis counts</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top chronic diseases per month, with diagnosis counts</p>
       {/* ── Monthly Condition Patterns (calendar grid) ── */}
       {(() => {
         // Build per-month data for the selected year from seasonalTrends
@@ -1789,11 +1789,11 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#0d9488"
             title="Monthly Condition Patterns"
-            subtitle="Each month shows the top 3 chronic ICD parent categories by diagnosis count for the selected year."
+            subtitle="Each month shows the top 3 chronic diseases by diagnosis count for the selected year."
             tooltipText="12-month calendar grid showing the top 3 chronic ICD parent categories per month with season-colored backgrounds. Useful for spotting cyclical demand on specific care areas."
             chartId="seasonalPatterns"
             chartData={monthData}
-            chartDescription="Top chronic ICD parent categories per month with diagnosis counts"
+            chartDescription="Top chronic diseases per month with diagnosis counts"
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
           >
             <div className="overflow-x-auto">

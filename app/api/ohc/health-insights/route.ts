@@ -7,9 +7,15 @@ import { withCache } from "@/lib/cache/middleware";
  * OHC Health Insights API — sourced from aggregated_table.agg_diagnosis
  * (the freshly prepared chronic-aware fact table).
  *
- * Columns we use: cug_code_mapped, g_creation_time, slotstarttime,
- * facility_mapping, uhid, age, patient_gender, status, category,
- * icd_code, icd_description, treating_doctor_speciality, encounter_id.
+ * Columns we use: cug_code_mapped, last_diagnosis_date,
+ * first_diagnosis_date, facility_mapping, uhid, age, patient_gender,
+ * status, category, icd_code, icd_description, total_diagnosis_records,
+ * encounter_count.
+ *
+ * Row grain: ONE row per (uhid × icd_code). total_diagnosis_records is
+ * the visit count for that combo, encounter_count is the distinct
+ * encounter count. So "total consults" must come from
+ * SUM(total_diagnosis_records), NOT COUNT(*).
  *
  * Key column semantics (per product):
  *   uhid               — unique patient identifier
@@ -64,15 +70,15 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   let idx = 2;
 
   if (year && /^\d{4}$/.test(year)) {
-    where.push(`EXTRACT(YEAR FROM d.g_creation_time) = ${Number(year)}`);
+    where.push(`EXTRACT(YEAR FROM d.last_diagnosis_date) = ${Number(year)}`);
   }
   if (dateFrom) {
-    where.push(`d.g_creation_time >= $${idx}::timestamp`);
+    where.push(`d.last_diagnosis_date >= $${idx}::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    where.push(`d.g_creation_time <= ($${idx}::date + interval '1 day')::timestamp`);
+    where.push(`d.last_diagnosis_date <= ($${idx}::date + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
@@ -177,12 +183,13 @@ async function handler(request: NextRequest) {
       seasonalRows,
       seasonalTrendsRows,
     ] = await Promise.all([
-      // 1) categoryTreemap — counts per derived category
+      // 1) categoryTreemap — visit counts per category. SUM the row's
+      //    total_diagnosis_records since each row is one (uhid, icd) combo.
       safeQuery(
         () => dwQuery<{ category: string; count: string; patients: string }>(
           `SELECT
              ${CATEGORY_CASE} AS category,
-             COUNT(*)::bigint AS count,
+             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -198,7 +205,7 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ name: string; count: string; patients: string }>(
           `SELECT
              d.icd_description AS name,
-             COUNT(*)::bigint AS count,
+             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -220,7 +227,7 @@ async function handler(request: NextRequest) {
           `SELECT
              ${CATEGORY_CASE} AS category,
              d.icd_description  AS name,
-             COUNT(*)::bigint   AS count,
+             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -240,8 +247,8 @@ async function handler(request: NextRequest) {
           `WITH per_uhid AS (
             SELECT
               d.uhid,
-              COUNT(*) FILTER (WHERE ${CHRONIC_CASE})::bigint AS chronic_rows,
-              COUNT(*) FILTER (WHERE NOT ${CHRONIC_CASE})::bigint AS acute_rows,
+              COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE ${CHRONIC_CASE}), 0)::bigint AS chronic_rows,
+              COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE NOT ${CHRONIC_CASE}), 0)::bigint AS acute_rows,
               BOOL_OR(${CHRONIC_CASE}) AS has_chronic,
               BOOL_OR(NOT ${CHRONIC_CASE}) AS has_acute
             FROM ${DIAG_TABLE} d
@@ -272,7 +279,8 @@ async function handler(request: NextRequest) {
               ${AGE_GROUP_CASE} AS age_bucket,
               ${GENDER_NORM} AS gender_bucket,
               COALESCE(NULLIF(TRIM(d.facility_mapping), ''), 'Unknown') AS loc_bucket,
-              d.age
+              d.age,
+              d.total_diagnosis_records AS visits
             FROM ${DIAG_TABLE} d
             WHERE ${q.where}
               AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -282,15 +290,15 @@ async function handler(request: NextRequest) {
               AND ${CHRONIC_CASE}
               ${demoExtraFilter}
           )
-          SELECT 'age' AS dim, key, age_bucket AS bucket, COUNT(*)::bigint AS count
+          SELECT 'age' AS dim, key, age_bucket AS bucket, COALESCE(SUM(visits), 0)::bigint AS count
           FROM base WHERE age IS NOT NULL AND age_bucket IS NOT NULL
           GROUP BY 1, 2, 3
           UNION ALL
-          SELECT 'gender' AS dim, key, gender_bucket AS bucket, COUNT(*)::bigint AS count
+          SELECT 'gender' AS dim, key, gender_bucket AS bucket, COALESCE(SUM(visits), 0)::bigint AS count
           FROM base WHERE gender_bucket IS NOT NULL
           GROUP BY 1, 2, 3
           UNION ALL
-          SELECT 'location' AS dim, key, loc_bucket AS bucket, COUNT(*)::bigint AS count
+          SELECT 'location' AS dim, key, loc_bucket AS bucket, COALESCE(SUM(visits), 0)::bigint AS count
           FROM base
           GROUP BY 1, 2, 3`,
           demoExtraParams,
@@ -377,17 +385,16 @@ async function handler(request: NextRequest) {
         ),
         "diseaseCombinations"
       ),
-      // 7) years dropdown — derived from MIN/MAX(g_creation_time) for the
-      //    cug. `SELECT DISTINCT EXTRACT(YEAR ...)` was forcing a full
-      //    sequential scan of the 80M-row fact table; MIN/MAX uses the
-      //    cug index and returns in sub-second.
+      // 7) years dropdown — derived from MIN/MAX(last_diagnosis_date) for
+      //    the cug. MIN/MAX is much cheaper than `SELECT DISTINCT EXTRACT(YEAR ...)`
+      //    on the agg_diagnosis fact table.
       safeQuery(
         () => dwQuery<{ min_y: number | null; max_y: number | null }>(
           `SELECT
-             EXTRACT(YEAR FROM MIN(d.g_creation_time))::int AS min_y,
-             EXTRACT(YEAR FROM MAX(d.g_creation_time))::int AS max_y
+             EXTRACT(YEAR FROM MIN(d.last_diagnosis_date))::int AS min_y,
+             EXTRACT(YEAR FROM MAX(d.last_diagnosis_date))::int AS max_y
            FROM ${DIAG_TABLE} d
-           WHERE d.cug_code_mapped = $1 AND d.g_creation_time IS NOT NULL`,
+           WHERE d.cug_code_mapped = $1 AND d.last_diagnosis_date IS NOT NULL`,
           [cugCode],
           HEAVY_OPTS
         ),
@@ -412,8 +419,8 @@ async function handler(request: NextRequest) {
       // these monthly buckets, so a single AND keeps both consistent).
       safeQuery(
         () => dwQuery<{ period: string; count: string; unique_patients: string }>(
-          `SELECT to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
-                  COUNT(*)::bigint AS count,
+          `SELECT to_char(date_trunc('month', d.last_diagnosis_date), 'YYYY-MM') AS period,
+                  COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
                   COUNT(DISTINCT d.uhid)::bigint AS unique_patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where}
@@ -434,12 +441,12 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ seasonal_count: string; seasonal_patients: string; non_seasonal_count: string; non_seasonal_patients: string }>(
           `SELECT
-             COUNT(*) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) BETWEEN 3 AND 8)::bigint AS seasonal_count,
-             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) BETWEEN 3 AND 8)::bigint AS seasonal_patients,
-             COUNT(*) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) NOT BETWEEN 3 AND 8)::bigint AS non_seasonal_count,
-             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) NOT BETWEEN 3 AND 8)::bigint AS non_seasonal_patients
+             COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) BETWEEN 3 AND 8), 0)::bigint AS seasonal_count,
+             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) BETWEEN 3 AND 8)::bigint AS seasonal_patients,
+             COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) NOT BETWEEN 3 AND 8), 0)::bigint AS non_seasonal_count,
+             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) NOT BETWEEN 3 AND 8)::bigint AS non_seasonal_patients
            FROM ${DIAG_TABLE} d
-           WHERE ${q.where} AND d.g_creation_time IS NOT NULL`,
+           WHERE ${q.where} AND d.last_diagnosis_date IS NOT NULL`,
           q.params,
           HEAVY_OPTS
         ),
@@ -454,13 +461,13 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ name: string; period: string; count: string }>(
           `SELECT
              ${CATEGORY_CASE} AS name,
-             to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
-             COUNT(*)::bigint AS count
+             to_char(date_trunc('month', d.last_diagnosis_date), 'YYYY-MM') AS period,
+             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count
            FROM ${DIAG_TABLE} d
            WHERE ${q.where}
              AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
              AND ${CHRONIC_CASE}
-             AND d.g_creation_time IS NOT NULL
+             AND d.last_diagnosis_date IS NOT NULL
            GROUP BY 1, 2
            ORDER BY 1, 2`,
           q.params,

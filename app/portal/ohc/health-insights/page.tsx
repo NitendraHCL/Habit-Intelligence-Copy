@@ -864,7 +864,7 @@ export default function HealthInsightsPage() {
               label="Total Chronic Diagnosis"
               value={formatNum(totalChronicDiagnoses)}
               color="#4f46e5"
-              sub="Total chronic consult count"
+              sub="Total chronic diagnosis count"
               tooltip="Total number of chronic diagnosis consults recorded in the selected period"
               insight="Tracks the volume of chronic-condition encounters — a rising count signals growing long-term care load"
             />
@@ -900,7 +900,7 @@ export default function HealthInsightsPage() {
       {isChartVisible("diseaseLandscape") && <WarmSection>
         <AccentBar color="#4f46e5" colorEnd="#6366f1" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Disease Landscape</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top 5 chronic condition categories by consult count, plus an Others bucket for the remaining categories</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top 5 chronic condition categories by diagnosis count, plus an Others bucket for the remaining categories</p>
 
         {/* 5 top-category cards + 1 "Others" rollup card.
             Warehouse already emits a literal "Other" category — keep it
@@ -966,11 +966,11 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#4f46e5"
             title="ICD Category Distribution"
-            subtitle="Consult Count vs. Unique UHIDs per chronic ICD category — scroll for the full list. Click any category to drill into its conditions →"
-            tooltipText="Horizontal grouped bar chart of all chronic ICD categories. Indigo bar = consult count, teal bar = unique UHIDs. Sorted by consult volume; scroll vertically for the full list. Click a category to drill it into the right panel."
+            subtitle="Diagnosis Count vs. Unique UHIDs per chronic ICD category — scroll for the full list. Click any category to drill into its conditions →"
+            tooltipText="Horizontal grouped bar chart of all chronic ICD categories. Indigo bar = diagnosis count, teal bar = unique UHIDs. Sorted by diagnosis volume; scroll vertically for the full list. Click a category to drill it into the right panel."
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
-            chartDescription="Grouped horizontal bars: consult count vs. unique UHIDs per chronic ICD category"
+            chartDescription="Grouped horizontal bars: diagnosis count vs. unique UHIDs per chronic ICD category"
           >
             {(() => {
               const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
@@ -1014,7 +1014,7 @@ export default function HealthInsightsPage() {
                   </div>
                   {/* Legend chips */}
                   <div className="flex items-center gap-4 mb-2 text-[11px]" style={{ color: T.textSecondary }}>
-                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_CONSULTS }} /> Consult Count</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_CONSULTS }} /> Diagnosis Count</span>
                     <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_UHIDS }} /> Unique UHIDs</span>
                   </div>
                   {/* Scrollable vertical grouped bar chart — width grows with
@@ -1077,7 +1077,7 @@ export default function HealthInsightsPage() {
                             },
                             series: [
                               {
-                                name: "Consult Count",
+                                name: "Diagnosis Count",
                                 type: "bar",
                                 data: consults,
                                 itemStyle: { color: COLOR_CONSULTS, borderRadius: [4, 4, 0, 0] },
@@ -1121,8 +1121,8 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#6366f1"
             title="Condition Share Distribution"
-            subtitle="Every chronic ICD category — click a row to expand its subcategory breakdown with consult count and unique UHIDs"
-            tooltipText="Table of all chronic ICD categories with consult count and unique UHIDs per row. Click the chevron on any row to expand and see every ICD subcategory inside it with the same two metrics."
+            subtitle="Every chronic ICD category — click a row to expand its subcategory breakdown with diagnosis count and unique UHIDs"
+            tooltipText="Table of all chronic ICD categories with diagnosis count and unique UHIDs per row. Click the chevron on any row to expand and see every ICD subcategory inside it with the same two metrics."
             chartId="conditionShareDistribution"
             chartData={categoryTreemap}
             chartDescription="Expandable table of chronic ICD categories and their subcategories"
@@ -1751,7 +1751,7 @@ export default function HealthInsightsPage() {
       {isChartVisible("seasonalPatterns") && <WarmSection>
         <AccentBar color="#0d9488" colorEnd="#14b8a6" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Monthly Patterns</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top chronic ICD parent categories per month, with consult counts</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top chronic ICD parent categories per month, with diagnosis counts</p>
       {/* ── Monthly Condition Patterns (calendar grid) ── */}
       {(() => {
         // Build per-month data for the selected year from seasonalTrends
@@ -1789,11 +1789,11 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#0d9488"
             title="Monthly Condition Patterns"
-            subtitle="Each month shows the top 3 chronic ICD parent categories by consult count for the selected year."
+            subtitle="Each month shows the top 3 chronic ICD parent categories by diagnosis count for the selected year."
             tooltipText="12-month calendar grid showing the top 3 chronic ICD parent categories per month with season-colored backgrounds. Useful for spotting cyclical demand on specific care areas."
             chartId="seasonalPatterns"
             chartData={monthData}
-            chartDescription="Top chronic ICD parent categories per month with consult counts"
+            chartDescription="Top chronic ICD parent categories per month with diagnosis counts"
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
           >
             <div className="overflow-x-auto">

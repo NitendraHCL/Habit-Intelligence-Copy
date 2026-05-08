@@ -937,8 +937,8 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               ? `Year-over-year change in total consults — compares the most recent year against the year before. ▲ green = growth, ▼ red = decline. Shows "—" when only one year is in range.`
               : `Month-over-month change in total consults — compares the latest month against the month before. ▲ green = growth, ▼ red = decline. Shows "—" when only one month is in range.`;
             const peakTip = trendView === "year"
-              ? `The single year with the highest total consult count in the current filter window. Useful for spotting outlier years driven by campaigns, incidents, or seasonality.`
-              : `The single month with the highest total consult count in the current filter window. Helps spot demand spikes (e.g., post-appraisal cycles, exam stress windows).`;
+              ? `The single year with the highest total diagnosis count in the current filter window. Useful for spotting outlier years driven by campaigns, incidents, or seasonality.`
+              : `The single month with the highest total diagnosis count in the current filter window. Helps spot demand spikes (e.g., post-appraisal cycles, exam stress windows).`;
 
             return (
               <div className="grid grid-cols-3 gap-3 mb-4 mt-1">

@@ -262,7 +262,11 @@ function ActiveFilterChips({
 // ─── Main Page ───
 export default function OHCUtilizationPage() {
   usePageAccess("/portal/ohc/utilization");
-  const { activeClientId } = useAuth();
+  const { activeClientId, activeClient } = useAuth();
+  // Per-tenant date floor for the Utilization page only. CISCO01's data
+  // before 2026-01-01 is not in scope, so the picker can't go earlier.
+  const dateMin = activeClient?.cugCode === "CISCO01" ? "2026-01-01" : undefined;
+  const dateMinTs = dateMin ? new Date(dateMin + "T00:00:00").getTime() : 0;
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = useChartVisibility("/portal/ohc/utilization", previewConfig);
@@ -328,6 +332,31 @@ export default function OHCUtilizationPage() {
     locations: [] as string[],
     relations: [] as string[],
   });
+
+  // Push the picker forward if the active tenant has a date floor
+  // (e.g. CISCO01 only has data from 2026-01-01). Runs once when
+  // activeClient resolves so existing draft + applied ranges that
+  // start earlier get bumped to the floor.
+  useEffect(() => {
+    if (!dateMinTs) return;
+    setDateRange((prev) => {
+      const fromTs = prev.from.getTime();
+      const toTs = prev.to.getTime();
+      if (fromTs >= dateMinTs && toTs >= dateMinTs) return prev;
+      const floor = new Date(dateMinTs);
+      const newTo = toTs < dateMinTs ? floor : prev.to;
+      return { from: floor, to: newTo };
+    });
+    setAppliedDateRange((prev) => {
+      const fromTs = prev.from.getTime();
+      const toTs = prev.to.getTime();
+      if (fromTs >= dateMinTs && toTs >= dateMinTs) return prev;
+      const floor = new Date(dateMinTs);
+      const newTo = toTs < dateMinTs ? floor : prev.to;
+      return { from: floor, to: newTo };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateMinTs]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -799,12 +828,15 @@ export default function OHCUtilizationPage() {
             <input
               type="date"
               value={format(dateRange.from, "yyyy-MM-dd")}
+              min={dateMin}
               max={format(dateRange.to, "yyyy-MM-dd")}
               onChange={(e) => {
                 const v = e.target.value;
                 if (!v) return;
-                const d = new Date(v + "T00:00:00");
+                let d = new Date(v + "T00:00:00");
                 if (isNaN(d.getTime())) return;
+                // Clamp to the tenant date floor if one is in effect.
+                if (dateMinTs && d.getTime() < dateMinTs) d = new Date(dateMinTs);
                 const to = d > dateRange.to ? d : dateRange.to;
                 setDateRange({ from: d, to });
               }}
@@ -818,12 +850,19 @@ export default function OHCUtilizationPage() {
             <input
               type="date"
               value={format(dateRange.to, "yyyy-MM-dd")}
-              min={format(dateRange.from, "yyyy-MM-dd")}
+              min={
+                // End date must sit at or after both the tenant floor
+                // and the currently-picked start date.
+                dateMinTs && dateRange.from.getTime() < dateMinTs
+                  ? dateMin!
+                  : format(dateRange.from, "yyyy-MM-dd")
+              }
               onChange={(e) => {
                 const v = e.target.value;
                 if (!v) return;
-                const d = new Date(v + "T00:00:00");
+                let d = new Date(v + "T00:00:00");
                 if (isNaN(d.getTime())) return;
+                if (dateMinTs && d.getTime() < dateMinTs) d = new Date(dateMinTs);
                 const from = d < dateRange.from ? d : dateRange.from;
                 setDateRange({ from, to: d });
               }}

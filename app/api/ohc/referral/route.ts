@@ -4,30 +4,53 @@ import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
 /* ────────────────────────────────────────────────────────────────────
- * OHC Referral API — single-table fact model.
+ * OHC Referral API — two-table fact model.
  *
- * agg_appt_referral_conversion (BASE_TABLE) is the authoritative source
- * for every chart and KPI on /portal/ohc/referral. One row represents
- * a single referral path (uhid + appointment slot + speciality
- * referred_from + referred_to) with the native `conversion_status`
- * column set to "Converted" / "Not Converted".
+ *   agg_appt_referral_conversion (alias r — BASE_TABLE)
+ *     Dim-rich appointment-level fact. One row per
+ *     (uhid + slotstarttime + speciality_referred_from + referred_to).
+ *     Cols: uhid, slotstarttime, stage, facility_mapping,
+ *     cug_code_mapped, relationship, patient_gender, age,
+ *     speciality_referred_from, doctor_referred_from,
+ *     speciality_referred_to, doctor_referred_to, conversion_status.
+ *     Carries the only conversion flag on the warehouse, plus the
+ *     specialty / location / demographic dims.
  *
- *   Columns: uhid, slotstarttime, stage, facility_mapping,
- *   cug_code_mapped, relationship, patient_gender, age,
- *   speciality_referred_from, doctor_referred_from,
- *   speciality_referred_to, doctor_referred_to, conversion_status.
+ *   total_referrals (alias t — TOTAL_REFERRALS_TABLE)
+ *     Issuance log keyed by g_creation_time. SUM(total_referrals)
+ *     gives the true count of referrals issued. Schema is sparse —
+ *     only g_creation_time, cug_code_mapped, relationship,
+ *     total_referrals — so location / specialty / age / gender
+ *     filters can't be honored here (they're silently ignored for
+ *     queries that hit this table). Date + cug + relationship are the
+ *     only filters that apply.
  *
- * total_referrals (the second freshly created table) is a global
- * count-by-creation-time log with no cug_code column, so it can't be
- * filtered to a tenant. The dashboard is per-tenant, so it isn't used
- * here — every metric on this page derives from the dim-rich
- * agg_appt_referral_conversion fact table.
+ * Source per surface:
+ *   KPI Total Referrals          → total_referrals (SUM)
+ *   KPI Converted / Conv %       → agg (COUNT FILTER converted)
+ *   Trends total per period      → total_referrals (g_creation_time)
+ *   Trends conversions per period→ agg (slotstarttime, conv flag)
+ *   Specialty Conversion bars    → agg (only place with specialty)
+ *   Referral Matrix              → agg (specialty pairs)
+ *   Demographics                 → agg (age / gender)
+ *   Location × Specialty         → agg (facility / specialty)
  *
- * Stage filter: per product spec, "Completed", "Prescription Sent" and
- * "Re Open" are all considered completed appointments and counted.
+ * Stage filter on agg: per product spec, "Completed", "Prescription
+ * Sent" and "Re Open" all count as completed appointments.
+ *
+ * ⚠ Known semantic mismatch on HCLT001 (and likely all tenants):
+ *   - total_referrals.SUM(total_referrals) ≈ 203k for the default window
+ *   - agg COUNT(*) FILTER (conversion_status='Converted') ≈ 1.28M
+ *   This is because agg has ~6 rows per issued referral (one per
+ *   from-spec → to-spec combo) and `conversion_status` itself is
+ *   constant 'Converted' for every existing row. The displayed
+ *   "Conversion %" can therefore exceed 100%. A meaningful rate
+ *   requires either a real not-converted flag at issuance grain or a
+ *   redefinition of "conversion" — see PR / discussion.
  * ──────────────────────────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_appt_referral_conversion";
+const TOTAL_REFERRALS_TABLE = "aggregated_table.total_referrals";
 const COMPLETED = "r.stage IN ('Completed', 'Prescription Sent', 'Re Open')";
 
 const AGE_GROUP_CASE = `CASE
@@ -46,6 +69,28 @@ function normGender(g: string | null | undefined): "M" | "F" | "O" {
   if (l === "male" || l === "m") return "M";
   if (l === "female" || l === "f") return "F";
   return "O";
+}
+
+// total_referrals only carries g_creation_time + cug + relationship +
+// total_referrals — no specialty / location / age / gender. Filters that
+// don't exist on the table are silently dropped.
+function buildTotalRefWhere(searchParams: URLSearchParams, cugCode: string) {
+  const dateFrom = searchParams.get("dateFrom");
+  const dateTo = searchParams.get("dateTo");
+  const conditions: string[] = [`t.cug_code_mapped = $1`];
+  const params: unknown[] = [cugCode];
+  let idx = 2;
+  if (dateFrom) {
+    conditions.push(`t.g_creation_time >= $${idx}::timestamp`);
+    params.push(dateFrom);
+    idx++;
+  }
+  if (dateTo) {
+    conditions.push(`t.g_creation_time <= ($${idx}::date + interval '1 day')::timestamp`);
+    params.push(dateTo);
+    idx++;
+  }
+  return { params, where: conditions.join(" AND ") };
 }
 
 function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
@@ -111,6 +156,7 @@ async function handler(request: NextRequest) {
     }
 
     const q = buildQueryParts(searchParams, cugCode);
+    const t = buildTotalRefWhere(searchParams, cugCode);
 
     // Trend bucketing: ≤31-day windows group by day, otherwise by month.
     const dateFromParam = searchParams.get("dateFrom");
@@ -158,34 +204,58 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── KPIs ──
-    // Single query: total = COUNT(*), converted = COUNT(*) FILTER on
-    // the native conversion_status column.
-    const [kpiRows, [filterLocations, filterSpecialties]] = await Promise.all([
+    //   Total Referrals  → SUM(total_referrals) on the issuance log.
+    //   Converted Count  → COUNT(*) FILTER (conversion_status = 'Converted') on agg.
+    //   Conversion %     → converted / total × 100 (cross-table ratio:
+    //                       converted-events / referrals-issued).
+    const [totalRefRows, convertedRows, [filterLocations, filterSpecialties]] = await Promise.all([
       safeQuery(
-        () => dwQuery<{ total_referrals: string; converted_count: string }>(
-          `SELECT
-             COUNT(*)::bigint                                                  AS total_referrals,
-             COUNT(*) FILTER (WHERE r.conversion_status = 'Converted')::bigint AS converted_count
+        () => dwQuery<{ total_referrals: string }>(
+          `SELECT COALESCE(SUM(t.total_referrals), 0)::bigint AS total_referrals
+           FROM ${TOTAL_REFERRALS_TABLE} t
+           WHERE ${t.where}`,
+          t.params
+        ),
+        "kpiTotalReferrals"
+      ),
+      safeQuery(
+        () => dwQuery<{ converted_count: string }>(
+          `SELECT COUNT(*) FILTER (WHERE r.conversion_status = 'Converted')::bigint AS converted_count
            FROM ${BASE_TABLE} r
            WHERE ${q.where}`,
           q.params
         ),
-        "kpi"
+        "kpiConverted"
       ),
       filterPromise,
     ]);
-    const totalReferrals = Number(kpiRows[0]?.total_referrals || 0);
-    const convertedCount = Number(kpiRows[0]?.converted_count || 0);
+    const totalReferrals = Number(totalRefRows[0]?.total_referrals || 0);
+    const convertedCount = Number(convertedRows[0]?.converted_count || 0);
     const conversionPct = totalReferrals > 0 ? Math.round((convertedCount / totalReferrals) * 100) : 0;
 
-    // ── Concurrent batch: trends, matrix, specialty, demographics, location ──
-    const [trendRows, matrixRows, specRows, demoRows, locSpecRows] = await Promise.all([
-      // Per-period referral volume + conversion count.
+    // ── Concurrent batch: trends (split), matrix, specialty, demographics, location ──
+    const [trendTotalRows, trendConvRows, matrixRows, specRows, demoRows, locSpecRows] = await Promise.all([
+      // Trend — Total Referrals per period from total_referrals.
+      // Bucketed on g_creation_time (referral issuance time).
       safeQuery(
-        () => dwQuery<{ period: string; total: string; conversions: string }>(
+        () => dwQuery<{ period: string; total: string }>(
+          `SELECT
+             to_char(date_trunc('${trendBucket}', t.g_creation_time), '${periodFormat}') AS period,
+             COALESCE(SUM(t.total_referrals), 0)::bigint                                 AS total
+           FROM ${TOTAL_REFERRALS_TABLE} t
+           WHERE ${t.where}
+           GROUP BY 1
+           ORDER BY 1`,
+          t.params
+        ),
+        "trendsTotal"
+      ),
+      // Trend — Converted count per period from agg.
+      // Bucketed on slotstarttime (the consult slot for the converted referral).
+      safeQuery(
+        () => dwQuery<{ period: string; conversions: string }>(
           `SELECT
              to_char(date_trunc('${trendBucket}', r.slotstarttime), '${periodFormat}') AS period,
-             COUNT(*)::bigint                                                          AS total,
              COUNT(*) FILTER (WHERE r.conversion_status = 'Converted')::bigint         AS conversions
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
@@ -193,7 +263,7 @@ async function handler(request: NextRequest) {
            ORDER BY 1`,
           q.params
         ),
-        "trends"
+        "trendsConversions"
       ),
       // Year × from-spec → to-spec matrix.
       safeQuery(
@@ -265,16 +335,30 @@ async function handler(request: NextRequest) {
       ),
     ]);
 
-    // ── Trends ──
-    const referralTrends = trendRows.map((row) => ({
-      period: row.period,
-      totalReferrals: Number(row.total),
-      // Backward-compat fields: the chart used to read separate
-      // availableInClinic / inClinicConversions series. Total is now the
-      // referral count and conversions is the converted subset.
-      availableInClinic: Number(row.total),
-      inClinicConversions: Number(row.conversions),
-    }));
+    // ── Trends ── merge two cross-table per-period series on `period`.
+    // The total series (issuance-time) and the converted series
+    // (slot-time) generally cover the same months — fill missing
+    // sides with 0 so a sparse period in one source still appears.
+    const trendMap: Record<string, { period: string; total: number; conversions: number }> = {};
+    for (const row of trendTotalRows) {
+      const p = row.period;
+      if (!trendMap[p]) trendMap[p] = { period: p, total: 0, conversions: 0 };
+      trendMap[p].total += Number(row.total);
+    }
+    for (const row of trendConvRows) {
+      const p = row.period;
+      if (!trendMap[p]) trendMap[p] = { period: p, total: 0, conversions: 0 };
+      trendMap[p].conversions += Number(row.conversions);
+    }
+    const referralTrends = Object.values(trendMap)
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map((row) => ({
+        period: row.period,
+        totalReferrals: row.total,
+        // Backward-compat fields used by the chart.
+        availableInClinic: row.total,
+        inClinicConversions: row.conversions,
+      }));
 
     // ── Matrix by year ──
     const matrixByYear: Record<string, { referredFrom: string; referredTo: string; count: number }[]> = {};

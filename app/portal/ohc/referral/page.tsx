@@ -787,16 +787,20 @@ export default function ReferralAnalyticsPage() {
           )}
           <InsightBox text={trendView === "yearly"
             ? (() => {
-                if (referralYearlyTrends.length === 0) return "No yearly referral data available for the selected period.";
+                if (referralYearlyTrends.length === 0) return "No referral data yet for this date range.";
                 if (referralYearlyTrends.length === 1) {
                   const y = referralYearlyTrends[0];
-                  return `${y.period}${y.isYtd ? " (YTD)" : ""}: ${formatNum(y.totalReferrals)} referrals at a ${y.conversionRate}% conversion rate. Widen the date range to compare year over year.`;
+                  return `In ${y.period}${y.isYtd ? " (so far)" : ""}: ${formatNum(y.totalReferrals)} referrals were made, and ${y.conversionRate}% led to a real visit. Pick a wider date range to compare years.`;
                 }
                 const lastFull = [...referralYearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
                 const ytd = referralYearlyTrends.find((y) => y.isYtd);
-                const base = lastFull ? `Referrals ${lastFull.yoy! >= 0 ? "grew" : "declined"} ${Math.abs(lastFull.yoy!)}% YoY in ${lastFull.period} at a ${lastFull.conversionRate}% conversion rate.` : "";
-                const ytdPart = ytd ? ` ${ytd.period} is currently at ${formatNum(ytd.totalReferrals)} referrals (YTD), converting at ${ytd.conversionRate}%.` : "";
-                return (base + ytdPart).trim() || "Insufficient history for a year-over-year comparison.";
+                const base = lastFull
+                  ? `Referrals were ${Math.abs(lastFull.yoy!)}% ${lastFull.yoy! >= 0 ? "higher" : "lower"} in ${lastFull.period} than the year before, and ${lastFull.conversionRate}% led to a real visit.`
+                  : "";
+                const ytdPart = ytd
+                  ? ` So far in ${ytd.period}: ${formatNum(ytd.totalReferrals)} referrals, ${ytd.conversionRate}% led to a visit.`
+                  : "";
+                return (base + ytdPart).trim() || "Not enough history yet to compare years.";
               })()
             : (() => {
                 const trends: any[] = charts?.referralTrends || [];
@@ -812,8 +816,8 @@ export default function ReferralAnalyticsPage() {
                   : /^\d{4}-\d{2}$/.test(v)
                     ? (() => { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${y}`; })()
                     : v;
-                const peakWord = isDailyView ? "Peak referral day" : "Peak referral month";
-                return `${peakWord}: ${peakLabel} with ${formatNum(peak.totalReferrals || 0)} referrals. Across the selected window, ${formatNum(totalRefs)} referrals converted at ${avgRate}%.`;
+                const peakWord = isDailyView ? "The busiest day" : "The busiest month";
+                return `${peakWord} was ${peakLabel} with ${formatNum(peak.totalReferrals || 0)} referrals. In total, ${formatNum(totalRefs)} referrals were made and ${avgRate}% of them led to a real visit.`;
               })()} />
         </CVCard>}
       </WarmSection>
@@ -930,9 +934,9 @@ export default function ReferralAnalyticsPage() {
           </div>
         </div>
         {filteredSpecDetails.length > 0 && (
-          <InsightBox text={`${filteredSpecDetails.length} specialties are available in-clinic. ${(() => {
+          <InsightBox text={`${filteredSpecDetails.length} specialties received referrals. ${(() => {
             const top = filteredSpecDetails.find((s: any) => s.conversionRate > 0);
-            return top ? `${top.specialty} leads in-clinic conversions with ${formatNum(top.inClinicConsults)} consults.` : "";
+            return top ? `${top.specialty} got the most patients showing up — ${formatNum(top.inClinicConsults)} of those referred actually visited.` : "";
           })()}`} />
         )}
       </CVCard>}
@@ -1014,7 +1018,7 @@ export default function ReferralAnalyticsPage() {
             <div className="w-5 h-3 rounded-sm" style={{ backgroundColor: MATRIX_COLORS[7] }} /> <span>High</span>
           </div>
         </div>
-        <InsightBox text="The referral matrix reveals the strongest inter-specialty referral pathways. Use the year and view toggles to track how referral patterns evolve over time." />
+        <InsightBox text="Each row is the specialty the patient came from; each column is where they were sent. Darker cells mean that hand-off happens more often. Switch the year to see how it changes." />
       </CVCard>}
 
       {/* ── Demographics + Location Bar ── */}
@@ -1160,7 +1164,7 @@ export default function ReferralAnalyticsPage() {
               </div>
             </div>
           )}
-          <InsightBox text={demoStats ? `${demoStats.topAgeGroup?.ageGroup || ''} is the most referred age group with ${formatNum(demoStats.topAgeGroup?.total || 0)} referrals. ${demoStats.topGender?.gender || ''} patients account for the majority of referrals.` : 'Loading demographic insights...'} />
+          <InsightBox text={demoStats ? `Most referrals are for the ${demoStats.topAgeGroup?.ageGroup || ''} age group (${formatNum(demoStats.topAgeGroup?.total || 0)} referrals), and most are for ${demoStats.topGender?.gender || ''} patients.` : 'Loading demographic insights...'} />
         </CVCard>}
 
         {/* Referral Volume by Specialty & Location */}
@@ -1455,7 +1459,7 @@ export default function ReferralAnalyticsPage() {
               </button>
             );
           })()}
-          <InsightBox text="Compare referral volumes across clinics to identify high-demand sites. Each bar segment is a destination specialty — total per clinic appears in the pill above the bar." />
+          <InsightBox text="Each bar is one clinic. Coloured sections show which specialties patients were referred to from that clinic. The number above each bar is the clinic's total referrals." />
         </CVCard>}
         <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
           <DialogContent className="max-w-md">

@@ -446,32 +446,25 @@ async function handler(request: NextRequest) {
         ),
         "seasonal"
       ),
-      // 11) seasonalTrends — per-condition monthly time series for the
-      //     calendar grid. Limited to the top-8 conditions (overall or
-      //     within the selected category) to keep payload manageable.
+      // 11) seasonalTrends — per-CATEGORY (parent ICD) monthly time
+      //     series for the Monthly Patterns calendar grid. Chronic-only;
+      //     the page picks the top 3 categories per month from these
+      //     rows. Drops the old top-N-conditions CTE since there are
+      //     only ~22 chronic categories total.
       safeQuery(
         () => dwQuery<{ name: string; period: string; count: string }>(
-          `WITH top_conds AS (
-            SELECT d.icd_description AS name
-            FROM ${DIAG_TABLE} d
-            WHERE ${q.where}
-              AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
-              ${selectedCategory ? `AND ${CATEGORY_CASE} = $${q.params.length + 1}` : ""}
-            GROUP BY 1
-            ORDER BY COUNT(*) DESC
-            LIMIT 8
-          )
-          SELECT
-            d.icd_description AS name,
-            to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
-            COUNT(*)::bigint AS count
-          FROM ${DIAG_TABLE} d
-          WHERE ${q.where}
-            AND d.icd_description IN (SELECT name FROM top_conds)
-            AND d.g_creation_time IS NOT NULL
-          GROUP BY 1, 2
-          ORDER BY 1, 2`,
-          selectedCategory ? [...q.params, selectedCategory] : q.params,
+          `SELECT
+             ${CATEGORY_CASE} AS name,
+             to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
+             COUNT(*)::bigint AS count
+           FROM ${DIAG_TABLE} d
+           WHERE ${q.where}
+             AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
+             AND ${CHRONIC_CASE}
+             AND d.g_creation_time IS NOT NULL
+           GROUP BY 1, 2
+           ORDER BY 1, 2`,
+          q.params,
           HEAVY_OPTS
         ),
         "seasonalTrends"

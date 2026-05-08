@@ -63,7 +63,6 @@ const TREEMAP_COLORS = CHART_PALETTE_EXTENDED;
 
 const CONDITION_TREEMAP_COLORS = CHART_PALETTE.slice(0, 7);
 
-const SYMPTOM_COLORS = CHART_PALETTE_EXTENDED;
 
 const HEATMAP_COLORS = HEATMAP_GRADIENT;
 
@@ -683,9 +682,6 @@ export default function HealthInsightsPage() {
   const seasonalTrends: Record<string, any[]> = d?.seasonalTrends || {};
   const seasonalConditions = Object.keys(seasonalTrends);
 
-  // Symptom mapping
-  const symptomData = d?.symptomMapping || [];
-
   // Only show skeleton on very first load (no data at all)
   if (!d && isLoading) {
     return (
@@ -803,8 +799,7 @@ export default function HealthInsightsPage() {
             { id: "demographicAnalysis", label: "Demographic Analysis" },
             { id: "trendsOverTime", label: "Trends Over Time" },
             { id: "coOccurrenceVitals", label: "Co-Occurrence" },
-            { id: "seasonalPatterns", label: "Seasonal Patterns" },
-            { id: "symptomMapping", label: "Symptom Mapping" },
+            { id: "seasonalPatterns", label: "Monthly Patterns" },
           ]}
           filters={["location", "gender", "ageGroup"]}
           onPreview={setPreviewConfig}
@@ -1752,18 +1747,19 @@ export default function HealthInsightsPage() {
 
       </WarmSection>}
 
-      {/* ── Seasonal Patterns Section ── */}
+      {/* ── Monthly Patterns Section ── */}
       {isChartVisible("seasonalPatterns") && <WarmSection>
         <AccentBar color="#0d9488" colorEnd="#14b8a6" />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Seasonal Patterns</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Monthly diagnosis trends and seasonal condition cycles</p>
-      {/* ── Seasonal Condition Patterns (calendar grid) ── */}
+        <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Monthly Patterns</h2>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top chronic ICD parent categories per month, with consult counts</p>
+      {/* ── Monthly Condition Patterns (calendar grid) ── */}
       {(() => {
-        // Build per-month data for selected year from seasonalTrends
+        // Build per-month data for the selected year from seasonalTrends
+        // (now keyed by chronic ICD parent category, not ICD description).
         const monthData: { month: number; conditions: { name: string; count: number; color: string }[]; total: number }[] = [];
         const monthTotals: Record<number, Record<string, number>> = {};
         for (const rawName of seasonalConditions) {
-          const shortName = displaySub(rawName);
+          const shortName = displayCat(rawName);
           for (const pt of (seasonalTrends[rawName] || [])) {
             const [yr, mo] = pt.period.split("-").map(Number);
             if (yr !== seasonalYear) continue;
@@ -1792,12 +1788,12 @@ export default function HealthInsightsPage() {
         return (
           <CVCard
             accentColor="#0d9488"
-            title="Seasonal Condition Patterns"
-            subtitle="Monthly diagnosis trends for key seasonal conditions. Click any month to filter demographics and related panels."
-            tooltipText="12-month calendar grid showing the top seasonal conditions per month with season-colored backgrounds. Helps identify cyclical disease patterns."
+            title="Monthly Condition Patterns"
+            subtitle="Each month shows the top 3 chronic ICD parent categories by consult count for the selected year."
+            tooltipText="12-month calendar grid showing the top 3 chronic ICD parent categories per month with season-colored backgrounds. Useful for spotting cyclical demand on specific care areas."
             chartId="seasonalPatterns"
             chartData={monthData}
-            chartDescription="Monthly diagnosis trends for key seasonal conditions"
+            chartDescription="Top chronic ICD parent categories per month with consult counts"
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
           >
             <div className="overflow-x-auto">
@@ -1849,75 +1845,6 @@ export default function HealthInsightsPage() {
 
       </WarmSection>}
 
-      {/* ── Symptom Mapping Section ── */}
-      {isChartVisible("symptomMapping") && <WarmSection>
-        <AccentBar color="#4f46e5" colorEnd="#7c3aed" />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Symptom Mapping</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Symptom to diagnosis associations across all patient encounters</p>
-      {/* ── Symptom → Diagnosis Mapping ── */}
-      <CVCard
-        accentColor="#4f46e5"
-        title="Symptom vs Diagnosis Mapping"
-        subtitle="Distribution of Diagnosis for the most common presented symptoms"
-        tooltipText="Maps the most frequently reported symptoms and their association with diagnosed conditions."
-        chartId="symptomMapping"
-        chartData={symptomData}
-        chartDescription="Distribution of diagnoses for the most common presented symptoms"
-      >
-        <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
-          <div style={{ height: Math.max(symptomData.length * 55, 280), minWidth: 600 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={symptomData}
-                layout="vertical"
-                margin={{ top: 10, right: 20, left: 80, bottom: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: T.textMuted }} domain={[0, 100]} />
-                <YAxis type="category" dataKey="symptom" tick={{ fontSize: 12, fill: T.textPrimary, fontWeight: 500 }} width={80} />
-                <RechartsTooltip content={({ active, payload, label }: any) => {
-                  if (!active || !payload?.length) return null;
-                  return (
-                    <div className="rounded-xl border p-3 text-xs max-w-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                      <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
-                      {payload.filter((p: any) => p.value > 0).map((p: any, i: number) => (
-                        <p key={p.name || i} style={{ color: p.fill }}>
-                          {p.name}: <strong>{p.value}%</strong>
-                        </p>
-                      ))}
-                    </div>
-                  );
-                }} />
-                <Legend wrapperStyle={{ fontSize: 10 }} iconType="square" iconSize={8} />
-                {/* Generate bars for all unique diagnoses across all symptoms */}
-                {(() => {
-                  const allDiagnoses = new Set<string>();
-                  symptomData.forEach((s: any) => {
-                    s.diagnoses?.forEach((d: any) => allDiagnoses.add(d.name));
-                  });
-                  return Array.from(allDiagnoses).map((diagName, i) => (
-                    <Bar
-                      key={diagName}
-                      dataKey={(entry: any) => {
-                        const match = entry.diagnoses?.find((d: any) => d.name === diagName);
-                        return match?.value || 0;
-                      }}
-                      name={diagName}
-                      stackId="a"
-                      fill={SYMPTOM_COLORS[i % SYMPTOM_COLORS.length]}
-                      maxBarSize={30}
-                    />
-                  ));
-                })()}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <p className="text-[11px] mt-2 text-center" style={{ color: T.textMuted }}>
-          Data shows the breakdown of diagnoses for each common symptom across all patient encounters in the selected window.
-        </p>
-      </CVCard>
-      </WarmSection>}
     </div>
   );
 }

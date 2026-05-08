@@ -399,7 +399,6 @@ export default function HealthInsightsPage() {
   const [selectedCondition, setSelectedCondition] = useState("");
   const [demoTab, setDemoTab] = useState<"age" | "gender" | "location">("age");
   const [trendView, setTrendView] = useState<"yearly" | "monthly">("yearly");
-  const [conditionType, setConditionType] = useState<"all" | "chronic" | "acute">("all");
   const [vitalType, setVitalType] = useState<"BMI" | "Systolic BP" | "Diastolic BP" | "SpO2">("BMI");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
@@ -462,14 +461,13 @@ export default function HealthInsightsPage() {
     p.set("dateTo", format(appliedDateRange.to, "yyyy-MM-dd"));
     if (selectedCategory) p.set("category", selectedCategory);
     if (selectedCondition) p.set("condition", selectedCondition);
-    if (conditionType !== "all") p.set("conditionType", conditionType);
     if (appliedFilters.ageGroups.length) p.set("ageGroups", appliedFilters.ageGroups.join(","));
     if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
     if (appliedMinVisits > 1) p.set("minVisits", String(appliedMinVisits));
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange, appliedMinVisits]);
+  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, appliedFilters, appliedDateRange, appliedMinVisits]);
 
   const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
@@ -826,94 +824,55 @@ export default function HealthInsightsPage() {
       {isChartVisible("diseaseLandscape") && <WarmSection>
         <AccentBar color="#4f46e5" colorEnd="#6366f1" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Disease Landscape</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top condition categories and chronic vs. acute patient split</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Top 5 chronic condition categories by consult count, plus an Others bucket for the remaining categories</p>
 
-        {/* Top 5 Condition cards */}
-        {categoryTreemap.length > 0 && (
-          <div className="grid grid-cols-5 gap-3 mb-5">
-            {categoryTreemap.slice(0, 5).map((c: any) => (
-              <div
-                key={c.name}
-                className="bg-white px-5 py-4 transition-all duration-200 hover:-translate-y-0.5 rounded-2xl cursor-pointer flex flex-col gap-1"
-                style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
-                onClick={() => { setSelectedCategory(c.name); setSelectedCondition(""); }}
-              >
-                <p className="text-[11px] font-bold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>{displayCat(c.name)}</p>
-                <p className="text-[28px] font-extrabold tracking-[-0.025em] leading-none" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>{formatNum(c.value)}</p>
-                <p className="text-[12px] font-semibold" style={{ color: "#4f46e5" }}>{c.percentage}% of total</p>
-                <p className="text-[11px]" style={{ color: T.textSecondary }}>{formatNum(c.uniquePatients)} unique patients</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-      {/* ── Chronic vs. Acute ── */}
-      {(() => {
-        const chronicCount = ca.chronicPatients || 0;
-        const acuteCount = ca.acutePatients || 0;
-        const totalPatients = chronicCount + acuteCount;
-        const chronicPct = totalPatients > 0 ? Math.round((chronicCount / totalPatients) * 100) : 0;
-        const acutePct = totalPatients > 0 ? 100 - chronicPct : 0;
-        return (
-          <CVCard
-            accentColor="#4f46e5"
-            title="Chronic vs. Acute"
-            subtitle="Total patients by Condition Type - click to filter the dashboard"
-            tooltipText="Shows the split between chronic (long-term) and acute (short-term) conditions. Use toggle buttons to filter the dashboard by condition type."
-            expandable={false}
-            chartId="chronicVsAcute"
-            chartData={{ chronicCount, acuteCount, totalPatients, chronicPct, acutePct }}
-            chartDescription="Split between chronic (long-term) and acute (short-term) conditions"
-
-          >
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
-              {([["all", "All Repeaters"], ["chronic", "Chronic Only"], ["acute", "Acute Only"]] as const).map(([val, label]) => (
-                <button
-                  key={val}
-                  onClick={() => setConditionType(val)}
-                  className="px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all border"
-                  style={conditionType === val
-                    ? { backgroundColor: T.textPrimary, color: "#fff", borderColor: T.textPrimary }
-                    : { borderColor: T.border, color: T.textSecondary, backgroundColor: T.white }
-                  }
-                >{label}</button>
+        {/* 5 top-category cards + 1 "Others" rollup card.
+            Warehouse already emits a literal "Other" category — keep it
+            out of the top-5 ranking and fold it into the rollup so we
+            don't end up with two cards that both read "Other(s)". */}
+        {categoryTreemap.length > 0 && (() => {
+          const isOtherLabel = (n: string) => {
+            const l = (n || "").trim().toLowerCase();
+            return l === "other" || l === "others";
+          };
+          const named = categoryTreemap.filter((c: any) => !isOtherLabel(c.name));
+          const otherFromWarehouse = categoryTreemap.filter((c: any) => isOtherLabel(c.name));
+          const top = named.slice(0, 5);
+          const tail = [...named.slice(5), ...otherFromWarehouse];
+          const othersValue = tail.reduce((s: number, c: any) => s + (c.value || 0), 0);
+          const othersUnique = tail.reduce((s: number, c: any) => s + (c.uniquePatients || 0), 0);
+          const grandTotal = categoryTreemap.reduce((s: number, c: any) => s + (c.value || 0), 0);
+          const othersPct = grandTotal > 0 ? Math.round((othersValue / grandTotal) * 100) : 0;
+          return (
+            <div className="grid grid-cols-6 gap-3 mb-5">
+              {top.map((c: any) => (
+                <div
+                  key={c.name}
+                  className="bg-white px-5 py-4 transition-all duration-200 hover:-translate-y-0.5 rounded-2xl cursor-pointer flex flex-col gap-1"
+                  style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
+                  onClick={() => { setSelectedCategory(c.name); setSelectedCondition(""); }}
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>{displayCat(c.name)}</p>
+                  <p className="text-[28px] font-extrabold tracking-[-0.025em] leading-none" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>{formatNum(c.value)}</p>
+                  <p className="text-[12px] font-semibold" style={{ color: "#4f46e5" }}>{c.percentage}% of total</p>
+                  <p className="text-[11px]" style={{ color: T.textSecondary }}>{formatNum(c.uniquePatients)} unique patients</p>
+                </div>
               ))}
-              <ResetFilter visible={conditionType !== "all"} onClick={() => setConditionType("all")} />
-            </div>
-            {/* Horizontal stacked bar */}
-            <div className="w-full h-11 rounded-lg overflow-hidden flex">
+              {/* Others bucket — sum of every category beyond the top 5 */}
               <div
-                className="flex items-center justify-center text-[13px] font-bold text-white transition-all"
-                style={{ width: `${chronicPct}%`, backgroundColor: "#4f46e5", minWidth: chronicCount > 0 ? 80 : 0 }}
+                className="bg-white px-5 py-4 transition-all duration-200 rounded-2xl flex flex-col gap-1"
+                style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow, opacity: tail.length > 0 ? 1 : 0.6 }}
+                title={tail.length > 0 ? `${tail.length} categories: ${tail.map((c: any) => displayCat(c.name)).join(", ")}` : "No additional categories"}
               >
-                {formatNum(chronicCount)} Chronic
-              </div>
-              <div
-                className="flex items-center justify-center text-[13px] font-bold text-white transition-all"
-                style={{ width: `${acutePct}%`, backgroundColor: "#0d9488", minWidth: acuteCount > 0 ? 80 : 0 }}
-              >
-                {formatNum(acuteCount)} Acute
+                <p className="text-[11px] font-bold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>Others</p>
+                <p className="text-[28px] font-extrabold tracking-[-0.025em] leading-none" style={{ color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{formatNum(othersValue)}</p>
+                <p className="text-[12px] font-semibold" style={{ color: "#94a3b8" }}>{othersPct}% of total</p>
+                <p className="text-[11px]" style={{ color: T.textSecondary }}>{tail.length > 0 ? `${tail.length} more categor${tail.length === 1 ? "y" : "ies"} · ${formatNum(othersUnique)} unique patients` : "No additional categories"}</p>
               </div>
             </div>
-            {/* Legend */}
-            <div className="flex items-center gap-5 mt-3">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#4f46e5" }} />
-                <span className="text-[12px]" style={{ color: T.textSecondary }}>Chronic ({chronicPct}%)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#0d9488" }} />
-                <span className="text-[12px]" style={{ color: T.textSecondary }}>Acute ({acutePct}%)</span>
-              </div>
-            </div>
-            <p className="mt-2 text-[13px]" style={{ color: T.textSecondary }}>
-              <span className="text-[20px] font-extrabold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>{formatNum(totalPatients)}</span>{" "}
-              total patients (based on current selection)
-            </p>
-            <InsightBox text="Repeat patients are employees who availed any OHC service at least twice in the selected date range. Use the filters above to view Chronic-only or Acute-only patient segments." />
-          </CVCard>
-        );
-      })()}
+          );
+        })()}
+
       </WarmSection>}
 
       {/* ── Category Breakdown Section ── */}

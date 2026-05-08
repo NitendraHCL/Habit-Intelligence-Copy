@@ -656,7 +656,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
         pageTitle="Emotional Wellbeing Overview"
         pageSubtitle="Mental health assessment analytics, risk indicators and lifestyle insights"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalConsults || 0)} emotional wellbeing consultations recorded with ${formatNum(kpis?.uniquePatients || 0)} unique patients. ${formatNum(kpis?.repeatPatients || 0)} patients have availed emotional wellbeing services at least twice in the selected date range. Anxiety and depression screenings identify at-risk populations across locations for targeted mental health support programs.`}
+        fallbackSummary={`${formatNum(kpis?.totalConsults || 0)} emotional wellbeing consultations happened with ${formatNum(kpis?.uniquePatients || 0)} different employees. ${formatNum(kpis?.repeatPatients || 0)} of them came back for a second session — a good sign that follow-up care is happening. The anxiety and depression screening data below helps you spot which groups may need more support.`}
         fallbackChips={[
           { label: "Total Consults", value: formatNum(kpis?.totalConsults || 0) },
           { label: "Unique Patients", value: formatNum(kpis?.uniquePatients || 0) },
@@ -889,7 +889,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             )}
           </div>
-          <InsightBox text="Review the demographic breakdown to identify which age groups, genders, or locations have the highest patient volumes. Over-represented segments may need targeted wellbeing programs or additional counselling resources." />
+          <InsightBox text="See which age groups, genders, or clinics are using emotional-wellbeing services the most. If one group stands out, it may need a targeted programme or more counselling capacity." />
         </CVCard>}
 
         {/* Consult Trends */}
@@ -1012,7 +1012,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             </div>
           </div>
-          <InsightBox text="Compare total consults against unique patients to gauge repeat visit rates. A widening gap between the two lines suggests more patients are returning for follow-up sessions, which may indicate ongoing mental health needs or effective engagement." />
+          <InsightBox text="When the total-consults line grows faster than the unique-patients line, it means the same people are coming back for more sessions. That can mean either ongoing mental-health needs or a programme that's keeping people engaged with care." />
         </CVCard>}
       </div>
 
@@ -1061,7 +1061,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               <span className="font-extrabold text-[16px]" style={{ color: "#dc2626" }}>{criticalRisk.totalCases}</span>
             </div>
           </div>
-          <InsightBox text="Any non-zero count in suicidal thoughts, attempted self harm, or previous attempts demands immediate clinical attention. Track these numbers closely and ensure each flagged individual is connected with crisis support resources." />
+          <InsightBox text="Any number above zero here is a person who needs immediate clinical attention. Make sure each flagged individual has been connected to crisis support, and watch these counts closely month on month." />
         </CVCard>}
 
         {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the percentage of employees who completed an emotional wellbeing assessment and reported substance use (alcohol, tobacco, or other substances). The denominator is the total number of emotional wellbeing assessments conducted in the selected date range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
@@ -1088,7 +1088,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               ],
             }} />
           </div>
-          <InsightBox text="Substance use prevalence is a key risk factor for emotional wellbeing. If this percentage is trending upward, consider introducing substance abuse awareness workshops and confidential counselling services." />
+          <InsightBox text="People using substances (alcohol, tobacco, etc.) are at higher risk for anxiety and depression. If this percentage is going up, awareness workshops and confidential counselling services can help." />
         </CVCard>}
       </div>
 
@@ -1112,7 +1112,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             </div>
           </div>
-          <InsightBox text="Poor sleep quality is strongly linked to anxiety and depression. If the majority of patients report average or poor sleep, consider sleep hygiene workshops and integrating sleep screening into routine assessments." />
+          <InsightBox text="Bad sleep is closely tied to anxiety and depression. If most employees are reporting average or poor sleep, running a sleep-hygiene workshop and adding a sleep question to routine check-ins is usually the first practical step." />
         </CVCard>}
 
         {/* Sleep Duration — hero stat tile */}
@@ -1176,7 +1176,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Employees sleeping less than 7 hours are at higher risk for burnout and reduced cognitive function. If a significant proportion falls in the '<7 hours' bucket, consider flexible scheduling or workload reviews." />
+          <InsightBox text="Employees who sleep under 7 hours a night are at higher risk for burnout and lose mental sharpness. If a big chunk of your workforce is in the '<7 hrs' bucket, it's worth looking at flexible scheduling or workload." />
         </CVCard>}
       </div>
 
@@ -1252,7 +1252,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Regular alcohol consumption often co-occurs with anxiety and depression. Cross-reference this percentage with the mental-health scales to identify high-risk groups for integrated intervention." />
+          <InsightBox text="Regular drinking often shows up alongside anxiety and depression. Compare this number with the anxiety / depression scales below — if the same population shows up in both, an integrated programme works better than treating them separately." />
         </CVCard>}
 
         {/* Smoking Habit */}
@@ -1365,7 +1365,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Current smokers warrant targeted cessation support — nicotine replacement, counselling, peer groups. Track the Ex-Smoker share over time as a positive program signal: a growing Ex-Smoker count means the workforce is quitting and the program is working." />
+          <InsightBox text="Current smokers need quit-support: nicotine replacement, counselling, peer groups. The Ex-Smoker number is the success metric — if it's growing month on month, employees are quitting and the programme is working." />
         </CVCard>}
       </div>
 
@@ -1409,7 +1409,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             </div>
             <ResetFilter visible={selectedVisitBucket !== ""} onClick={() => setSelectedVisitBucket("")} />
-            <InsightBox text="Patients with higher visit frequencies may have more complex or persistent emotional health issues. Click a visit bucket to explore which problem categories dominate for that group and allocate specialist resources accordingly." />
+            <InsightBox text="People who come back for many sessions usually have more complex or longer-term issues. Click a visit-count bucket to see what kinds of concerns dominate that group, so you can plan specialist time accordingly." />
           </CVCard>
 
           {/* Impressions Analysis — horizontal ranked bars */}
@@ -1475,7 +1475,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                 </div>
               );
             })()}
-            <InsightBox text="The condition at the top is the most prevalent chronic concern among assessed employees — prioritise screening, awareness campaigns, and care-management referrals there. Watch how this ranking shifts over time to gauge whether prevention efforts are working." />
+            <InsightBox text="The top condition is the most common one among assessed employees — start screening, awareness, and referrals there first. Watch the ranking over time: a falling top item means prevention is working." />
           </CVCard>
         </div>
       </WarmSection>}
@@ -1486,16 +1486,16 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
-          <InsightBox text="Focus on the Moderate and Severe segments. If combined they exceed 20%, consider scaling up access to anxiety management workshops, cognitive behavioral therapy resources, and stress reduction programs." />
+          <InsightBox text="Focus on the Moderate and Severe segments. If they add up to more than 20% combined, it's time to expand access to anxiety-management workshops, CBT resources, and stress-reduction programmes." />
         </CVCard>}
         {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
           <StackedPercentBar data={selfEsteemScale} colors={["#4f46e5", "#0d9488"]} />
-          <InsightBox text="Low self-esteem often underlies both anxiety and depression. A dominant Low segment suggests employees may benefit from mentorship programs, positive feedback culture initiatives, and confidence-building workshops." />
+          <InsightBox text="Low self-esteem is often the root of both anxiety and depression. If the Low segment is the biggest, it usually means employees would benefit from mentorship, positive-feedback culture work, and confidence-building workshops." />
         </CVCard>}
       </div>
       {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
-        <InsightBox text="Pay close attention to the Moderately Severe and Severe segments. Even small percentages here represent individuals who may need immediate professional support. Ensure follow-up protocols are in place for these cases." />
+        <InsightBox text="Watch the Moderately Severe and Severe segments closely. Even tiny percentages here represent real people who may need immediate professional support — make sure a follow-up protocol is in place for every case." />
       </CVCard>}
 
       {/* ══════════════════════════════════════════ */}
@@ -1566,7 +1566,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
             </div>
           </div>
         )}
-        <InsightBox text="Drill into each impression category to understand the specific subcategories driving patient visits. The longest bars reveal the most frequent concerns within each category, helping prioritize counsellor training and resource allocation." />
+        <InsightBox text="Click each category to see what specific concerns are driving visits in that area. The longest bars are the most common reasons people walked in — useful for deciding what counsellor training to invest in next." />
       </CVCard>}
     </div>
   );

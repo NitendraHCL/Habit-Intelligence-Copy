@@ -832,8 +832,8 @@ export default function HealthInsightsPage() {
         pageSubtitle="Chronic diagnosis patterns and condition trends"
         kpis={{}}
         fallbackSummary={categoryTreemap.length > 0
-          ? `${displayCat(categoryTreemap[0]?.name || "")} leads chronic care with ${formatNum(categoryTreemap[0]?.value || 0)} consults (${categoryTreemap[0]?.percentage || 0}% of chronic total across ${categories.length} chronic ICD categories). ${formatNum(ca.chronicPatients || 0)} unique patients carry chronic conditions.`
-          : "Chronic diagnosis patterns and condition trends across the assessed population."}
+          ? `${displayCat(categoryTreemap[0]?.name || "")} is the biggest chronic-care category — ${formatNum(categoryTreemap[0]?.value || 0)} visits, about ${categoryTreemap[0]?.percentage || 0}% of all chronic visits across ${categories.length} categories. ${formatNum(ca.chronicPatients || 0)} different employees are living with at least one chronic condition.`
+          : "Patterns in chronic diagnoses and how conditions trend over time."}
         fallbackChips={categoryTreemap.length > 0 ? [
           { label: "Top Chronic Category", value: displayCat(categoryTreemap[0]?.name || "—") },
           { label: "Total Chronic Diagnosis", value: formatNum(categoryTreemap.reduce((s: number, c: any) => s + c.value, 0)) },
@@ -1104,7 +1104,7 @@ export default function HealthInsightsPage() {
                     </div>
                   </div>
                   {categoryTreemap.length > 0 && (
-                    <InsightBox text={`${sorted.length} chronic ICD categories tracked. Leading: ${displayCat(dominant?.name || "")} with ${formatNum(dominant?.value || 0)} consults (${dominantPct}% of pool) across ${formatNum(dominant?.uniquePatients || 0)} unique patients. Indigo bars rank consult volume, teal bars show how many distinct patients drove that volume — gaps signal repeat-heavy categories.`} />
+                    <InsightBox text={`${sorted.length} chronic categories in total. The biggest is ${displayCat(dominant?.name || "")} — ${formatNum(dominant?.value || 0)} visits (${dominantPct}% of all chronic visits) from ${formatNum(dominant?.uniquePatients || 0)} different employees. Indigo bars are total visits; teal bars are unique people. A big gap between them means the same people are coming back many times.`} />
                   )}
                 </div>
               );
@@ -1222,7 +1222,7 @@ export default function HealthInsightsPage() {
                       })}
                     </div>
                   </div>
-                  <InsightBox text={`${sortedCats.length} chronic ICD categories listed. Click a row to reveal every ICD subcategory inside it with consult count and unique UHIDs.`} />
+                  <InsightBox text={`${sortedCats.length} chronic categories listed. Click any row to expand it and see every specific condition (subcategory) inside, with how many visits they got and how many different people had them.`} />
                 </div>
               );
             })() : (
@@ -1508,7 +1508,7 @@ export default function HealthInsightsPage() {
           </div>
         </div>
         {trendData.length > 0 && (
-          <InsightBox text={`Trend data for ${trendsCondition ? displaySub(trendsCondition) : displayCat(trendsCategory)} shows ${trendView === "yearly" ? "year-over-year" : "month-over-month"} consultation patterns. Monitor these trends to identify rising or declining condition prevalence across the selected time period.`} />
+          <InsightBox text={`This ${trendView === "yearly" ? "year-over-year" : "month-over-month"} view shows how visits for ${trendsCondition ? displaySub(trendsCondition) : displayCat(trendsCategory)} have changed over time. A rising line means the condition is becoming more common; a falling one usually means prevention is working.`} />
         )}
       </CVCard>
       </WarmSection>}
@@ -1739,7 +1739,7 @@ export default function HealthInsightsPage() {
                     )}
                   </div>
                 </div>
-                <InsightBox text="Use the picker to compare up to three chronic ICD categories. Each circle is sized by the unique-UHID count of that category; overlap regions show how many patients carry the intersecting set. The right panel breaks down the all-overlap intersection by age and gender — useful for targeting bundled-care or screening programmes." />
+                <InsightBox text="Pick up to three chronic categories from the dropdown to compare them. Each circle's size is how many different people have that condition. Where the circles overlap shows people who have all of them at once. The panel on the right tells you the age and gender of those overlap patients — handy for designing programmes that target multiple conditions together." />
               </div>
             );
           })()}

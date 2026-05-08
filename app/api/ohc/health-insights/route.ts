@@ -276,6 +276,10 @@ async function handler(request: NextRequest) {
             FROM ${DIAG_TABLE} d
             WHERE ${q.where}
               AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
+              -- Health Insights is now a chronic-only surface; restrict the
+              -- demographic matrix to chronic-flagged diagnoses so the
+              -- breakdown reflects long-term condition load only.
+              AND ${CHRONIC_CASE}
               ${demoExtraFilter}
           )
           SELECT 'age' AS dim, key, age_bucket AS bucket, COUNT(*)::bigint AS count

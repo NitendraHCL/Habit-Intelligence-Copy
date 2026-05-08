@@ -1168,13 +1168,13 @@ export default function HealthInsightsPage() {
       {isChartVisible("demographicAnalysis") && <WarmSection>
         <AccentBar color="#0d9488" colorEnd="#14b8a6" />
         <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Demographic Analysis</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Condition frequency across age groups, genders, and locations</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Chronic condition frequency across age groups, genders, and locations</p>
       {/* ── Condition & Demographic Insights ── */}
       <CVCard
         accentColor="#0d9488"
         title="Condition & Demographic Insights"
-        subtitle="Explore how each condition within your selected ICD Category is distributed across demographic segments."
-        tooltipText="Heatmap matrix showing condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination."
+        subtitle="Explore how each chronic condition within your selected ICD Category is distributed across demographic segments."
+        tooltipText="Heatmap matrix showing chronic-condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination. Acute diagnoses are excluded."
         chartId="demographicAnalysis"
         chartData={demoMatrix}
         chartDescription="Condition frequency across demographic segments (heatmap)"

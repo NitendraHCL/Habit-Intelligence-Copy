@@ -4,44 +4,43 @@ import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
 /* ────────────────────────────────────────────────────────────────────
- * OHC Health Insights API — sourced from aggregated_table.agg_diagnosis.
+ * OHC Health Insights API — sourced from aggregated_table.agg_diagnosis
+ * (the freshly prepared chronic-aware fact table).
  *
- * Columns we use: g_creation_time, facility_name, uhid, patient_age,
- * patient_gender, doctor_name, icd_description, cug_code_mapped.
- * No vitals / no symptoms / no LSMP — vitalsTrend and symptomMapping
- * are returned empty.
+ * Columns we use: cug_code_mapped, g_creation_time, slotstarttime,
+ * facility_mapping, uhid, age, patient_gender, status, category,
+ * icd_code, icd_description, treating_doctor_speciality, encounter_id.
+ *
+ * Key column semantics (per product):
+ *   uhid               — unique patient identifier
+ *   category           — chronic ICD parent category (used directly,
+ *                        no regex derivation)
+ *   icd_description    — chronic ICD subcategory / condition name
+ *   status             — 'Chronic' / 'Acute or Chronic' / 'Acute' /
+ *                        'Not Applicable' (used directly for chronic
+ *                        filtering, no description regex)
+ *
+ * No vitals / no symptoms — vitalsTrend and symptomMapping are
+ * returned empty.
  * ──────────────────────────────────────────────────────────────────── */
 
 const DIAG_TABLE = "aggregated_table.agg_diagnosis";
 
-const CHRONIC_CASE = `(
-  LOWER(d.icd_description) ~* '(diabet|hyperten|hyperlipid|asthma|arthrit|copd|chronic|thyroid|cardiac|hypothyr|hyperthyr|coronary|ischaem|ischem|kidney disease|ckd|cancer|tumor|tumour|psori|ecz|migraine|epileps|alzheim|parkinson|depress|anxiety|bipolar)'
-)`;
+// Native chronic flag — was a description regex before the new schema
+// landed. "Acute or Chronic" rolls up into chronic per product.
+const CHRONIC_CASE = `(LOWER(d.status) IN ('chronic', 'acute or chronic'))`;
 
-const CATEGORY_CASE = `CASE
-  WHEN LOWER(d.icd_description) ~* '(diabet|prediab|hyperlipid|obesit|metabolic|hypothyroid|hyperthyroid|thyroid)' THEN 'Metabolic Disorders'
-  WHEN LOWER(d.icd_description) ~* '(cardia|coronary|ischaem|ischem|heart|hyperten|stroke|atrial|arrhyt)' THEN 'Cardiovascular'
-  WHEN LOWER(d.icd_description) ~* '(asthma|copd|bronchit|pneumon|respir|pulmon|sinus|allerg)' THEN 'Respiratory'
-  WHEN LOWER(d.icd_description) ~* '(arthrit|joint|osteo|fractur|sprain|musculoskel|back pain|spine)' THEN 'Musculoskeletal'
-  WHEN LOWER(d.icd_description) ~* '(depress|anxiety|bipolar|panic|ptsd|stress|adjustment|psychiat|mental|insomnia|sleep)' THEN 'Mental Health'
-  WHEN LOWER(d.icd_description) ~* '(infection|fever|flu|cold|cough|gastro|viral|bacterial)' THEN 'Infections'
-  WHEN LOWER(d.icd_description) ~* '(cancer|tumor|tumour|malignant|carcinoma|leukem)' THEN 'Oncology'
-  WHEN LOWER(d.icd_description) ~* '(skin|dermat|psori|eczema|acne|rash)' THEN 'Dermatology'
-  WHEN LOWER(d.icd_description) ~* '(eye|vision|conjunct|cataract|glaucoma)' THEN 'Ophthalmology'
-  WHEN LOWER(d.icd_description) ~* '(ent|ear|nose|throat|hearing|tinnitus)' THEN 'ENT'
-  WHEN LOWER(d.icd_description) ~* '(gastr|stomach|ulcer|reflux|gerd|ibs|hepat|liver|pancrea|colit)' THEN 'Gastrointestinal'
-  WHEN LOWER(d.icd_description) ~* '(kidney|ckd|nephrit|urin|prostate|renal|gyn|menstr|pregnan|fibroid)' THEN 'Genitourinary'
-  WHEN LOWER(d.icd_description) ~* '(headache|migraine|epileps|neur|alzheim|parkinson)' THEN 'Neurology'
-  WHEN LOWER(d.icd_description) ~* '(counsel|wellness|check-up|preventive|routine)' THEN 'Preventive / Counseling'
-  ELSE 'Other'
-END`;
+// Native parent category — was a regex switch on icd_description before
+// the new schema landed. Wrap in COALESCE so NULL/empty rows still
+// land in a valid bucket.
+const CATEGORY_CASE = `COALESCE(NULLIF(TRIM(d.category), ''), 'Other')`;
 
 const AGE_GROUP_CASE = `CASE
-  WHEN d.patient_age < 20 THEN '<20'
-  WHEN d.patient_age BETWEEN 20 AND 35 THEN '20-35'
-  WHEN d.patient_age BETWEEN 36 AND 40 THEN '36-40'
-  WHEN d.patient_age BETWEEN 41 AND 60 THEN '41-60'
-  WHEN d.patient_age > 60 THEN '61+'
+  WHEN d.age < 20 THEN '<20'
+  WHEN d.age BETWEEN 20 AND 35 THEN '20-35'
+  WHEN d.age BETWEEN 36 AND 40 THEN '36-40'
+  WHEN d.age BETWEEN 41 AND 60 THEN '41-60'
+  WHEN d.age > 60 THEN '61+'
 END`;
 
 const GENDER_NORM = `CASE
@@ -78,7 +77,7 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
     idx++;
   }
   if (locations?.length) {
-    where.push(`d.facility_name = ANY($${idx})`);
+    where.push(`d.facility_mapping = ANY($${idx})`);
     params.push(locations);
     idx++;
   }
@@ -129,9 +128,9 @@ async function handler(request: NextRequest) {
       }
     }
 
-    // agg_diagnosis is ~80M rows. Default 15s timeout is not enough for the
-    // heavy aggregations; bump per-query.
-    const HEAVY_OPTS = { statementTimeoutMs: 60000 };
+    // agg_diagnosis is ~33M rows (22.9M for HCLT001). Default 15s timeout is
+    // far too low for the heavy aggregations; bump per-query.
+    const HEAVY_OPTS = { statementTimeoutMs: 120000 };
 
     // Demo queries are scoped — when a category is picked they group by
     // condition (icd_description) within that category; when a single
@@ -272,8 +271,8 @@ async function handler(request: NextRequest) {
               ${demoKeyExpr} AS key,
               ${AGE_GROUP_CASE} AS age_bucket,
               ${GENDER_NORM} AS gender_bucket,
-              COALESCE(NULLIF(TRIM(d.facility_name), ''), 'Unknown') AS loc_bucket,
-              d.patient_age
+              COALESCE(NULLIF(TRIM(d.facility_mapping), ''), 'Unknown') AS loc_bucket,
+              d.age
             FROM ${DIAG_TABLE} d
             WHERE ${q.where}
               AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -284,7 +283,7 @@ async function handler(request: NextRequest) {
               ${demoExtraFilter}
           )
           SELECT 'age' AS dim, key, age_bucket AS bucket, COUNT(*)::bigint AS count
-          FROM base WHERE patient_age IS NOT NULL AND age_bucket IS NOT NULL
+          FROM base WHERE age IS NOT NULL AND age_bucket IS NOT NULL
           GROUP BY 1, 2, 3
           UNION ALL
           SELECT 'gender' AS dim, key, gender_bucket AS bucket, COUNT(*)::bigint AS count
@@ -397,11 +396,11 @@ async function handler(request: NextRequest) {
       // 8) facilities dropdown
       safeQuery(
         () => dwQuery<{ f: string }>(
-          `SELECT DISTINCT d.facility_name AS f
+          `SELECT DISTINCT d.facility_mapping AS f
            FROM ${DIAG_TABLE} d
            WHERE d.cug_code_mapped = $1
-             AND d.facility_name IS NOT NULL
-             AND TRIM(d.facility_name) <> ''
+             AND d.facility_mapping IS NOT NULL
+             AND TRIM(d.facility_mapping) <> ''
            ORDER BY 1`,
           [cugCode]
         ),

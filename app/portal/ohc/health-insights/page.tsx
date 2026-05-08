@@ -418,10 +418,6 @@ export default function HealthInsightsPage() {
   const [pageFilters, setPageFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
-  // Visit-count chip filter — clicking N keeps unique UHIDs with consult
-  // count >= N. 1 = no filtering (default). Same draft/applied split as
-  // every other filter so the choice only commits on Apply.
-  const [minVisits, setMinVisits] = useState<number>(1);
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
   const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
@@ -431,7 +427,6 @@ export default function HealthInsightsPage() {
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
-  const [appliedMinVisits, setAppliedMinVisits] = useState<number>(1);
   // Which Condition Share Distribution rows are expanded (multi-select).
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   // Co-Occurrence venn — up to 3 chronic ICD parent categories. Selection
@@ -483,9 +478,8 @@ export default function HealthInsightsPage() {
     if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
-    if (appliedMinVisits > 1) p.set("minVisits", String(appliedMinVisits));
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, appliedFilters, appliedDateRange, appliedMinVisits]);
+  }, [activeClientId, appliedFilters, appliedDateRange]);
 
   const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -582,15 +576,12 @@ export default function HealthInsightsPage() {
     const empty = { ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[] };
     setAppliedFilters(empty);
     setPageFilters(empty);
-    setMinVisits(1);
-    setAppliedMinVisits(1);
   };
   const hasActiveFilters = Object.values(appliedFilters).some((v) => v.length > 0);
 
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
-    setAppliedMinVisits(minVisits);
   };
 
   // Chronic / Acute data
@@ -743,24 +734,6 @@ export default function HealthInsightsPage() {
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Condition" options={categories} selected={pageFilters.conditions} onChange={(v) => setPageFilters((p) => ({ ...p, conditions: v }))} />
 
-        {/* Visit Count chip — clicking N keeps unique UHIDs with consult count >= N. */}
-        <div className="flex items-center gap-1 ml-2">
-          <span className="text-[12px] font-medium" style={{ color: T.textMuted }}>Visit Count:</span>
-          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
-            {[1, 2, 3, 4, 5].map((v) => (
-              <button
-                key={v}
-                onClick={() => setMinVisits(v)}
-                className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${minVisits === v ? "bg-white shadow-sm" : ""}`}
-                style={{ color: minVisits === v ? "#4f46e5" : T.textMuted }}
-                aria-label={v === 5 ? "5 or more visits" : `${v} or more visits`}
-              >
-                {v === 5 ? "5+" : String(v)}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="flex-1" />
         <PageDownload pageTitle="Health Insights" />
         <div className="relative">
@@ -845,18 +818,12 @@ export default function HealthInsightsPage() {
       />
 
       {/* ── KPI Stat Cards (chronic-only) ── */}
-      {/* TODO: rewire numeric values once the new chronic-data warehouse
-          table lands. Labels / sub-text / tooltips already reflect the
-          new chronic-only spec; numeric bindings below are temporary —
-          totalChronicDiagnoses + chronicIcdCategories fall back to the
-          all-categories aggregate, chronicRepeatPatients to 0. */}
       {isChartVisible("healthKpis") && (() => {
-        const totalChronicDiagnoses = categoryTreemap.reduce((s: number, c: any) => s + c.value, 0); // TODO: chronic-only consult count
+        const totalChronicDiagnoses = categoryTreemap.reduce((s: number, c: any) => s + c.value, 0);
         const chronicPatients = ca.chronicPatients || 0;
-        const chronicRepeatPatients = 0; // TODO: distinct UHIDs with chronic consult count >= 2
-        const chronicIcdCategories = categories.length || 0; // TODO: count of chronic ICD categories only
+        const chronicDiseases = categories.length || 0;
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard
               label="Total Chronic Diagnosis"
               value={formatNum(totalChronicDiagnoses)}
@@ -874,16 +841,8 @@ export default function HealthInsightsPage() {
               insight="A growing chronic patient base signals long-term care demand — prioritise continuity-of-care programs"
             />
             <StatCard
-              label="Chronic Repeat Patients"
-              value={formatNum(chronicRepeatPatients)}
-              color="#0d9488"
-              sub="Chronic UHIDs with ≥ 2 consults"
-              tooltip="Distinct chronic patients (UHIDs) who have had two or more consults in the selected period"
-              insight="Repeat chronic visits indicate patients actively engaged in care — a signal of programme effectiveness"
-            />
-            <StatCard
               label="Chronic Diseases"
-              value={chronicIcdCategories}
+              value={chronicDiseases}
               color="#7c3aed"
               sub="Tracked chronic diseases"
               tooltip="Number of distinct chronic diseases with at least one diagnosis in the selected period"

@@ -890,165 +890,146 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#4f46e5"
             title="ICD Category Distribution"
-            subtitle="Tile size = consult volume per category; color saturation grades by rank. Click any category to drill into its conditions →"
-            tooltipText="Treemap of ICD-derived disease categories by consultation volume. Tiles are graded from deep indigo (largest) to soft lavender (smallest) so dominance reads at a glance. Click any tile to drill its condition breakdown into the right panel."
+            subtitle="Consult Count vs. Unique UHIDs per chronic ICD category — scroll for the full list. Click any category to drill into its conditions →"
+            tooltipText="Horizontal grouped bar chart of all chronic ICD categories. Indigo bar = consult count, teal bar = unique UHIDs. Sorted by consult volume; scroll vertically for the full list. Click a category to drill it into the right panel."
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
-            chartDescription="Treemap of ICD categories by consultation volume with rank-graded coloring"
+            chartDescription="Grouped horizontal bars: consult count vs. unique UHIDs per chronic ICD category"
           >
             {(() => {
               const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
-              const TOP_N = 12;
-              const top = sorted.slice(0, TOP_N);
-              const tail = sorted.slice(TOP_N);
-              const tailSum = tail.reduce((s: number, r: any) => s + r.value, 0);
-              const tiles = top.map((d: any) => ({ ...d, isOthers: false }));
               const grandTotal = sorted.reduce((s: number, r: any) => s + (r.value || 0), 0) || 1;
-              const topShown = top.reduce((s: number, r: any) => s + r.value, 0);
-              const topShownPct = Math.round((topShown / grandTotal) * 100);
-              const tailPct = Math.round((tailSum / grandTotal) * 100);
+              const totalUhids = sorted.reduce((s: number, r: any) => s + (r.uniquePatients || 0), 0);
               const dominant = sorted[0];
               const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
-              const RAMP_FROM = "#3730a3";
-              const RAMP_TO = "#c7d2fe";
-              const data = tiles.map((d: any, i: number) => {
-                const t = tiles.length === 1 ? 0 : i / (tiles.length - 1);
-                const fill = interpolateHex(RAMP_FROM, RAMP_TO, t);
-                return {
-                  name: d.name,
-                  displayName: displayCat(d.name),
-                  value: d.value,
-                  uniquePatients: d.uniquePatients,
-                  itemStyle: {
-                    color: fill,
-                    borderColor: "transparent",
-                    borderWidth: 0,
-                    borderRadius: 10,
-                    gapWidth: 6,
-                  },
-                };
-              });
+              const COLOR_CONSULTS = "#4f46e5";
+              const COLOR_UHIDS = "#0d9488";
+              const COL_WIDTH = 90;
+              const CHART_WIDTH = Math.max(sorted.length * COL_WIDTH + 80, 720);
+              // Vertical grouped bars: biggest on the left, scroll horizontally
+              // for the rest. Rotate labels so 22 long category names fit.
+              const labels = sorted.map((d: any) => displayCat(d.name));
+              const consults = sorted.map((d: any) => d.value);
+              const uhids = sorted.map((d: any) => d.uniquePatients || 0);
+              const namesByLabel: Record<string, string> = {};
+              for (const d of sorted) namesByLabel[displayCat(d.name)] = d.name;
               return (
                 <div className="flex-1 flex flex-col">
-                  {/* Hero strip — total of top-N + dominant category */}
-                  <div className="flex items-end justify-between gap-4 mb-2">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Consults (top {tiles.length})</p>
-                      <p className="text-[24px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(topShown)}<span className="text-[12px] font-medium ml-1.5" style={{ color: T.textSecondary }}>· {topShownPct}% of pool</span></p>
+                  {/* Hero strip — three label/value pairs in a mini-grid so
+                      the labels sit cleanly above their numbers (the previous
+                      inline " · " separators had different widths in the
+                      label row vs. the number row, causing misalignment). */}
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div className="grid grid-cols-3 gap-x-5 gap-y-0.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Categories</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Consults</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Unique UHIDs</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{sorted.length}</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(grandTotal)}</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(totalUhids)}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Category</p>
-                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[200px]" style={{ color: RAMP_FROM }}>
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Top Category</p>
+                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[220px] mt-1" style={{ color: COLOR_CONSULTS }}>
                         {dominant ? displayCat(dominant.name) : "—"}
                         <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
                       </p>
                     </div>
                   </div>
-                  {/* Treemap */}
-                  <div style={{ height: 380, minHeight: 320 }}>
-                    <ReactECharts
-                      style={{ height: "100%", width: "100%" }}
-                      onEvents={{
-                        click: (params: any) => {
-                          if (params.data?.name) {
-                            setSelectedCategory(params.data.name);
-                            setSelectedCondition("");
-                          }
-                        },
-                      }}
-                      option={{
-                        tooltip: {
-                          trigger: "item",
-                          backgroundColor: "#fff",
-                          borderColor: T.border,
-                          borderWidth: 1,
-                          padding: [10, 14],
-                          textStyle: { fontSize: 12, color: T.textPrimary },
-                          extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
-                          formatter: (p: any) => {
-                            const dd = p.data || {};
-                            const pct = grandTotal > 0 ? Math.round((dd.value / grandTotal) * 1000) / 10 : 0;
-                            return `<strong>${dd.displayName || dd.name}</strong><br/>${formatNum(dd.value)} consults (${pct}%)${dd.uniquePatients ? `<br/>${formatNum(dd.uniquePatients)} unique patients` : ""}`;
-                          },
-                        },
-                        series: [{
-                          type: "treemap",
-                          data,
-                          top: 0, bottom: 0, left: 0, right: 0,
-                          width: "100%",
-                          height: "100%",
-                          roam: false,
-                          nodeClick: false,
-                          breadcrumb: { show: false },
-                          leafDepth: 1,
-                          squareRatio: 0.5 * (1 + Math.sqrt(5)),
-                          label: {
-                            show: true,
-                            position: "insideTopLeft",
-                            color: "#fff",
-                            fontFamily: "var(--font-inter), system-ui, sans-serif",
-                            overflow: "truncate",
-                            ellipsis: "…",
-                            padding: [8, 10, 8, 10],
-                            // Density tiers — extreme size variation in this
-                            // dataset (one 48% tile + ten ~3-7% tiles) means
-                            // small tiles must show very little, otherwise
-                            // numbers get truncated mid-digit.
-                            //   < 2%    → no label (tooltip carries it)
-                            //   2-4%    → just the percentage
-                            //   4-8%    → short name + percentage
-                            //   ≥ 8%    → short name + count + percentage
-                            formatter: (p: any) => {
-                              const pct = Math.round((p.value / grandTotal) * 1000) / 10;
-                              const share = grandTotal > 0 ? p.value / grandTotal : 0;
-                              const label = tileLabel(p.data.displayName || p.data.name, 14);
-                              if (share < 0.02) return "";
-                              if (share < 0.04) return `{pct|${pct}%}`;
-                              if (share < 0.08) return `{name|${label}}\n{pct|${pct}%}`;
-                              return `{name|${label}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
-                            },
-                            rich: {
-                              name: { fontSize: 12, fontWeight: 700, color: "#fff", lineHeight: 16, padding: [0, 0, 2, 0] },
-                              val:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.92)", lineHeight: 14 },
-                              pct:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 14 },
-                            },
-                          },
-                          itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 },
-                          colorMappingBy: "id",
-                          levels: [{ itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 }, upperLabel: { show: false } }],
-                          emphasis: {
-                            itemStyle: {
-                              shadowBlur: 18,
-                              shadowOffsetY: 4,
-                              shadowColor: "rgba(55,48,163,0.30)",
-                              borderColor: "rgba(55,48,163,0.45)",
-                              borderWidth: 2,
-                            },
-                            label: { fontWeight: 800 },
-                          },
-                          animationDuration: 600,
-                          animationEasing: "cubicOut" as const,
-                        }],
-                      }}
-                    />
+                  {/* Legend chips */}
+                  <div className="flex items-center gap-4 mb-2 text-[11px]" style={{ color: T.textSecondary }}>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_CONSULTS }} /> Consult Count</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_UHIDS }} /> Unique UHIDs</span>
                   </div>
-                  {/* Footer: tail summary + gradient legend */}
-                  <div className="flex items-center justify-between gap-3 mt-2.5 text-[10.5px]" style={{ color: T.textMuted }}>
-                    {tail.length > 0 ? (
-                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "#f3f4f6", border: `1px solid ${T.borderLight}` }}>
-                        <span className="w-2 h-2 rounded-full" style={{ background: "#9ca3af" }} />
-                        <span><strong style={{ color: T.textPrimary }}>+ {tail.length}</strong> smaller categories · <strong style={{ color: T.textPrimary }}>{formatNum(tailSum)}</strong> consults ({tailPct}%)</span>
-                      </span>
-                    ) : <span />}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span>Largest</span>
-                      <span className="w-12 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${RAMP_FROM}, ${RAMP_TO})` }} />
-                      <span>Smallest</span>
+                  {/* Scrollable vertical grouped bar chart — width grows with
+                      column count, the parent clips with overflow-x-auto so
+                      the user scrolls within the card instead of the page. */}
+                  <div className="rounded-xl border" style={{ borderColor: T.borderLight, background: "#FAFBFD" }}>
+                    <div style={{ overflowX: "auto" }}>
+                      <div style={{ width: CHART_WIDTH, height: 420 }}>
+                        <ReactECharts
+                          style={{ height: "100%", width: "100%" }}
+                          onEvents={{
+                            click: (params: any) => {
+                              const realName = namesByLabel[params.name];
+                              if (realName) {
+                                setSelectedCategory(realName);
+                                setSelectedCondition("");
+                              }
+                            },
+                          }}
+                          option={{
+                            tooltip: {
+                              trigger: "axis",
+                              axisPointer: { type: "shadow" },
+                              backgroundColor: "#fff",
+                              borderColor: T.border,
+                              borderWidth: 1,
+                              padding: [10, 14],
+                              textStyle: { fontSize: 12, color: T.textPrimary },
+                              extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
+                              formatter: (params: any) => {
+                                const arr = Array.isArray(params) ? params : [params];
+                                const cat = arr[0]?.axisValueLabel || arr[0]?.name || "";
+                                const lines = arr.map((p: any) => `<span style="color:${p.color};font-weight:600">${p.seriesName}:</span> <strong>${formatNum(p.value)}</strong>`).join("<br/>");
+                                return `<strong>${cat}</strong><br/>${lines}`;
+                              },
+                            },
+                            grid: { left: 16, right: 16, top: 16, bottom: 110, containLabel: true },
+                            xAxis: {
+                              type: "category",
+                              data: labels,
+                              axisLine: { lineStyle: { color: T.borderLight } },
+                              axisTick: { show: false },
+                              axisLabel: {
+                                color: T.textPrimary,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                interval: 0,
+                                rotate: 35,
+                                width: 110,
+                                overflow: "truncate",
+                                ellipsis: "…",
+                              },
+                            },
+                            yAxis: {
+                              type: "value",
+                              axisLine: { show: false },
+                              axisTick: { show: false },
+                              splitLine: { lineStyle: { color: T.borderLight, type: "dashed" } },
+                              axisLabel: { color: T.textMuted, fontSize: 10 },
+                            },
+                            series: [
+                              {
+                                name: "Consult Count",
+                                type: "bar",
+                                data: consults,
+                                itemStyle: { color: COLOR_CONSULTS, borderRadius: [4, 4, 0, 0] },
+                                barCategoryGap: "20%",
+                                barGap: "10%",
+                                barMinHeight: 2,
+                                cursor: "pointer",
+                                emphasis: { itemStyle: { shadowBlur: 6, shadowColor: "rgba(79,70,229,0.30)" } },
+                              },
+                              {
+                                name: "Unique UHIDs",
+                                type: "bar",
+                                data: uhids,
+                                itemStyle: { color: COLOR_UHIDS, borderRadius: [4, 4, 0, 0] },
+                                barMinHeight: 2,
+                                cursor: "pointer",
+                                emphasis: { itemStyle: { shadowBlur: 6, shadowColor: "rgba(13,148,136,0.30)" } },
+                              },
+                            ],
+                            animationDuration: 500,
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                   {categoryTreemap.length > 0 && (
-                    <InsightBox text={`The leading ICD category is ${displayCat(dominant?.name || "")} with ${formatNum(dominant?.value || 0)} consultations (${dominantPct}% of total). Top ${tiles.length} carry ${topShownPct}% of all consults${tail.length > 0 ? `; ${tail.length} smaller categories combine to ${tailPct}%` : ""}. Click any tile to drill into its condition breakdown.`} />
+                    <InsightBox text={`${sorted.length} chronic ICD categories tracked. Leading: ${displayCat(dominant?.name || "")} with ${formatNum(dominant?.value || 0)} consults (${dominantPct}% of pool) across ${formatNum(dominant?.uniquePatients || 0)} unique patients. Indigo bars rank consult volume, teal bars show how many distinct patients drove that volume — gaps signal repeat-heavy categories.`} />
                   )}
                 </div>
               );

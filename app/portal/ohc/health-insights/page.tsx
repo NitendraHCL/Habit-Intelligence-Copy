@@ -409,6 +409,10 @@ export default function HealthInsightsPage() {
   const [pageFilters, setPageFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
+  // Visit-count chip filter — clicking N keeps unique UHIDs with consult
+  // count >= N. 1 = no filtering (default). Same draft/applied split as
+  // every other filter so the choice only commits on Apply.
+  const [minVisits, setMinVisits] = useState<number>(1);
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
   const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
@@ -418,6 +422,7 @@ export default function HealthInsightsPage() {
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
+  const [appliedMinVisits, setAppliedMinVisits] = useState<number>(1);
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
@@ -462,8 +467,9 @@ export default function HealthInsightsPage() {
     if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
+    if (appliedMinVisits > 1) p.set("minVisits", String(appliedMinVisits));
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange]);
+  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, conditionType, appliedFilters, appliedDateRange, appliedMinVisits]);
 
   const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
@@ -520,12 +526,15 @@ export default function HealthInsightsPage() {
     const empty = { ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[] };
     setAppliedFilters(empty);
     setPageFilters(empty);
+    setMinVisits(1);
+    setAppliedMinVisits(1);
   };
   const hasActiveFilters = Object.values(appliedFilters).some((v) => v.length > 0);
 
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
+    setAppliedMinVisits(minVisits);
   };
 
   // Chronic / Acute data
@@ -661,6 +670,24 @@ export default function HealthInsightsPage() {
         <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Condition" options={categories} selected={pageFilters.conditions} onChange={(v) => setPageFilters((p) => ({ ...p, conditions: v }))} />
+
+        {/* Visit Count chip — clicking N keeps unique UHIDs with consult count >= N. */}
+        <div className="flex items-center gap-1 ml-2">
+          <span className="text-[12px] font-medium" style={{ color: T.textMuted }}>Visit Count:</span>
+          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
+            {[1, 2, 3, 4, 5].map((v) => (
+              <button
+                key={v}
+                onClick={() => setMinVisits(v)}
+                className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${minVisits === v ? "bg-white shadow-sm" : ""}`}
+                style={{ color: minVisits === v ? "#4f46e5" : T.textMuted }}
+                aria-label={v === 5 ? "5 or more visits" : `${v} or more visits`}
+              >
+                {v === 5 ? "5+" : String(v)}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="flex-1" />
         <PageDownload pageTitle="Health Insights" />

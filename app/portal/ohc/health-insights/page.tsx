@@ -66,24 +66,21 @@ const CONDITION_TREEMAP_COLORS = CHART_PALETTE.slice(0, 7);
 
 const HEATMAP_COLORS = HEATMAP_GRADIENT;
 
-// ─── Display‑name mapping (from ICD10 Brief Excel) ───
+// ─── Display-name mapping for the master grouping ───
+// Keys are the verbatim `disease` values stored in agg_diagnosis (sourced
+// from the chronic_icd lookup). Values are short, dropdown/legend-friendly
+// labels. Anything not listed renders as-is.
 const CATEGORY_DISPLAY: Record<string, string> = {
-  "Cancers": "Cancer",
-  "Cardiovascular Diseases": "Cardiovascular Diseases",
-  "Diseases of the skin and subcutaneous tissue": "Skin & Subcutaneous",
-  "Endocrine & Metabolic disorders:": "Metabolic Disorders",
-  "Gastrointestinal and related conditions": "Gastrointestinal Diseases",
-  "Generalised Debility (Weakness, Body Pains, Lethargy etc.)": "Generalised Debility",
-  "Genitourinary Diseases": "Urological Conditions",
-  "Immunologic & Rheumatologic Conditions": "Immunologic & Rheumatologic",
-  "Infections (Communicable Diseases)": "Infections",
-  "Injury, Fracture or Trauma": "Injuries",
-  "Neonatal and Congenital Diseases": "Congenital Anomalies",
-  "Neuro-psychiatric conditions": "Neuro-Psychiatric",
-  "Nutritional Deficiencies & Allied Conditions": "Nutritional Deficiencies",
-  "Obstetric & Gynecologic Issues": "Obstetric & Gynecologic",
-  "Other Benign Conditions (including non-cancerous Tumors)": "Other Benign Conditions",
-  "Respiratory Diseases": "Respiratory Diseases",
+  "Diabetes mellitus (DM)": "Diabetes (DM)",
+  "Prediabetes (Pre-DM)": "Pre-Diabetes",
+  "Prehypertension (Pre-HT)": "Pre-Hypertension",
+  "Hypertension (HT)": "Hypertension",
+  "Polycystic Ovarian Syndrome (PCOS)": "PCOS",
+  "Arthritis [including Osteoarthritis (OA) and other conditions with joint pains]": "Arthritis",
+  "Chronic Liver Disease (including Alcoholic Liver Disease)": "Chronic Liver Disease",
+  "Stress & other mental health issues (including substance abuse)": "Mental Health",
+  "Pancreatic Diseases (including Acute, Chronic, and Alcohol-induced Pancreatitis)": "Pancreatic Diseases",
+  "OSA/OHS": "OSA / OHS",
 };
 
 const SUBCATEGORY_SHORT: Record<string, string> = {

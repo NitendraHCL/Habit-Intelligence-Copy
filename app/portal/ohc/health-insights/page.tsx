@@ -281,7 +281,11 @@ function FilterMultiSelect({ label, options, selected, onChange }: {
 }
 
 // ─── Year Selector ───
-function YearSelector({ years, value, onChange }: { years: number[]; value: number; onChange: (y: number) => void }) {
+function YearSelector({ years, value, onChange, includeAll }: { years: number[]; value: number; onChange: (y: number) => void; includeAll?: boolean }) {
+  // includeAll → adds an "All Years" option that maps to the sentinel
+  // 0. The API URL builder skips the year param when value is 0, and
+  // the server-side regex /^\d{4}$/ already drops anything non-numeric,
+  // so no API change is needed.
   return (
     <select
       value={value}
@@ -289,6 +293,7 @@ function YearSelector({ years, value, onChange }: { years: number[]; value: numb
       className="h-8 px-3 rounded-lg border text-[13px] font-medium"
       style={{ borderColor: T.border, color: T.textPrimary }}
     >
+      {includeAll && <option value={0}>All Years</option>}
       {years.map((y) => <option key={y} value={y}>{y}</option>)}
     </select>
   );
@@ -396,12 +401,19 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 export default function HealthInsightsPage() {
   usePageAccess("/portal/ohc/health-insights");
   const { activeClientId } = useAuth();
-  const [selectedYear, setSelectedYear] = useState(2025);
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedCondition, setSelectedCondition] = useState("");
+  // Page-scoped UI state.
   const [demoTab, setDemoTab] = useState<"age" | "gender" | "location">("age");
   const [trendView, setTrendView] = useState<"yearly" | "monthly">("yearly");
-  const [vitalType, setVitalType] = useState<"BMI" | "Systolic BP" | "Diastolic BP" | "SpO2">("BMI");
+  // Per-chart local state — top-bar filters are global, every other
+  // selector is scoped to a single chart so a change here never
+  // refetches the other charts on the page.
+  const [trendsCategory, setTrendsCategory] = useState<string>("");
+  const [trendsCondition, setTrendsCondition] = useState<string>("");
+  const [coOccYear, setCoOccYear] = useState<number>(2025);
+  const [demoYear, setDemoYear] = useState<number>(2025);
+  const [demoCategory, setDemoCategory] = useState<string>("");
+  const [demoCondition, setDemoCondition] = useState<string>("");
+  const [seasonalYear, setSeasonalYear] = useState<number>(2025);
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
     to: new Date(2026, 2, 31),
@@ -426,6 +438,11 @@ export default function HealthInsightsPage() {
   const [appliedMinVisits, setAppliedMinVisits] = useState<number>(1);
   // Which Condition Share Distribution rows are expanded (multi-select).
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // Co-Occurrence venn — up to 3 chronic ICD parent categories. Selection
+  // commits to the API on every change (no Apply button needed for this
+  // chart-scoped picker).
+  const [coOccCats, setCoOccCats] = useState<string[]>([]);
+  const [coOccPickerOpen, setCoOccPickerOpen] = useState(false);
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
@@ -456,27 +473,71 @@ export default function HealthInsightsPage() {
       .catch(() => {});
   }, [activeClientId]);
 
+  // Main URL — only top-bar filters travel here. Per-chart selectors
+  // (year, category, condition, co-occurrence categories) are scoped
+  // to their own SWR fetches below so a chart-local change can never
+  // refetch the whole page.
   const apiUrl = useMemo(() => {
     if (!activeClientId) return null;
     const p = new URLSearchParams();
     p.set("clientId", activeClientId);
-    p.set("year", String(selectedYear));
     p.set("dateFrom", format(appliedDateRange.from, "yyyy-MM-dd"));
     p.set("dateTo", format(appliedDateRange.to, "yyyy-MM-dd"));
-    if (selectedCategory) p.set("category", selectedCategory);
-    if (selectedCondition) p.set("condition", selectedCondition);
     if (appliedFilters.ageGroups.length) p.set("ageGroups", appliedFilters.ageGroups.join(","));
     if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
     if (appliedMinVisits > 1) p.set("minVisits", String(appliedMinVisits));
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, selectedYear, selectedCategory, selectedCondition, appliedFilters, appliedDateRange, appliedMinVisits]);
+  }, [activeClientId, appliedFilters, appliedDateRange, appliedMinVisits]);
 
-  const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, (url: string) => fetch(url).then((r) => r.json()), {
+  const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+  const { data: raw, isLoading, isValidating, mutate } = useSWR(apiUrl, fetcher, {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
   });
   const d = raw as any;
+
+  // ── Per-chart fetches ── each adds its own params on top of the
+  // main URL so top-bar filters still cascade. Same SWR options as the
+  // main fetch — keepPreviousData so the chart doesn't blank during a
+  // local filter change.
+  const buildChartUrl = (extras: Record<string, string | number | undefined>) => {
+    if (!apiUrl) return null;
+    const url = new URL(apiUrl, "http://x");
+    for (const [k, v] of Object.entries(extras)) {
+      if (v === undefined || v === "" || v === 0) continue;
+      url.searchParams.set(k, String(v));
+    }
+    return url.pathname + "?" + url.searchParams.toString();
+  };
+
+  const trendsUrl = useMemo(
+    () => buildChartUrl({ chart: "trends", category: trendsCategory, condition: trendsCondition }),
+    [apiUrl, trendsCategory, trendsCondition],
+  );
+  const { data: trendsRaw } = useSWR(trendsUrl, fetcher, {
+    revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
+  });
+  const trendsApi = trendsRaw as any;
+
+  const coOccUrl = useMemo(
+    () => buildChartUrl({ chart: "coOcc", coOccurrenceCategories: coOccCats.join(","), year: coOccYear }),
+    [apiUrl, coOccCats, coOccYear],
+  );
+  const { data: coOccRaw } = useSWR(coOccUrl, fetcher, {
+    revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
+  });
+  const coOccApi = coOccRaw as any;
+
+  const demoUrl = useMemo(
+    () => buildChartUrl({ chart: "demo", year: demoYear, category: demoCategory, condition: demoCondition }),
+    [apiUrl, demoYear, demoCategory, demoCondition],
+  );
+  const { data: demoRaw } = useSWR(demoUrl, fetcher, {
+    revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
+  });
+  const demoApi = demoRaw as any;
 
   // Refresh button — mirrors the /portal/ohc/utilization pattern.
   // Force a `?nocache=1` fetch, write the fresh payload into SWR via
@@ -503,23 +564,19 @@ export default function HealthInsightsPage() {
   // Set initial category when data loads
   const categories: string[] = d?.categories || [];
   const years: number[] = d?.years || [2024, 2025, 2026];
-  const effectiveCategory = selectedCategory || categories[0] || "";
   const conditionBreakdown: any[] = d?.conditionBreakdown || [];
   const conditionsByCategory: Record<string, Array<{ name: string; value: number; uniquePatients: number }>> = d?.conditionsByCategory || {};
-  const effectiveCondition = selectedCondition || conditionBreakdown[0]?.name || "";
 
-  // Auto-select category when data loads — default to Metabolic Disorders
+  // Auto-select default category for Trends Over Time + Demographic
+  // Analysis once the available list arrives (defaults to Metabolic
+  // Disorders, falling back to whichever is first).
   useEffect(() => {
-    if (!selectedCategory && categories.length > 0) {
-      const metabolic = categories.find((c) => c.toLowerCase().includes("metabolic"));
-      setSelectedCategory(metabolic || categories[0]);
-    }
-  }, [categories, selectedCategory]);
-  useEffect(() => {
-    if (!selectedCondition && conditionBreakdown.length > 0) {
-      setSelectedCondition(conditionBreakdown[0]?.name || "");
-    }
-  }, [conditionBreakdown, selectedCondition]);
+    if (categories.length === 0) return;
+    const fallback = categories.find((c) => c.toLowerCase().includes("metabolic")) || categories[0];
+    if (!trendsCategory) setTrendsCategory(fallback);
+    if (!demoCategory) setDemoCategory(fallback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories]);
 
   const handleRemoveChip = (key: string, value: string) => {
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
@@ -564,8 +621,8 @@ export default function HealthInsightsPage() {
   // selected range (zero-data years render as a flat baseline instead of
   // disappearing).
   const trendData = useMemo(() => {
-    if (trendView !== "yearly") return d?.conditionTrends || [];
-    const raw: Array<{ period: string; count: number; uniquePatients: number }> = d?.conditionTrendsYearly || [];
+    if (trendView !== "yearly") return trendsApi?.conditionTrends || [];
+    const raw: Array<{ period: string; count: number; uniquePatients: number }> = trendsApi?.conditionTrendsYearly || [];
     const fromYr = appliedDateRange.from.getFullYear();
     const toYr = appliedDateRange.to.getFullYear();
     if (!Number.isFinite(fromYr) || !Number.isFinite(toYr) || toYr < fromYr) return raw;
@@ -577,11 +634,11 @@ export default function HealthInsightsPage() {
       filled.push(byYr[key] || { period: key, count: 0, uniquePatients: 0 });
     }
     return filled;
-  }, [trendView, d?.conditionTrends, d?.conditionTrendsYearly, appliedDateRange]);
+  }, [trendView, trendsApi?.conditionTrends, trendsApi?.conditionTrendsYearly, appliedDateRange]);
 
   // Demographics
-  const demoData = demoTab === "age" ? d?.demoAge : demoTab === "gender" ? d?.demoGender : d?.demoLocation;
-  const demoSegments = demoTab === "age" ? filterOptions.ageGroups : demoTab === "gender" ? filterOptions.genders : (d?.facilities || filterOptions.locations);
+  const demoData = demoTab === "age" ? demoApi?.demoAge : demoTab === "gender" ? demoApi?.demoGender : demoApi?.demoLocation;
+  const demoSegments = demoTab === "age" ? filterOptions.ageGroups : demoTab === "gender" ? filterOptions.genders : (demoApi?.facilities || d?.facilities || filterOptions.locations);
 
   // Compute heatmap matrix
   const demoConditions = useMemo(() => {
@@ -621,23 +678,10 @@ export default function HealthInsightsPage() {
     return { hotspot, genderGap: "", locationSpotlight: "" };
   }, [demoMatrix, demoSegments, demoTab]);
 
-  // Disease combos (limit to 6) — precompute a cleaned displayName so the
-  // axis labels, tooltip and insight all show the ICD-cleaned form
-  // ("Hyperlipidemia + Prediabetes" instead of "Hyperlipidemia, unspecified
-  // + Prediabetes").
-  const combos = (d?.diseaseCombinations || []).slice(0, 6).map((c: any) => ({
-    ...c,
-    displayName: typeof c.name === "string"
-      ? c.name.split(" + ").map((p: string) => displaySub(p.trim())).join(" + ")
-      : c.name,
-  }));
 
   // Seasonal trends
   const seasonalTrends: Record<string, any[]> = d?.seasonalTrends || {};
   const seasonalConditions = Object.keys(seasonalTrends);
-
-  // Vitals
-  const vitalsData = d?.vitalsTrend?.[vitalType] || [];
 
   // Symptom mapping
   const symptomData = d?.symptomMapping || [];
@@ -758,7 +802,7 @@ export default function HealthInsightsPage() {
             { id: "categoryBreakdown", label: "Category Breakdown" },
             { id: "demographicAnalysis", label: "Demographic Analysis" },
             { id: "trendsOverTime", label: "Trends Over Time" },
-            { id: "coOccurrenceVitals", label: "Co-Occurrence & Vitals" },
+            { id: "coOccurrenceVitals", label: "Co-Occurrence" },
             { id: "seasonalPatterns", label: "Seasonal Patterns" },
             { id: "symptomMapping", label: "Symptom Mapping" },
           ]}
@@ -887,7 +931,7 @@ export default function HealthInsightsPage() {
                   key={c.name}
                   className="bg-white px-5 py-4 transition-all duration-200 hover:-translate-y-0.5 rounded-2xl cursor-pointer flex flex-col gap-1"
                   style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
-                  onClick={() => { setSelectedCategory(c.name); setSelectedCondition(""); }}
+                  onClick={() => { setDemoCategory(c.name); setDemoCondition(""); }}
                 >
                   <p className="text-[11px] font-bold uppercase tracking-[0.06em] truncate" style={{ color: T.textMuted }}>{displayCat(c.name)}</p>
                   <p className="text-[28px] font-extrabold tracking-[-0.025em] leading-none" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>{formatNum(c.value)}</p>
@@ -929,7 +973,6 @@ export default function HealthInsightsPage() {
             title="ICD Category Distribution"
             subtitle="Consult Count vs. Unique UHIDs per chronic ICD category — scroll for the full list. Click any category to drill into its conditions →"
             tooltipText="Horizontal grouped bar chart of all chronic ICD categories. Indigo bar = consult count, teal bar = unique UHIDs. Sorted by consult volume; scroll vertically for the full list. Click a category to drill it into the right panel."
-            headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
             chartDescription="Grouped horizontal bars: consult count vs. unique UHIDs per chronic ICD category"
@@ -991,8 +1034,8 @@ export default function HealthInsightsPage() {
                             click: (params: any) => {
                               const realName = namesByLabel[params.name];
                               if (realName) {
-                                setSelectedCategory(realName);
-                                setSelectedCondition("");
+                                setDemoCategory(realName);
+                                setDemoCondition("");
                               }
                             },
                           }}
@@ -1213,10 +1256,10 @@ export default function HealthInsightsPage() {
         chartDescription="Condition frequency across demographic segments (heatmap)"
         headerRight={
           <div className="flex items-center gap-2">
-            <YearSelector years={years} value={selectedYear} onChange={setSelectedYear} />
-            <ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} />
-            <CategorySelector categories={categories} value={effectiveCategory} onChange={(c) => { setSelectedCategory(c); setSelectedCondition(""); }} />
-            <ResetFilter visible={selectedCategory !== ""} onClick={() => setSelectedCategory("")} />
+            <YearSelector years={years} value={demoYear} onChange={setDemoYear} />
+            <ResetFilter visible={demoYear !== 2025} onClick={() => setDemoYear(2025)} />
+            <CategorySelector categories={categories.length > 0 ? categories : (categoriesForSelect.map((c: any) => c.name))} value={demoCategory} onChange={(c) => { setDemoCategory(c); setDemoCondition(""); }} />
+            <ResetFilter visible={demoCategory !== ""} onClick={() => setDemoCategory("")} />
           </div>
         }
       >
@@ -1341,16 +1384,16 @@ export default function HealthInsightsPage() {
             category triggers a fresh fetch — without latching the dropdown
             would briefly disappear). The same controls drive both Yearly
             and Monthly views since they share this CVCard body. */}
-        {(categoriesForSelect.length > 0 || selectedCategory) && (() => {
+        {(categoriesForSelect.length > 0 || trendsCategory) && (() => {
           const sortedCats = [...categoriesForSelect].sort((a: any, b: any) => b.value - a.value);
-          const activeCat = selectedCategory || sortedCats[0]?.name || "";
+          const activeCat = trendsCategory || sortedCats[0]?.name || "";
           const subs = (conditionsForSelect[activeCat] || []).slice().sort((a, b) => b.value - a.value);
-          const isAllSelected = !selectedCondition;
+          const isAllSelected = !trendsCondition;
           return (
             <div className="mb-4">
               <select
                 value={activeCat}
-                onChange={(e) => { setSelectedCategory(e.target.value); setSelectedCondition(""); }}
+                onChange={(e) => { setTrendsCategory(e.target.value); setTrendsCondition(""); }}
                 className="w-full h-9 px-3 rounded-lg border text-[13px] font-medium"
                 style={{ borderColor: T.border, color: T.textPrimary }}
               >
@@ -1359,10 +1402,10 @@ export default function HealthInsightsPage() {
                 ))}
               </select>
               {/* Subcategory chips — leading "All" pill aggregates the
-                  whole category by clearing selectedCondition. */}
+                  whole category by clearing trendsCondition. */}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <button
-                  onClick={() => setSelectedCondition("")}
+                  onClick={() => setTrendsCondition("")}
                   className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${isAllSelected ? "text-white border-transparent" : ""}`}
                   style={{
                     backgroundColor: isAllSelected ? "#4f46e5" : "transparent",
@@ -1375,14 +1418,14 @@ export default function HealthInsightsPage() {
                 {subs.map((c) => (
                   <button
                     key={c.name}
-                    onClick={() => setSelectedCondition(c.name)}
+                    onClick={() => setTrendsCondition(c.name)}
                     className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
-                      (selectedCondition === c.name) ? "text-white border-transparent" : ""
+                      (trendsCondition === c.name) ? "text-white border-transparent" : ""
                     }`}
                     style={{
-                      backgroundColor: selectedCondition === c.name ? "#4f46e5" : "transparent",
-                      borderColor: selectedCondition === c.name ? "#4f46e5" : T.border,
-                      color: selectedCondition === c.name ? "#fff" : T.textSecondary,
+                      backgroundColor: trendsCondition === c.name ? "#4f46e5" : "transparent",
+                      borderColor: trendsCondition === c.name ? "#4f46e5" : T.border,
+                      color: trendsCondition === c.name ? "#fff" : T.textSecondary,
                     }}
                   >
                     {displaySub(c.name)}
@@ -1470,211 +1513,243 @@ export default function HealthInsightsPage() {
           </div>
         </div>
         {trendData.length > 0 && (
-          <InsightBox text={`Trend data for ${displaySub(effectiveCondition)} shows ${trendView === "yearly" ? "year-over-year" : "month-over-month"} consultation patterns. Monitor these trends to identify rising or declining condition prevalence across the selected time period.`} />
+          <InsightBox text={`Trend data for ${trendsCondition ? displaySub(trendsCondition) : displayCat(trendsCategory)} shows ${trendView === "yearly" ? "year-over-year" : "month-over-month"} consultation patterns. Monitor these trends to identify rising or declining condition prevalence across the selected time period.`} />
         )}
       </CVCard>
       </WarmSection>}
 
-      {/* ── Co-Occurrence & Vitals Section ── */}
+      {/* ── Co-Occurrence Section ── */}
       {isChartVisible("coOccurrenceVitals") && <WarmSection>
         <AccentBar color="#7c3aed" colorEnd="#8b5cf6" />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Co-Occurrence & Vitals</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Disease co-occurrences and vital sign distribution trends</p>
-      {/* ── Disease Combinations (full width) ── */}
+        <h2 className="text-[20px] font-extrabold tracking-[-0.02em] font-[var(--font-inter)] mb-0.5" style={{ color: T.textPrimary }}>Co-Occurrence</h2>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Disease co-occurrences across the chronic patient cohort</p>
+      {/* ── Co-Occurrence Venn (full width) ── */}
       <CVCard
           accentColor="#7c3aed"
-          title="Severe Diseases Combination and Gender"
-          subtitle="Frequently co-occurring chronic conditions that effect significant portion of population. Useful for bundled care planning & referrals"
-          tooltipText="Displays the most common disease co-occurrences among patients. Each bar shows how frequently two conditions appear together."
+          title="Chronic Category Co-Occurrence"
+          subtitle="Pick up to 3 chronic ICD categories — the venn shows unique-UHID overlap, with an age + gender breakdown of patients carrying ALL selected categories"
+          tooltipText="Multi-select chronic ICD parent categories (cap 3). Circles in the venn diagram are sized by the unique UHID count of each category; overlap regions show how many patients carry the intersecting set. The panel beside it breaks down the all-overlap intersection by age group and gender."
           chartId="coOccurrence"
-          chartData={combos}
-          chartDescription="Disease co-occurrence frequency with gender breakdown"
-          headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
+          chartData={coOccApi?.coOccurrenceVenn}
+          chartDescription="Venn diagram of unique UHID overlap across selected chronic ICD categories with age + gender breakdown of the intersection"
+          headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={coOccYear} onChange={setCoOccYear} includeAll /><ResetFilter visible={coOccYear !== 2025} onClick={() => setCoOccYear(2025)} /></div>}
         >
-          {/* Cleveland dot plot — one row per disease pair, two dots
-              (Male / Female) connected by a thin grey line. Line length =
-              the gender gap; dot positions = absolute counts. Lighter and
-              far more readable than the overlapping bubble cloud. */}
           {(() => {
-            const maxValue = Math.max(1, ...combos.flatMap((c: any) => [c.male || 0, c.female || 0]));
+            const venn = coOccApi?.coOccurrenceVenn || { categories: [], subsets: {}, overlapAge: {}, overlapGender: {} };
+            const sortedAvailable = [...categoriesForSelect].sort((a: any, b: any) => b.value - a.value);
+            const cap = 3;
+            const colors = ["#7c3aed", "#0d9488", "#d97706"];
+            const subsets: Record<string, number> = venn.subsets || {};
+            const N = coOccCats.length;
+            const sizeOf = (mask: number) => Number(subsets[String(mask)] || 0);
+            const allMask = N > 0 ? (1 << N) - 1 : 0;
+            const totalUhids = Object.values(subsets).reduce((s, n) => s + Number(n), 0);
+            const intersection = sizeOf(allMask);
+            // Per-category total (any subset that includes this index).
+            const sizeIncluding = (idx: number) =>
+              Object.entries(subsets).reduce((s, [m, v]) => s + ((Number(m) & (1 << idx)) ? Number(v) : 0), 0);
+
+            // Venn layout. Fixed positions sized to fit a 360x300 svg.
+            // For 1 cat: single circle. 2 cats: two side-by-side. 3 cats:
+            // triangle. Counts are labeled inside each region so the
+            // visual approximation doesn't have to be area-exact.
+            const SVG_W = 360, SVG_H = 300;
+            type Pos = { cx: number; cy: number; r: number };
+            const circles: Pos[] =
+              N === 1 ? [{ cx: 180, cy: 150, r: 90 }] :
+              N === 2 ? [{ cx: 130, cy: 150, r: 88 }, { cx: 230, cy: 150, r: 88 }] :
+              N === 3 ? [{ cx: 130, cy: 120, r: 80 }, { cx: 230, cy: 120, r: 80 }, { cx: 180, cy: 200, r: 80 }] : [];
+
+            // Anchor positions for the count labels inside each venn region.
+            const labelAt = (mask: number): { x: number; y: number } | null => {
+              if (N === 1) {
+                if (mask === 1) return { x: 180, y: 150 };
+              }
+              if (N === 2) {
+                if (mask === 0b01) return { x: 95, y: 150 };
+                if (mask === 0b10) return { x: 265, y: 150 };
+                if (mask === 0b11) return { x: 180, y: 150 };
+              }
+              if (N === 3) {
+                if (mask === 0b001) return { x: 90, y: 100 };
+                if (mask === 0b010) return { x: 270, y: 100 };
+                if (mask === 0b100) return { x: 180, y: 230 };
+                if (mask === 0b011) return { x: 180, y: 95 };
+                if (mask === 0b101) return { x: 130, y: 175 };
+                if (mask === 0b110) return { x: 230, y: 175 };
+                if (mask === 0b111) return { x: 180, y: 155 };
+              }
+              return null;
+            };
+
+            const allMaskList = N === 0 ? [] : Array.from({ length: (1 << N) - 1 }, (_, i) => i + 1);
+            const togglePicked = (cat: string) => {
+              setCoOccCats((prev) => {
+                if (prev.includes(cat)) return prev.filter((c) => c !== cat);
+                if (prev.length >= cap) return prev;
+                return [...prev, cat];
+              });
+            };
             return (
-              <div className="flex flex-col">
-                {/* Legend */}
-                <div className="flex items-center gap-4 mb-4 text-[11px]" style={{ color: T.textSecondary }}>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLORS.Male }} /> Male
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLORS.Female }} /> Female
-                  </span>
-                  <span className="text-[10.5px]" style={{ color: T.textMuted }}>— line length = gender gap</span>
-                </div>
-                {/* Rows */}
-                <div className="flex flex-col gap-3">
-                  {combos.map((c: any) => {
-                    const male = c.male || 0;
-                    const female = c.female || 0;
-                    const total = c.total || male + female;
-                    const malePct = (male / maxValue) * 100;
-                    const femalePct = (female / maxValue) * 100;
-                    const leftPct = Math.min(malePct, femalePct);
-                    const rightPct = Math.max(malePct, femalePct);
-                    const leadingGender = male >= female ? "Male" : "Female";
-                    const gap = Math.abs(male - female);
-                    const gapPct = total > 0 ? Math.round((gap / total) * 100) : 0;
-                    const label = c.displayName || c.name;
-                    return (
-                      <div
-                        key={label}
-                        className="grid items-center gap-3 text-left"
-                        style={{ gridTemplateColumns: "minmax(180px, 30%) 1fr auto" }}
-                        title={`${label}\nMale: ${formatNum(male)}\nFemale: ${formatNum(female)}\nTotal: ${formatNum(total)}`}
-                      >
-                        {/* Pair label */}
-                        <span className="text-[12px] font-semibold truncate" style={{ color: T.textPrimary }}>
-                          {label}
-                        </span>
-                        {/* Dot plot lane */}
-                        <span className="relative h-5 flex items-center">
-                          {/* Subtle baseline track */}
-                          <span
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-full rounded-full"
-                            style={{ height: 1, backgroundColor: T.borderLight }}
-                          />
-                          {/* Connector line between Male and Female dots */}
-                          <span
-                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
-                            style={{
-                              left: `${leftPct}%`,
-                              width: `${Math.max(0, rightPct - leftPct)}%`,
-                              height: 3,
-                              backgroundColor: T.textMuted,
-                              opacity: 0.5,
-                            }}
-                          />
-                          {/* Male dot */}
-                          <span
-                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
-                            style={{
-                              left: `calc(${malePct}% - 7px)`,
-                              width: 14,
-                              height: 14,
-                              backgroundColor: GENDER_COLORS.Male,
-                              boxShadow: `0 0 0 3px ${GENDER_COLORS.Male}25`,
-                            }}
-                          />
-                          {/* Female dot */}
-                          <span
-                            className="absolute top-1/2 -translate-y-1/2 rounded-full"
-                            style={{
-                              left: `calc(${femalePct}% - 7px)`,
-                              width: 14,
-                              height: 14,
-                              backgroundColor: GENDER_COLORS.Female,
-                              boxShadow: `0 0 0 3px ${GENDER_COLORS.Female}25`,
-                            }}
-                          />
-                        </span>
-                        {/* Counts cluster */}
-                        <span className="flex items-baseline gap-2 shrink-0 whitespace-nowrap text-[12px] tabular-nums">
-                          <span className="font-bold" style={{ color: GENDER_COLORS.Male }}>{formatNum(male)}</span>
-                          <span style={{ color: T.textMuted }}>·</span>
-                          <span className="font-bold" style={{ color: GENDER_COLORS.Female }}>{formatNum(female)}</span>
-                          <span className="text-[10.5px] font-medium ml-1" style={{ color: leadingGender === "Male" ? GENDER_COLORS.Male : GENDER_COLORS.Female }}>
-                            {leadingGender}+{gapPct}%
-                          </span>
-                        </span>
+              <div className="flex flex-col gap-4">
+                {/* Multi-select picker — popover with checkboxes */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCoOccPickerOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-[13px] font-medium hover:border-gray-300 transition-colors"
+                    style={{ borderColor: T.border, color: T.textPrimary, background: T.white }}
+                  >
+                    Categories
+                    <span className="ml-0.5 h-[18px] min-w-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: "#7c3aed" }}>
+                      {coOccCats.length}/{cap}
+                    </span>
+                    <ChevronDown size={13} style={{ color: T.textMuted }} />
+                  </button>
+                  {/* Selected pills next to the picker for at-a-glance state */}
+                  <div className="inline-flex items-center gap-2 ml-3 flex-wrap align-middle">
+                    {coOccCats.map((cat, i) => (
+                      <span key={cat} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border" style={{ borderColor: colors[i] + "55", background: colors[i] + "10", color: colors[i] }}>
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[i] }} />
+                        {displayCat(cat)}
+                        <button onClick={() => togglePicked(cat)} className="opacity-60 hover:opacity-100" aria-label={`Remove ${cat}`}>×</button>
+                      </span>
+                    ))}
+                    {coOccCats.length > 0 && (
+                      <button onClick={() => setCoOccCats([])} className="text-[11px] font-semibold underline-offset-2 hover:underline" style={{ color: T.coral }}>Clear</button>
+                    )}
+                  </div>
+                  {coOccPickerOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setCoOccPickerOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1.5 z-50 w-[280px] rounded-xl border bg-white shadow-lg p-2" style={{ borderColor: T.border }}>
+                        <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] px-1 pb-1.5" style={{ color: T.textMuted }}>Pick up to {cap}</p>
+                        <ScrollArea className="h-72 overflow-hidden">
+                          <div className="space-y-0.5 pr-3">
+                            {sortedAvailable.map((c: any) => {
+                              const checked = coOccCats.includes(c.name);
+                              const disabled = !checked && coOccCats.length >= cap;
+                              return (
+                                <label
+                                  key={c.name}
+                                  className={`flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-[12px] ${disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50 cursor-pointer"}`}
+                                  style={{ color: T.textPrimary }}
+                                >
+                                  <Checkbox checked={checked} disabled={disabled} onCheckedChange={() => togglePicked(c.name)} className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="truncate" title={c.name}>{displayCat(c.name)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
                       </div>
-                    );
-                  })}
+                    </>
+                  )}
                 </div>
-                {/* X-axis scale reference */}
-                <div className="grid items-center gap-3 mt-3 text-[10px]" style={{ gridTemplateColumns: "minmax(180px, 30%) 1fr auto", color: T.textMuted }}>
-                  <span />
-                  <span className="flex items-center justify-between">
-                    <span>0</span>
-                    <span>{formatNum(Math.round(maxValue / 2))}</span>
-                    <span>{formatNum(maxValue)}</span>
-                  </span>
-                  <span />
+
+                {/* Two-column layout: venn on the left, demographics on the right */}
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-5 items-start">
+                  {/* Venn diagram */}
+                  <div className="rounded-xl border p-4" style={{ borderColor: T.borderLight, background: "#FAFBFD" }}>
+                    {N === 0 ? (
+                      <div className="h-[300px] flex flex-col items-center justify-center text-center text-[13px] gap-2" style={{ color: T.textMuted }}>
+                        <p className="font-semibold" style={{ color: T.textSecondary }}>Pick at least 2 chronic ICD categories</p>
+                        <p className="text-[11.5px]">Selections appear as overlapping circles sized by unique UHID count.</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <svg width={SVG_W} height={SVG_H} role="img" aria-label="Co-occurrence venn diagram">
+                          {circles.map((c, i) => (
+                            <circle key={i} cx={c.cx} cy={c.cy} r={c.r} fill={colors[i]} fillOpacity={0.22} stroke={colors[i]} strokeWidth={1.5} />
+                          ))}
+                          {allMaskList.map((mask) => {
+                            const pos = labelAt(mask);
+                            if (!pos) return null;
+                            const v = sizeOf(mask);
+                            if (v === 0) return null;
+                            return (
+                              <text key={mask} x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="central" fontSize={N === 3 ? 11 : 13} fontWeight={700} fill={T.textPrimary}>
+                                {formatNum(v)}
+                              </text>
+                            );
+                          })}
+                        </svg>
+                        {/* Legend */}
+                        <div className="flex items-center gap-4 mt-2 text-[11.5px] flex-wrap justify-center" style={{ color: T.textSecondary }}>
+                          {coOccCats.map((cat, i) => (
+                            <span key={cat} className="inline-flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors[i] }} />
+                              <span style={{ color: T.textPrimary, fontWeight: 600 }}>{displayCat(cat)}</span>
+                              <span className="tabular-nums" style={{ color: T.textMuted }}>· {formatNum(sizeIncluding(i))}</span>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-2 text-[11px] tabular-nums" style={{ color: T.textMuted }}>
+                          {N >= 2 ? <>Patients in <strong style={{ color: T.textPrimary }}>all {N}</strong> selected: <strong style={{ color: "#7c3aed" }}>{formatNum(intersection)}</strong> of <strong style={{ color: T.textPrimary }}>{formatNum(totalUhids)}</strong> total</> : <>Single-category view — pick another to see overlap.</>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Intersection demographics */}
+                  <div className="rounded-xl border p-4" style={{ borderColor: T.borderLight, background: T.white }}>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.06em] mb-1" style={{ color: T.textMuted }}>Intersection demographics</p>
+                    <p className="text-[12px] mb-3" style={{ color: T.textSecondary }}>
+                      {N >= 2 ? <>Patients carrying <strong style={{ color: T.textPrimary }}>all {N}</strong> selected categories</> : "Pick 2+ categories to see the breakdown"}
+                    </p>
+                    {N >= 2 && intersection > 0 ? (
+                      <>
+                        {/* Age */}
+                        <p className="text-[10.5px] font-bold uppercase tracking-[0.05em] mb-1.5" style={{ color: T.textMuted }}>By age</p>
+                        <div className="flex flex-col gap-1.5 mb-4">
+                          {(["<20", "20-35", "36-40", "41-60", "61+"] as const).map((ag) => {
+                            const v = Number(venn.overlapAge?.[ag] || 0);
+                            const pct = intersection > 0 ? (v / intersection) * 100 : 0;
+                            return (
+                              <div key={ag} className="flex items-center gap-2 text-[11.5px]">
+                                <span className="w-12 shrink-0" style={{ color: T.textSecondary }}>{ag}</span>
+                                <span className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: T.borderLight }}>
+                                  <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "#7c3aed" }} />
+                                </span>
+                                <span className="w-10 text-right tabular-nums font-semibold" style={{ color: T.textPrimary }}>{formatNum(v)}</span>
+                                <span className="w-10 text-right tabular-nums" style={{ color: T.textMuted }}>{Math.round(pct)}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Gender */}
+                        <p className="text-[10.5px] font-bold uppercase tracking-[0.05em] mb-1.5" style={{ color: T.textMuted }}>By gender</p>
+                        <div className="flex flex-col gap-1.5">
+                          {(["Male", "Female", "Others"] as const).map((g) => {
+                            const v = Number(venn.overlapGender?.[g] || 0);
+                            const pct = intersection > 0 ? (v / intersection) * 100 : 0;
+                            const colour = g === "Male" ? GENDER_COLORS.Male : g === "Female" ? GENDER_COLORS.Female : "#94a3b8";
+                            return (
+                              <div key={g} className="flex items-center gap-2 text-[11.5px]">
+                                <span className="w-12 shrink-0" style={{ color: T.textSecondary }}>{g}</span>
+                                <span className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: T.borderLight }}>
+                                  <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: colour }} />
+                                </span>
+                                <span className="w-10 text-right tabular-nums font-semibold" style={{ color: T.textPrimary }}>{formatNum(v)}</span>
+                                <span className="w-10 text-right tabular-nums" style={{ color: T.textMuted }}>{Math.round(pct)}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[12px] py-8 text-center" style={{ color: T.textMuted }}>
+                        {N >= 2 ? "No patients carry all selected categories." : "—"}
+                      </div>
+                    )}
+                  </div>
                 </div>
+                <InsightBox text="Use the picker to compare up to three chronic ICD categories. Each circle is sized by the unique-UHID count of that category; overlap regions show how many patients carry the intersecting set. The right panel breaks down the all-overlap intersection by age and gender — useful for targeting bundled-care or screening programmes." />
               </div>
             );
           })()}
-
-          {combos.length > 0 && (
-            <InsightBox text={`In ${selectedYear}, ${combos[0]?.displayName || combos[0]?.name} co-occurrence affected ${formatNum(combos[0]?.total || 0)} employees, with a higher share among ${(combos[0]?.male || 0) > (combos[0]?.female || 0) ? "Male" : "Female"} (${Math.round(Math.max(combos[0]?.male || 0, combos[0]?.female || 0) / (combos[0]?.total || 1) * 100)}%).`} />
-          )}
       </CVCard>
 
-      <div className="mt-4" />
-
-      {/* ── Vitals Trend ── */}
-      <CVCard
-          accentColor="#0d9488"
-          title="Vitals Trend and Distribution"
-          tooltipText="% of patients per vital sign falling below, within, or above normal ranges"
-          subtitle="Updates for selected ICD diagnosis/cohort."
-          chartId="vitalsTrend"
-          chartData={vitalsData}
-          chartDescription="Vital sign distribution showing below/within/above normal ranges over time"
-
-          headerRight={
-            <div className="flex items-center gap-2">
-              <select value={vitalType} onChange={(e) => setVitalType(e.target.value as any)}
-                className="h-8 px-3 rounded-lg border text-[13px] font-medium" style={{ borderColor: T.border, color: T.textPrimary }}>
-                <option value="BMI">BMI</option>
-                <option value="Systolic BP">Systolic BP</option>
-                <option value="Diastolic BP">Diastolic BP</option>
-                <option value="SpO2">SpO2</option>
-              </select>
-              <ResetFilter visible={vitalType !== "BMI"} onClick={() => setVitalType("BMI")} />
-            </div>
-          }
-        >
-          <div className="overflow-x-auto">
-            <div style={{ height: 340, minWidth: Math.max(vitalsData.length * 60, 500) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={vitalsData} margin={{ top: 10, right: 40, left: 0, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: T.textMuted }} label={{ value: "% of Users", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: T.textMuted }, offset: 10 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: T.textMuted }} label={{ value: vitalType === "BMI" ? "kg/m²" : vitalType === "SpO2" ? "%" : "mmHg", angle: 90, position: "insideRight", style: { fontSize: 11, fill: T.textMuted }, offset: 10 }} />
-                  <RechartsTooltip content={({ active, payload, label }: any) => {
-                    if (!active || !payload?.length) return null;
-                    const dd = payload[0]?.payload;
-                    return (
-                      <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                        <p style={{ color: "#f59e0b" }}>Below Normal: {dd?.belowNormal}%</p>
-                        <p style={{ color: "#0d9488" }}>Within Normal: {dd?.withinNormal}%</p>
-                        <p style={{ color: "#ef4444" }}>Above Normal: {dd?.aboveNormal}%</p>
-                        <p style={{ color: "#d97706" }}>Average: {dd?.average}</p>
-                      </div>
-                    );
-                  }} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} iconType="square" iconSize={8} />
-                  <Bar yAxisId="left" dataKey="belowNormal" name="Below Normal" stackId="a" fill="#f59e0b" maxBarSize={60} />
-                  <Bar yAxisId="left" dataKey="withinNormal" name="Within Normal" stackId="a" fill="#0d9488" maxBarSize={60} />
-                  <Bar yAxisId="left" dataKey="aboveNormal" name="Above Normal" stackId="a" fill="#ef4444" maxBarSize={60} />
-                  <Line yAxisId="right" type="monotone" dataKey="average" name={`Average ${vitalType}`} stroke="#d97706" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#d97706", strokeWidth: 2 }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <p className="text-[11px] mt-2" style={{ color: T.textMuted }}>
-            {vitalType === "BMI"
-              ? "Data shown for users with recorded BMI values. Normal range: 18.5–24.9 kg/m²."
-              : vitalType === "Systolic BP"
-              ? "Data shown for users with recorded systolic BP values. Normal range: 90–120 mmHg."
-              : vitalType === "Diastolic BP"
-              ? "Data shown for users with recorded diastolic BP values. Normal range: 60–80 mmHg."
-              : "Data shown for users with recorded SpO2 values. Normal range: 95–100%."}
-          </p>
-          {vitalsData.length > 0 && (
-            <InsightBox text={`The ${vitalType} trend shows population-level vital sign distribution over time. Review the proportion of employees falling outside normal ranges to identify emerging health risks and guide wellness interventions.`} />
-          )}
-      </CVCard>
       </WarmSection>}
 
       {/* ── Seasonal Patterns Section ── */}
@@ -1691,7 +1766,7 @@ export default function HealthInsightsPage() {
           const shortName = displaySub(rawName);
           for (const pt of (seasonalTrends[rawName] || [])) {
             const [yr, mo] = pt.period.split("-").map(Number);
-            if (yr !== selectedYear) continue;
+            if (yr !== seasonalYear) continue;
             if (!monthTotals[mo]) monthTotals[mo] = {};
             monthTotals[mo][shortName] = (monthTotals[mo][shortName] || 0) + pt.count;
           }
@@ -1723,7 +1798,7 @@ export default function HealthInsightsPage() {
             chartId="seasonalPatterns"
             chartData={monthData}
             chartDescription="Monthly diagnosis trends for key seasonal conditions"
-            headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
+            headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
           >
             <div className="overflow-x-auto">
               <div className="grid grid-cols-4 gap-3" style={{ minWidth: 700 }}>
@@ -1765,7 +1840,7 @@ export default function HealthInsightsPage() {
             <div className="mt-4 rounded-xl px-5 py-3" style={{ backgroundColor: "#FAFAFA", border: `1px solid ${T.border}` }}>
               <p className="text-[13px] font-bold mb-0.5" style={{ color: T.textPrimary }}>Key Insight</p>
               <p className="text-[12px]" style={{ color: T.textSecondary }}>
-                The calendar visualization shows {MONTH_NAMES[(peakMonth?.month || 1) - 1]} had the highest concentration of cases in {selectedYear}, with {peakName}{secondName ? ` and ${secondName}` : ""} showing strong seasonal patterns.
+                The calendar visualization shows {MONTH_NAMES[(peakMonth?.month || 1) - 1]} had the highest concentration of cases in {seasonalYear}, with {peakName}{secondName ? ` and ${secondName}` : ""} showing strong seasonal patterns.
               </p>
             </div>
           </CVCard>
@@ -1788,7 +1863,6 @@ export default function HealthInsightsPage() {
         chartId="symptomMapping"
         chartData={symptomData}
         chartDescription="Distribution of diagnoses for the most common presented symptoms"
-        headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={selectedYear} onChange={setSelectedYear} /><ResetFilter visible={selectedYear !== 2025} onClick={() => setSelectedYear(2025)} /></div>}
       >
         <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
           <div style={{ height: Math.max(symptomData.length * 55, 280), minWidth: 600 }}>
@@ -1840,7 +1914,7 @@ export default function HealthInsightsPage() {
           </div>
         </div>
         <p className="text-[11px] mt-2 text-center" style={{ color: T.textMuted }}>
-          Data shows the breakdown of diagnoses for each common symptom across all patient encounters in {selectedYear}.
+          Data shows the breakdown of diagnoses for each common symptom across all patient encounters in the selected window.
         </p>
       </CVCard>
       </WarmSection>}

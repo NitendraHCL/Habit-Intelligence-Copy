@@ -170,6 +170,7 @@ async function handler(request: NextRequest) {
       conditionsByCategoryRows,
       chronicAcuteRows,
       demoMatrixRows,
+      coOccurrenceVennRows,
       pairsRows,
       yearsRows,
       facilitiesRows,
@@ -298,6 +299,56 @@ async function handler(request: NextRequest) {
         ),
         "demoMatrix"
       ),
+      // 5c) coOccurrenceVenn — for a list of selected chronic ICD parent
+      // categories (capped at 3), returns the unique-UHID count per
+      // subset (single category, pair, all-overlap) plus the age × gender
+      // breakdown of the all-overlap intersection. Powers the Co-Occurrence
+      // venn-diagram chart. Empty array when fewer than 1 category picked.
+      (() => {
+        const raw = searchParams.get("coOccurrenceCategories")?.split(",").map((s) => s.trim()).filter(Boolean) || [];
+        // De-dupe + cap at 3 to keep the SQL bounded (8 subsets max).
+        const cats = Array.from(new Set(raw)).slice(0, 3);
+        if (cats.length === 0) return Promise.resolve([] as Array<{ kind: string; bucket: string; n: string }>);
+        return safeQuery(
+          () => {
+            const flagCols = cats.map((_, i) => {
+              const paramIdx = q.params.length + 1 + i;
+              return `BOOL_OR(${CATEGORY_CASE} = $${paramIdx} AND ${CHRONIC_CASE}) AS in_${i}`;
+            }).join(",\n              ");
+            // bitmask = in_0 + in_1*2 + in_2*4 (only the indices we have).
+            const bitmask = cats.map((_, i) => `in_${i}::int * ${1 << i}`).join(" + ");
+            const anyIn = cats.map((_, i) => `in_${i}`).join(" OR ");
+            const allIn = cats.map((_, i) => `in_${i}`).join(" AND ");
+            return dwQuery<{ kind: string; bucket: string; n: string }>(
+              `WITH per_uhid AS (
+                SELECT
+                  d.uhid,
+                  ${flagCols},
+                  MAX(${AGE_GROUP_CASE}) AS age_bucket,
+                  ${GENDER_NORM} AS gender_bucket
+                FROM ${DIAG_TABLE} d
+                WHERE ${q.where}
+                  AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
+                GROUP BY d.uhid, ${GENDER_NORM}
+              )
+              SELECT 'subset' AS kind, (${bitmask})::text AS bucket, COUNT(*)::bigint AS n
+              FROM per_uhid WHERE ${anyIn}
+              GROUP BY 1, 2
+              UNION ALL
+              SELECT 'overlapAge', age_bucket, COUNT(*)::bigint
+              FROM per_uhid WHERE ${allIn} AND age_bucket IS NOT NULL
+              GROUP BY 1, 2
+              UNION ALL
+              SELECT 'overlapGender', gender_bucket, COUNT(*)::bigint
+              FROM per_uhid WHERE ${allIn} AND gender_bucket IS NOT NULL
+              GROUP BY 1, 2`,
+              [...q.params, ...cats],
+              HEAVY_OPTS
+            );
+          },
+          "coOccurrenceVenn"
+        );
+      })(),
       // 6) diseaseCombinations — pairs of distinct diagnoses on same uhid,
       //    with gender split per pair (Male/Female counts)
       safeQuery(
@@ -558,6 +609,19 @@ async function handler(request: NextRequest) {
       categoryTreemap,
       conditionBreakdown,
       conditionsByCategory,
+      coOccurrenceVenn: (() => {
+        const cats = (searchParams.get("coOccurrenceCategories")?.split(",").map((s) => s.trim()).filter(Boolean) || []).slice(0, 3);
+        const subsets: Record<string, number> = {};
+        const overlapAge: Record<string, number> = {};
+        const overlapGender: Record<string, number> = {};
+        for (const r of (coOccurrenceVennRows as Array<{ kind: string; bucket: string; n: string }>)) {
+          const n = Number(r.n);
+          if (r.kind === "subset") subsets[r.bucket] = n;
+          else if (r.kind === "overlapAge") overlapAge[r.bucket] = n;
+          else if (r.kind === "overlapGender") overlapGender[r.bucket] = n;
+        }
+        return { categories: cats, subsets, overlapAge, overlapGender };
+      })(),
       chronicAcute,
       seasonalData,
       seasonalTrends,

@@ -167,6 +167,7 @@ async function handler(request: NextRequest) {
     const [
       categoryRows,
       conditionRows,
+      conditionsByCategoryRows,
       chronicAcuteRows,
       demoMatrixRows,
       pairsRows,
@@ -209,6 +210,26 @@ async function handler(request: NextRequest) {
           HEAVY_OPTS
         ),
         "conditionBreakdown"
+      ),
+      // 2b) conditionsByCategory — every (category, icd) combo with counts.
+      // Powers the Condition Share Distribution table's expandable rows
+      // so all categories' subcategories load in a single payload (no
+      // per-row fetch on expand).
+      safeQuery(
+        () => dwQuery<{ category: string; name: string; count: string; patients: string }>(
+          `SELECT
+             ${CATEGORY_CASE} AS category,
+             d.icd_description  AS name,
+             COUNT(*)::bigint   AS count,
+             COUNT(DISTINCT d.uhid)::bigint AS patients
+           FROM ${DIAG_TABLE} d
+           WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
+           GROUP BY 1, 2
+           ORDER BY 1, 3 DESC`,
+          q.params,
+          HEAVY_OPTS
+        ),
+        "conditionsByCategory"
       ),
       // 3) chronicAcute split (rows + distinct patients).
       //    `COUNT(DISTINCT uhid) FILTER (...)` is too slow on the raw 80M-row
@@ -424,6 +445,21 @@ async function handler(request: NextRequest) {
       };
     });
 
+    // conditionsByCategory: keyed by category name → sorted array of
+    // { name, value, uniquePatients }. Drives the expandable subcategory
+    // rows in the Condition Share Distribution table.
+    const conditionsByCategory: Record<string, Array<{ name: string; value: number; uniquePatients: number }>> = {};
+    for (const r of conditionsByCategoryRows) {
+      const cat = r.category;
+      if (!cat) continue;
+      if (!conditionsByCategory[cat]) conditionsByCategory[cat] = [];
+      conditionsByCategory[cat].push({
+        name: r.name,
+        value: Number(r.count),
+        uniquePatients: Number(r.patients),
+      });
+    }
+
     const chronicAcuteRow = chronicAcuteRows[0] || ({} as Record<string, string>);
     const chronicAcute = {
       chronicCount: Number(chronicAcuteRow.chronic_count || 0),
@@ -513,6 +549,7 @@ async function handler(request: NextRequest) {
       categories,
       categoryTreemap,
       conditionBreakdown,
+      conditionsByCategory,
       chronicAcute,
       seasonalData,
       seasonalTrends,

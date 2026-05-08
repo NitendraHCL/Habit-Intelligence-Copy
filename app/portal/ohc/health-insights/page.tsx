@@ -20,6 +20,7 @@ import {
   Minimize2,
   X,
   ChevronDown,
+  ChevronRight,
   CalendarDays,
 
   RotateCcw,
@@ -422,6 +423,8 @@ export default function HealthInsightsPage() {
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
   const [appliedMinVisits, setAppliedMinVisits] = useState<number>(1);
+  // Which Condition Share Distribution rows are expanded (multi-select).
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
@@ -501,6 +504,7 @@ export default function HealthInsightsPage() {
   const years: number[] = d?.years || [2024, 2025, 2026];
   const effectiveCategory = selectedCategory || categories[0] || "";
   const conditionBreakdown: any[] = d?.conditionBreakdown || [];
+  const conditionsByCategory: Record<string, Array<{ name: string; value: number; uniquePatients: number }>> = d?.conditionsByCategory || {};
   const effectiveCondition = selectedCondition || conditionBreakdown[0]?.name || "";
 
   // Auto-select category when data loads — default to Metabolic Disorders
@@ -1037,171 +1041,122 @@ export default function HealthInsightsPage() {
           </CVCard>
         </div>
 
-        {/* Condition Share Distribution — same styling as Repeat Patients
-            by Specialty on /portal/ohc/repeat-visits */}
+        {/* Condition Share Distribution — table of every chronic ICD
+            category with an expandable subcategory breakdown. Each
+            category row shows total Consult Count + Unique UHIDs;
+            expanding it lists every ICD subcategory underneath with the
+            same two metrics. Sourced from charts.conditionsByCategory. */}
         <div>
           <CVCard
             accentColor="#6366f1"
             title="Condition Share Distribution"
-            subtitle="Tile size = consult volume per condition; color saturation grades by rank within the selected category"
-            tooltipText="Treemap of specific conditions within the selected ICD category. Tiles are graded by rank — deepest indigo = top condition. Click any tile to filter the trends below."
+            subtitle="Every chronic ICD category — click a row to expand its subcategory breakdown with consult count and unique UHIDs"
+            tooltipText="Table of all chronic ICD categories with consult count and unique UHIDs per row. Click the chevron on any row to expand and see every ICD subcategory inside it with the same two metrics."
             chartId="conditionShareDistribution"
-            chartData={conditionBreakdown}
-            chartDescription="Treemap of conditions within the selected ICD category, rank-graded"
+            chartData={categoryTreemap}
+            chartDescription="Expandable table of chronic ICD categories and their subcategories"
           >
-            {conditionBreakdown.length > 0 ? (() => {
-              const sorted = [...conditionBreakdown].sort((a: any, b: any) => b.value - a.value);
-              const TOP_N = 12;
-              const top = sorted.slice(0, TOP_N);
-              const tail = sorted.slice(TOP_N);
-              const tailSum = tail.reduce((s: number, r: any) => s + r.value, 0);
-              const tiles = top.map((d: any) => ({ ...d, isOthers: false }));
-              const grandTotal = sorted.reduce((s: number, r: any) => s + (r.value || 0), 0) || 1;
-              const topShown = top.reduce((s: number, r: any) => s + r.value, 0);
-              const topShownPct = Math.round((topShown / grandTotal) * 100);
-              const tailPct = Math.round((tailSum / grandTotal) * 100);
-              const dominant = sorted[0];
-              const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
-              const RAMP_FROM = "#3730a3";
-              const RAMP_TO = "#c7d2fe";
-              const data = tiles.map((d: any, i: number) => {
-                const t = tiles.length === 1 ? 0 : i / (tiles.length - 1);
-                const fill = interpolateHex(RAMP_FROM, RAMP_TO, t);
-                return {
-                  name: d.name,
-                  displayName: displaySub(d.name),
-                  value: d.value,
-                  uniquePatients: d.uniquePatients,
-                  itemStyle: {
-                    color: fill,
-                    borderColor: "transparent",
-                    borderWidth: 0,
-                    borderRadius: 10,
-                    gapWidth: 6,
-                  },
-                };
-              });
+            {categoryTreemap.length > 0 ? (() => {
+              const sortedCats = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
+              const totalConsults = sortedCats.reduce((s: number, c: any) => s + (c.value || 0), 0);
+              const totalUhids = sortedCats.reduce((s: number, c: any) => s + (c.uniquePatients || 0), 0);
+              const toggleRow = (name: string) => {
+                setExpandedCategories((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(name)) next.delete(name); else next.add(name);
+                  return next;
+                });
+              };
               return (
                 <div className="flex-1 flex flex-col">
-                  {/* Hero strip */}
-                  <div className="flex items-end justify-between gap-4 mb-2">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Consults (top {tiles.length})</p>
-                      <p className="text-[24px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(topShown)}<span className="text-[12px] font-medium ml-1.5" style={{ color: T.textSecondary }}>· {topShownPct}% of category</span></p>
+                  {/* Hero strip — totals + expanded count */}
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div className="grid grid-cols-3 gap-x-5 gap-y-0.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Categories</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Consults</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Unique UHIDs</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{sortedCats.length}</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(totalConsults)}</p>
+                      <p className="text-[18px] font-extrabold leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{formatNum(totalUhids)}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Top Condition</p>
-                      <p className="text-[13px] font-extrabold leading-tight truncate max-w-[200px]" style={{ color: RAMP_FROM }}>
-                        {dominant ? displaySub(dominant.name) : "—"}
-                        <span className="text-[11px] font-medium ml-1" style={{ color: T.textSecondary }}>· {dominantPct}%</span>
-                      </p>
-                    </div>
-                  </div>
-                  {/* Treemap */}
-                  <div style={{ height: 380, minHeight: 320 }}>
-                    <ReactECharts
-                      style={{ height: "100%", width: "100%" }}
-                      onEvents={{
-                        click: (params: any) => {
-                          if (params.data?.name) setSelectedCondition(params.data.name);
-                        },
-                      }}
-                      option={{
-                        tooltip: {
-                          trigger: "item",
-                          backgroundColor: "#fff",
-                          borderColor: T.border,
-                          borderWidth: 1,
-                          padding: [10, 14],
-                          textStyle: { fontSize: 12, color: T.textPrimary },
-                          extraCssText: "border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.10);",
-                          formatter: (p: any) => {
-                            const dd = p.data || {};
-                            const pct = grandTotal > 0 ? Math.round((dd.value / grandTotal) * 1000) / 10 : 0;
-                            return `<strong>${dd.displayName || dd.name}</strong><br/>${formatNum(dd.value)} consults (${pct}%)${dd.uniquePatients ? `<br/>${formatNum(dd.uniquePatients)} unique patients` : ""}`;
-                          },
-                        },
-                        series: [{
-                          type: "treemap",
-                          data,
-                          top: 0, bottom: 0, left: 0, right: 0,
-                          width: "100%",
-                          height: "100%",
-                          roam: false,
-                          nodeClick: false,
-                          breadcrumb: { show: false },
-                          leafDepth: 1,
-                          squareRatio: 0.5 * (1 + Math.sqrt(5)),
-                          label: {
-                            show: true,
-                            position: "insideTopLeft",
-                            color: "#fff",
-                            fontFamily: "var(--font-inter), system-ui, sans-serif",
-                            overflow: "truncate",
-                            ellipsis: "…",
-                            padding: [8, 10, 8, 10],
-                            // Density tiers — extreme size variation in this
-                            // dataset (one 48% tile + ten ~3-7% tiles) means
-                            // small tiles must show very little, otherwise
-                            // numbers get truncated mid-digit.
-                            //   < 2%    → no label (tooltip carries it)
-                            //   2-4%    → just the percentage
-                            //   4-8%    → short name + percentage
-                            //   ≥ 8%    → short name + count + percentage
-                            formatter: (p: any) => {
-                              const pct = Math.round((p.value / grandTotal) * 1000) / 10;
-                              const share = grandTotal > 0 ? p.value / grandTotal : 0;
-                              const label = tileLabel(p.data.displayName || p.data.name, 14);
-                              if (share < 0.02) return "";
-                              if (share < 0.04) return `{pct|${pct}%}`;
-                              if (share < 0.08) return `{name|${label}}\n{pct|${pct}%}`;
-                              return `{name|${label}}\n{val|${formatNum(p.value)}}\n{pct|${pct}%}`;
-                            },
-                            rich: {
-                              name: { fontSize: 12, fontWeight: 700, color: "#fff", lineHeight: 16, padding: [0, 0, 2, 0] },
-                              val:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.92)", lineHeight: 14 },
-                              pct:  { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 14 },
-                            },
-                          },
-                          itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 },
-                          colorMappingBy: "id",
-                          levels: [{ itemStyle: { borderColor: "transparent", borderWidth: 0, gapWidth: 6 }, upperLabel: { show: false } }],
-                          emphasis: {
-                            itemStyle: {
-                              shadowBlur: 18,
-                              shadowOffsetY: 4,
-                              shadowColor: "rgba(55,48,163,0.30)",
-                              borderColor: "rgba(55,48,163,0.45)",
-                              borderWidth: 2,
-                            },
-                            label: { fontWeight: 800 },
-                          },
-                          animationDuration: 600,
-                          animationEasing: "cubicOut" as const,
-                        }],
-                      }}
-                    />
-                  </div>
-                  {/* Footer: tail summary + gradient legend */}
-                  <div className="flex items-center justify-between gap-3 mt-2.5 text-[10.5px]" style={{ color: T.textMuted }}>
-                    {tail.length > 0 ? (
-                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "#f3f4f6", border: `1px solid ${T.borderLight}` }}>
-                        <span className="w-2 h-2 rounded-full" style={{ background: "#9ca3af" }} />
-                        <span><strong style={{ color: T.textPrimary }}>+ {tail.length}</strong> smaller conditions · <strong style={{ color: T.textPrimary }}>{formatNum(tailSum)}</strong> consults ({tailPct}%)</span>
-                      </span>
-                    ) : <span />}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span>Largest</span>
-                      <span className="w-12 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${RAMP_FROM}, ${RAMP_TO})` }} />
-                      <span>Smallest</span>
+                    <div className="text-right shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allOpen = expandedCategories.size === sortedCats.length;
+                          setExpandedCategories(allOpen ? new Set() : new Set(sortedCats.map((c: any) => c.name)));
+                        }}
+                        className="text-[11px] font-semibold underline-offset-2 hover:underline"
+                        style={{ color: "#6366f1" }}
+                      >
+                        {expandedCategories.size === sortedCats.length ? "Collapse all" : "Expand all"}
+                      </button>
                     </div>
                   </div>
-                  <InsightBox text={`Within ${displayCat(effectiveCategory)}, ${displaySub(dominant?.name || "")} leads with ${formatNum(dominant?.value || 0)} consultations (${dominantPct}% of category). Top ${tiles.length} conditions carry ${topShownPct}% of category volume${tail.length > 0 ? `; ${tail.length} smaller conditions combine to ${tailPct}%` : ""}. Click any tile to filter the trends below.`} />
+                  {/* Table */}
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: T.borderLight }}>
+                    {/* Header row */}
+                    <div className="grid items-center px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em]" style={{ gridTemplateColumns: "24px 1fr 110px 110px", background: "#F5F6FA", color: T.textMuted, borderBottom: `1px solid ${T.borderLight}` }}>
+                      <span />
+                      <span>Category</span>
+                      <span className="text-right">Consults</span>
+                      <span className="text-right">Unique UHIDs</span>
+                    </div>
+                    {/* Body — scrollable. Row is ~40px tall (py-2.5 + a single
+                        text-[12.5px] line + 1px border), so 10 × 40 = 400px
+                        keeps exactly 10 categories visible without revealing
+                        the 11th. */}
+                    <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                      {sortedCats.map((c: any) => {
+                        const isOpen = expandedCategories.has(c.name);
+                        const subs = (conditionsByCategory[c.name] || []).slice().sort((a, b) => b.value - a.value);
+                        return (
+                          <div key={c.name}>
+                            <button
+                              type="button"
+                              onClick={() => toggleRow(c.name)}
+                              className="w-full grid items-center px-3 py-2.5 text-left transition-colors hover:bg-[#F8F9FC]"
+                              style={{ gridTemplateColumns: "24px 1fr 110px 110px", borderBottom: `1px solid ${T.borderLight}`, background: isOpen ? "#F1F2F8" : T.white }}
+                              aria-expanded={isOpen}
+                            >
+                              <span className="flex items-center justify-center" style={{ color: T.textMuted }}>
+                                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              </span>
+                              <span className="text-[12.5px] font-semibold truncate" style={{ color: T.textPrimary }}>{displayCat(c.name)}</span>
+                              <span className="text-[12.5px] font-bold tabular-nums text-right" style={{ color: "#4f46e5" }}>{formatNum(c.value)}</span>
+                              <span className="text-[12.5px] font-bold tabular-nums text-right" style={{ color: "#0d9488" }}>{formatNum(c.uniquePatients || 0)}</span>
+                            </button>
+                            {isOpen && (
+                              <div style={{ background: "#FBFBFE", borderBottom: `1px solid ${T.borderLight}` }}>
+                                {subs.length === 0 ? (
+                                  <p className="px-9 py-3 text-[11.5px]" style={{ color: T.textMuted }}>No subcategories recorded for this category in the selected window.</p>
+                                ) : (
+                                  subs.map((s) => (
+                                    <div
+                                      key={s.name}
+                                      className="grid items-center px-3 py-1.5 text-[11.5px]"
+                                      style={{ gridTemplateColumns: "24px 1fr 110px 110px" }}
+                                    >
+                                      <span />
+                                      <span className="truncate pl-3" style={{ color: T.textSecondary }} title={s.name}>{displaySub(s.name)}</span>
+                                      <span className="text-right tabular-nums" style={{ color: T.textPrimary }}>{formatNum(s.value)}</span>
+                                      <span className="text-right tabular-nums" style={{ color: T.textPrimary }}>{formatNum(s.uniquePatients)}</span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <InsightBox text={`${sortedCats.length} chronic ICD categories listed. Click a row to reveal every ICD subcategory inside it with consult count and unique UHIDs.`} />
                 </div>
               );
             })() : (
               <div className="flex-1 flex items-center justify-center text-[13px]" style={{ color: T.textMuted, minHeight: 320 }}>
-                Click a category to explore conditions
+                No category data available
               </div>
             )}
           </CVCard>

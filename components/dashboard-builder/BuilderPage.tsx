@@ -26,6 +26,7 @@ import ChartConfigurator from "./ChartConfigurator";
 import DataSourceRegistryProvider from "./DataSourceRegistryProvider";
 import SmartChartPicker from "./SmartChartPicker";
 import IconPicker from "./IconPicker";
+import AskAIPanel from "./AskAIPanel";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { getPreset } from "@/lib/config/chart-presets";
 import type {
@@ -479,6 +480,7 @@ export default function BuilderPage({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <AskAIPanel currentConfig={config} />
             <button
               onClick={() => setShowPageSettings((s) => !s)}
               className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-white"

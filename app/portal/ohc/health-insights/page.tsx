@@ -931,7 +931,11 @@ export default function HealthInsightsPage() {
             {(() => {
               const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
               const grandTotal = sorted.reduce((s: number, r: any) => s + (r.value || 0), 0) || 1;
-              const totalUhids = sorted.reduce((s: number, r: any) => s + (r.uniquePatients || 0), 0);
+              // True distinct chronic patient count — matches the KPI card.
+              // Column sum won't equal this (comorbid patients are in
+              // multiple disease buckets); this header value globally
+              // dedupes via the chronicAcute query.
+              const totalUhids = ca.chronicPatients || 0;
               const dominant = sorted[0];
               const dominantPct = Math.round((dominant?.value || 0) / grandTotal * 100);
               const COLOR_CONSULTS = "#4f46e5";
@@ -1086,7 +1090,11 @@ export default function HealthInsightsPage() {
             {categoryTreemap.length > 0 ? (() => {
               const sortedCats = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
               const totalConsults = sortedCats.reduce((s: number, c: any) => s + (c.value || 0), 0);
-              const totalUhids = sortedCats.reduce((s: number, c: any) => s + (c.uniquePatients || 0), 0);
+              // True distinct chronic patient count — matches the KPI card.
+              // Column sum won't equal this (comorbid patients sit in
+              // multiple disease rows); this header value globally
+              // dedupes via the chronicAcute query.
+              const totalUhids = ca.chronicPatients || 0;
               const toggleRow = (name: string) => {
                 setExpandedCategories((prev) => {
                   const next = new Set(prev);

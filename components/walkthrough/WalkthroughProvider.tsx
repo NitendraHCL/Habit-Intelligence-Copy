@@ -11,6 +11,7 @@ import {
 } from "react";
 import { walkthroughSteps, type WalkthroughStep } from "./walkthrough-steps";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
 
 const STORAGE_KEY = "habit-walkthrough-seen";
 
@@ -42,18 +43,25 @@ export function useWalkthrough() {
 
 export function WalkthroughProvider({ children }: { children: ReactNode }) {
   const { isPageEnabledForClient } = useAuth();
+  const { isPageVisible } = useConfig();
   const [isActive, setIsActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
 
-  // Filter steps once per active-client change. Steps without a pageSlug are
-  // always shown (welcome, navigation, filters, closing). Steps tagged with a
-  // pageSlug only show if that slug is enabled for the active client.
+  // Filter steps once per active-client / config change. Steps without a
+  // pageSlug are always shown (welcome, navigation, filters, closing). Steps
+  // tagged with a pageSlug only show if that slug passes BOTH gates the
+  // sidebar uses: `isPageEnabledForClient` (Client.enabledPages) and
+  // `isPageVisible` (per-tenant published config). Either gate alone can be
+  // a no-op (e.g. enabledPages is null = legacy default = all enabled), so
+  // both are needed to mirror the sidebar's real behavior.
   const steps = useMemo(
     () =>
       walkthroughSteps.filter(
-        (s) => !s.pageSlug || isPageEnabledForClient(s.pageSlug),
+        (s) =>
+          !s.pageSlug ||
+          (isPageEnabledForClient(s.pageSlug) && isPageVisible(s.pageSlug)),
       ),
-    [isPageEnabledForClient],
+    [isPageEnabledForClient, isPageVisible],
   );
 
   // If the filtered list shrinks below the current index (e.g. client switch

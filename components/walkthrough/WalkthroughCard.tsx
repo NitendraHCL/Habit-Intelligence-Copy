@@ -2,7 +2,6 @@
 
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useWalkthrough } from "./WalkthroughProvider";
-import { walkthroughSteps } from "./walkthrough-steps";
 import {
   Sparkles,
   LayoutDashboard,
@@ -47,10 +46,10 @@ interface WalkthroughCardProps {
 }
 
 export function WalkthroughCard({ style }: WalkthroughCardProps) {
-  const { currentStep, totalSteps, nextStep, prevStep, skipTour } =
+  const { currentStep, totalSteps, steps, nextStep, prevStep, skipTour } =
     useWalkthrough();
 
-  const step = walkthroughSteps[currentStep];
+  const step = steps[currentStep];
   if (!step) return null;
 
   const Icon = step.icon ? iconMap[step.icon] : null;

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useWalkthrough } from "./WalkthroughProvider";
-import { walkthroughSteps } from "./walkthrough-steps";
 import { WalkthroughCard } from "./WalkthroughCard";
 import { useAIPanel } from "@/lib/ai-panel-context";
 
@@ -19,7 +18,7 @@ interface TargetRect {
 }
 
 export function WalkthroughOverlay() {
-  const { isActive, currentStep } = useWalkthrough();
+  const { isActive, currentStep, steps } = useWalkthrough();
   const { openPanel, closePanel } = useAIPanel();
   const router = useRouter();
   const pathname = usePathname();
@@ -28,7 +27,7 @@ export function WalkthroughOverlay() {
   const observerRef = useRef<ResizeObserver | null>(null);
   const actionFiredRef = useRef<number>(-1);
 
-  const step = walkthroughSteps[currentStep];
+  const step = steps[currentStep];
   const isCenterStep = !step?.target;
 
   // Find and measure target element

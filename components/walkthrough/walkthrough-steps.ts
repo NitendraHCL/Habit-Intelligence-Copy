@@ -14,6 +14,10 @@ export interface WalkthroughStep {
   expandSidebar?: boolean;
   /** Action to perform when this step activates */
   action?: "open-kam-comments" | "open-habit-ai" | "close-panels";
+  /** Representative page slug this step is about. If the active client doesn't
+   *  have this slug in `enabledPages`, the step is dropped from the tour.
+   *  Omit for always-show steps (welcome, navigation, closing). */
+  pageSlug?: string;
 }
 
 export const walkthroughSteps: WalkthroughStep[] = [
@@ -78,7 +82,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     route: "/portal/home",
   },
 
-  // Phase 3: OHC Section (6-8)
+  // Phase 3: OHC Section (6-8) — gated on /portal/ohc/utilization
   {
     target: null,
     title: "OHC — Occupational Health Centre",
@@ -87,6 +91,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "Stethoscope",
     route: "/portal/ohc/utilization",
+    pageSlug: "/portal/ohc/utilization",
   },
   {
     target: null,
@@ -97,6 +102,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     icon: "MessageSquare",
     route: "/portal/ohc/utilization",
     action: "open-kam-comments",
+    pageSlug: "/portal/ohc/utilization",
   },
   {
     target: null,
@@ -107,9 +113,10 @@ export const walkthroughSteps: WalkthroughStep[] = [
     icon: "Sparkles",
     route: "/portal/ohc/utilization",
     action: "open-habit-ai",
+    pageSlug: "/portal/ohc/utilization",
   },
 
-  // Phase 4: AHC Section (9)
+  // Phase 4: AHC Section (9) — gated on /portal/ahc/utilization
   {
     target: null,
     title: "AHC — Annual Health Checks",
@@ -118,6 +125,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "ClipboardCheck",
     action: "close-panels",
+    pageSlug: "/portal/ahc/utilization",
   },
 
   // Phase 5: Employee Experience (10-11)
@@ -129,6 +137,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "Users",
     route: "/portal/employee-experience/nps",
+    pageSlug: "/portal/employee-experience/nps",
   },
   {
     target: null,
@@ -138,6 +147,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "Bell",
     route: "/portal/employee-experience/alerts-surveys",
+    pageSlug: "/portal/employee-experience/alerts-surveys",
   },
 
   // Phase 6: App Engagement (12)
@@ -149,6 +159,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "Smartphone",
     route: "/portal/engagement",
+    pageSlug: "/portal/engagement",
   },
 
   // Phase 7: Correlations & Action Plan (13-14)
@@ -160,6 +171,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "GitBranch",
     route: "/portal/correlations",
+    pageSlug: "/portal/correlations",
   },
   {
     target: null,
@@ -169,6 +181,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "ListChecks",
     route: "/portal/action-plan",
+    pageSlug: "/portal/action-plan",
   },
 
   // Phase 8: Features & Completion (15-16)

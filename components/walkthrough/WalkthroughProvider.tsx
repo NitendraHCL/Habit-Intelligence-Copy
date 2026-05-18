@@ -6,9 +6,11 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   type ReactNode,
 } from "react";
-import { walkthroughSteps } from "./walkthrough-steps";
+import { walkthroughSteps, type WalkthroughStep } from "./walkthrough-steps";
+import { useAuth } from "@/lib/contexts/auth-context";
 
 const STORAGE_KEY = "habit-walkthrough-seen";
 
@@ -16,6 +18,10 @@ interface WalkthroughContextValue {
   isActive: boolean;
   currentStep: number;
   totalSteps: number;
+  /** Steps actually shown to this user — filtered by the active client's
+   *  `enabledPages`. Consumers should read the current step from here rather
+   *  than indexing into the imported `walkthroughSteps` directly. */
+  steps: WalkthroughStep[];
   /** Whether the current step wants the sidebar expanded */
   shouldExpandSidebar: boolean;
   startTour: () => void;
@@ -35,8 +41,26 @@ export function useWalkthrough() {
 }
 
 export function WalkthroughProvider({ children }: { children: ReactNode }) {
+  const { isPageEnabledForClient } = useAuth();
   const [isActive, setIsActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+
+  // Filter steps once per active-client change. Steps without a pageSlug are
+  // always shown (welcome, navigation, filters, closing). Steps tagged with a
+  // pageSlug only show if that slug is enabled for the active client.
+  const steps = useMemo(
+    () =>
+      walkthroughSteps.filter(
+        (s) => !s.pageSlug || isPageEnabledForClient(s.pageSlug),
+      ),
+    [isPageEnabledForClient],
+  );
+
+  // If the filtered list shrinks below the current index (e.g. client switch
+  // mid-tour), clamp so we don't render undefined.
+  useEffect(() => {
+    if (currentStep >= steps.length) setCurrentStep(0);
+  }, [steps.length, currentStep]);
 
   // Auto-start on first visit
   useEffect(() => {
@@ -64,13 +88,13 @@ export function WalkthroughProvider({ children }: { children: ReactNode }) {
 
   const nextStep = useCallback(() => {
     setCurrentStep((prev) => {
-      if (prev >= walkthroughSteps.length - 1) {
+      if (prev >= steps.length - 1) {
         completeTour();
         return 0;
       }
       return prev + 1;
     });
-  }, [completeTour]);
+  }, [completeTour, steps.length]);
 
   const prevStep = useCallback(() => {
     setCurrentStep((prev) => Math.max(0, prev - 1));
@@ -82,11 +106,11 @@ export function WalkthroughProvider({ children }: { children: ReactNode }) {
 
   const goToStep = useCallback(
     (n: number) => {
-      if (n >= 0 && n < walkthroughSteps.length) {
+      if (n >= 0 && n < steps.length) {
         setCurrentStep(n);
       }
     },
-    []
+    [steps.length],
   );
 
   // Keyboard navigation
@@ -112,9 +136,10 @@ export function WalkthroughProvider({ children }: { children: ReactNode }) {
       value={{
         isActive,
         currentStep,
-        totalSteps: walkthroughSteps.length,
+        totalSteps: steps.length,
+        steps,
         shouldExpandSidebar:
-          isActive && walkthroughSteps[currentStep]?.expandSidebar === true,
+          isActive && steps[currentStep]?.expandSidebar === true,
         startTour,
         nextStep,
         prevStep,

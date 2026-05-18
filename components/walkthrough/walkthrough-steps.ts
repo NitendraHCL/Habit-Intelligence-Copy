@@ -10,6 +10,10 @@ export interface WalkthroughStep {
   icon?: string;
   /** Action to perform when this step activates */
   action?: "open-kam-comments" | "open-habit-ai" | "close-panels";
+  /** When the action opens a modal/panel that covers the original `target`,
+   *  this is the data-walkthrough hook the spotlight should switch to so the
+   *  panel itself stays lit while the rest of the page is dimmed. */
+  actionTarget?: string;
   /** Ordered list of pages where this step's feature is anchored. The tour
    *  picks the first accessible page as the route. If no entry passes the
    *  client's `enabledPages` + per-tenant `isPageVisible` gates, the step
@@ -128,6 +132,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "MessageSquare",
     action: "open-kam-comments",
+    actionTarget: "kam-comments-modal",
     pageSlugs: CHART_CARD_PAGES,
   },
   {
@@ -138,6 +143,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "Sparkles",
     action: "open-habit-ai",
+    actionTarget: "ai-panel",
     pageSlugs: CHART_CARD_PAGES,
   },
 

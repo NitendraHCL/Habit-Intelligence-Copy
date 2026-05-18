@@ -29,16 +29,25 @@ export function WalkthroughOverlay() {
 
   const step = steps[currentStep];
   const isCenterStep = !step?.target;
+  // Which DOM hook the spotlight is currently measuring. Starts as the
+  // step's primary `target`; if the step has an `action` + `actionTarget`,
+  // a separate effect flips this to the modal/panel hook once it appears
+  // in the DOM so the lit area shifts to the feature itself.
+  const [activeSelector, setActiveSelector] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveSelector(step?.target ?? null);
+  }, [step?.target]);
 
   // Find and measure target element
   const measureTarget = useCallback(() => {
-    if (!step?.target) {
+    if (!activeSelector) {
       setTargetRect(null);
       return;
     }
 
     const el = document.querySelector(
-      `[data-walkthrough="${step.target}"]`
+      `[data-walkthrough="${activeSelector}"]`
     ) as HTMLElement | null;
 
     if (!el) {
@@ -51,10 +60,11 @@ export function WalkthroughOverlay() {
 
     // Skip scrollIntoView for steps that fire an action — the action opens a
     // modal/panel that takes over the screen anyway, so auto-scrolling the
-    // target into view just leaves the page scrolled out of place after the
-    // modal closes. If the target is currently off-screen we leave it that
-    // way and the spotlight simply doesn't show — the modal is the demo.
-    if (!inView && !step.action) {
+    // original target just leaves the page scrolled out of place. If the
+    // target is currently off-screen we leave it that way and the spotlight
+    // either doesn't show (button hidden) or shows once the actionTarget
+    // appears (panel/modal). The action itself is the demo.
+    if (!inView && !step?.action) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -75,7 +85,36 @@ export function WalkthroughOverlay() {
         height: rect.height,
       });
     }
-  }, [step]);
+  }, [activeSelector, step?.action]);
+
+  // For action-driven steps (KAM Comments, Ask AI), poll briefly for the
+  // actionTarget element to appear once the action fires. When it does, the
+  // spotlight cutout shifts to cover the opened modal/panel so it stays lit
+  // while the rest of the page stays dim. Stops as soon as we find it or
+  // after a short ceiling — the action's own timing is bounded.
+  useEffect(() => {
+    if (!isActive || !step?.action || !step?.actionTarget) return;
+    const selector = `[data-walkthrough="${step.actionTarget}"]`;
+    let cancelled = false;
+    let attempts = 0;
+    const tick = () => {
+      if (cancelled) return;
+      if (document.querySelector(selector)) {
+        setActiveSelector(step.actionTarget ?? null);
+        return;
+      }
+      if (attempts++ < 30) {
+        setTimeout(tick, 100);
+      }
+    };
+    // Give the action's own ~500ms setTimeout time to start opening the
+    // modal/panel before we begin polling.
+    const start = setTimeout(tick, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(start);
+    };
+  }, [isActive, currentStep, step?.action, step?.actionTarget]);
 
   // Navigate to the step's resolved route when step changes. The provider has
   // already filtered out steps whose `pageSlugs` have no accessible entry, and

@@ -151,6 +151,7 @@ export function ChartComments({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
           <div
+            data-walkthrough="kam-comments-modal"
             className="relative w-full max-w-lg max-h-[80vh] flex flex-col rounded-2xl shadow-2xl"
             style={{ backgroundColor: T.white }}
             onClick={(e) => e.stopPropagation()}

@@ -146,6 +146,7 @@ export default function AskHabitAI() {
       <SheetContent
         side="right"
         showCloseButton={false}
+        data-walkthrough="ai-panel"
         className="p-0 flex flex-col w-[420px] sm:max-w-[420px]"
       >
         {/* ── Header (purple gradient) ── */}

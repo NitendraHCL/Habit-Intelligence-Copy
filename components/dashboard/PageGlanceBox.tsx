@@ -81,6 +81,7 @@ export function PageGlanceBox({
 
   return (
     <div
+      data-walkthrough="page-glance"
       className="p-6 text-white rounded-2xl"
       style={{
         background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)",

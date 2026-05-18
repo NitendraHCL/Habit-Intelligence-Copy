@@ -60,14 +60,10 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "right",
     icon: "LayoutDashboard",
   },
-  {
-    target: "topbar",
-    title: "Quick Actions",
-    description:
-      "Download reports and check notifications from the top bar. These are available on every page across the portal.",
-    placement: "bottom",
-    icon: "Download",
-  },
+  // Quick Actions step removed — the global TopBar component (with Download
+  // / Bell icons) is not rendered in the current portal layout, so its
+  // walkthrough hook never resolved. Per-page Download / Refresh / Apply
+  // controls live on the filter bar instead, which the Filters step covers.
 
   // ── Phase 2: Overview Page ──
   // page-glance / kpi-cards / service-cards hooks are set on /portal/home.
@@ -118,12 +114,18 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "/portal/ohc/health-insights",
     ],
   },
+  // KAM Comments + Ask Habit AI: keep `target` so the spotlight ring briefly
+  // pulses on the actual button, but use `center` placement so the tour card
+  // stays in the middle of the viewport. The `action` opens the real
+  // modal/panel — which itself is the demo of the feature "popping out".
+  // Without center placement the card lands offscreen after scrollIntoView
+  // pulls the chart-card button into view.
   {
     target: "kam-comments-btn",
     title: "KAM Comments",
     description:
       "Your Key Account Manager adds contextual annotations explaining trends, dips, or spikes on charts across the portal. Look for the comment icon on chart headers — click it to open the comments thread and reply directly to your KAM.",
-    placement: "left",
+    placement: "center",
     icon: "MessageSquare",
     action: "open-kam-comments",
     pageSlugs: CHART_CARD_PAGES,
@@ -133,7 +135,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     title: "Ask Habit AI",
     description:
       "Click the sparkle icon on any chart to open the AI assistant. It analyses that chart's data, shows KAM insights, suggests questions, and lets you ask anything about the data — all powered by Habit AI.",
-    placement: "left",
+    placement: "center",
     icon: "Sparkles",
     action: "open-habit-ai",
     pageSlugs: CHART_CARD_PAGES,

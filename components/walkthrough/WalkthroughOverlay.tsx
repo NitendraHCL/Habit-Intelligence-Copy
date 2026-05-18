@@ -46,11 +46,15 @@ export function WalkthroughOverlay() {
       return;
     }
 
-    // Scroll into view if needed
     const rect = el.getBoundingClientRect();
     const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
 
-    if (!inView) {
+    // Skip scrollIntoView for steps that fire an action — the action opens a
+    // modal/panel that takes over the screen anyway, so auto-scrolling the
+    // target into view just leaves the page scrolled out of place after the
+    // modal closes. If the target is currently off-screen we leave it that
+    // way and the spotlight simply doesn't show — the modal is the demo.
+    if (!inView && !step.action) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -300,12 +304,20 @@ export function WalkthroughOverlay() {
   );
 }
 
+// Approximate card footprint — used to clamp absolute positions so the card
+// never lands offscreen (which would make the tour appear stuck).
+const CARD_WIDTH = 420;
+const CARD_HEIGHT = 380;
+
 function getCardPosition(
   rect: TargetRect | null,
   placement: string,
   isCenterStep: boolean
 ): React.CSSProperties {
-  if (isCenterStep || !rect) {
+  // `placement: "center"` (explicit or fallback) and any step without a rect
+  // lands the card dead-centre. Used by KAM Comments / Ask AI which
+  // spotlight a button but let the modal/panel be the actual demo.
+  if (isCenterStep || !rect || placement === "center") {
     return {
       top: "50%",
       left: "50%",
@@ -315,34 +327,29 @@ function getCardPosition(
 
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const clampTop = (t: number) =>
+    Math.min(Math.max(16, t), Math.max(16, vh - CARD_HEIGHT - 16));
+  const clampLeft = (l: number) =>
+    Math.min(Math.max(16, l), Math.max(16, vw - CARD_WIDTH - 16));
 
   switch (placement) {
     case "right": {
       const left = rect.x + rect.width + SPOTLIGHT_PADDING + CARD_GAP;
-      const clampedLeft = Math.min(left, vw - 420);
-      return {
-        top: Math.max(16, rect.y - 20),
-        left: clampedLeft,
-      };
+      return { top: clampTop(rect.y - 20), left: clampLeft(left) };
     }
     case "left": {
-      return {
-        top: Math.max(16, rect.y - 20),
-        right: vw - rect.x + SPOTLIGHT_PADDING + CARD_GAP,
-      };
+      // Use absolute `left` (clamped) instead of `right` so the card width
+      // can never push it off the right edge.
+      const left = rect.x - SPOTLIGHT_PADDING - CARD_GAP - CARD_WIDTH;
+      return { top: clampTop(rect.y - 20), left: clampLeft(left) };
     }
     case "bottom": {
       const top = rect.y + rect.height + SPOTLIGHT_PADDING + CARD_GAP;
-      return {
-        top: Math.min(top, vh - 350),
-        left: Math.max(16, rect.x),
-      };
+      return { top: clampTop(top), left: clampLeft(rect.x) };
     }
     case "top": {
-      return {
-        bottom: vh - rect.y + SPOTLIGHT_PADDING + CARD_GAP,
-        left: Math.max(16, rect.x),
-      };
+      const top = rect.y - SPOTLIGHT_PADDING - CARD_GAP - CARD_HEIGHT;
+      return { top: clampTop(top), left: clampLeft(rect.x) };
     }
     default:
       return {

@@ -116,7 +116,6 @@ export default function HomePage() {
 
   return (
     <div className="animate-fade-in animate-stagger space-y-6">
-      <div data-walkthrough="page-glance">
       <PageGlanceBox
         pageTitle="Habit Services Overview"
         pageSubtitle="Your organisation's health & wellness snapshot"
@@ -128,7 +127,6 @@ export default function HomePage() {
           { label: "Platform", value: "Habit Intelligence" },
         ]}
       />
-      </div>
 
       <div className="flex items-center justify-end gap-2 mb-4">
         <Tooltip>

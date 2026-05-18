@@ -819,6 +819,7 @@ export default function OHCUtilizationPage() {
       )}
       {/* ── Filters + Actions Bar ── */}
       <div
+        data-walkthrough="filter-bar"
         className="flex items-center gap-2 flex-wrap px-5 py-3.5 rounded-2xl"
         style={{ backgroundColor: T.white, border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}
       >

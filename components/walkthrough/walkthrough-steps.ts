@@ -8,21 +8,42 @@ export interface WalkthroughStep {
   placement: StepPlacement;
   /** Icon name from lucide-react */
   icon?: string;
-  /** Route to navigate to when this step activates */
-  route?: string;
-  /** Whether to expand the sidebar during this step */
-  expandSidebar?: boolean;
   /** Action to perform when this step activates */
   action?: "open-kam-comments" | "open-habit-ai" | "close-panels";
-  /** Representative page slug this step is about. If the active client doesn't
-   *  have this slug in `enabledPages`, the step is dropped from the tour.
-   *  Omit for always-show steps (welcome, navigation, closing). */
-  pageSlug?: string;
+  /** Ordered list of pages where this step's feature is anchored. The tour
+   *  picks the first accessible page as the route. If no entry passes the
+   *  client's `enabledPages` + per-tenant `isPageVisible` gates, the step
+   *  is dropped from the tour entirely. Omit for global / always-show steps
+   *  (welcome, sidebar, topbar, closing) that don't need navigation. */
+  pageSlugs?: string[];
 }
 
+// Pages that render charts inside `CVCardDynamic`, which provides KAM
+// Comments and Ask Habit AI buttons for free. Used as the route candidate
+// list for the KAM Comments, Ask AI, AI Page Summary, and Filters steps.
+// Ordered so the most "general" landing page comes first for tenants that
+// have it.
+const CHART_CARD_PAGES = [
+  "/portal/ohc/utilization",
+  "/portal/ohc/referral",
+  "/portal/ohc/emotional-wellbeing",
+  "/portal/ohc/repeat-visits",
+  "/portal/ohc/health-insights",
+  "/portal/engagement",
+  "/portal/employee-experience/nps",
+  "/portal/employee-experience/lsmp",
+  "/portal/employee-experience/alerts-surveys",
+  "/portal/correlations",
+  "/portal/action-plan",
+];
+
+// Pages with the `data-walkthrough="page-glance"` AI summary banner. Home
+// is listed first so tenants that have the overview start there.
+const PAGE_GLANCE_PAGES = ["/portal/home", ...CHART_CARD_PAGES];
+
 export const walkthroughSteps: WalkthroughStep[] = [
-  // Phase 1: Welcome & Layout (0-2) — global; no route, just show on whatever
-  // page the user is on. These steps describe UI present on every page.
+  // ── Phase 1: Welcome & Layout ──
+  // Global; no route, no slug. Shown on whatever page the user opens from.
   {
     target: null,
     title: "Welcome to Habit Intelligence",
@@ -35,7 +56,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     target: "sidebar",
     title: "Navigation Sidebar",
     description:
-      "This is your navigation hub. The portal is organized into sections — Overview, OHC, AHC, Employee Experience, App Engagement, Correlations, and Action Plans. Click any section to expand its sub-pages. You can collapse the sidebar for more screen space.",
+      "This is your navigation hub. Click any section to expand its sub-pages. You can collapse the sidebar for more screen space.",
     placement: "right",
     icon: "LayoutDashboard",
   },
@@ -48,20 +69,19 @@ export const walkthroughSteps: WalkthroughStep[] = [
     icon: "Download",
   },
 
-  // Phase 2: Overview Page (3-5) — gated on /portal/home. Tenants without
-  // the overview page (e.g. clients with only OHC/AHC enabled) skip these,
-  // because their targets (page-glance, kpi-cards, service-cards) only
-  // exist on /portal/home.
+  // ── Phase 2: Overview Page ──
+  // page-glance / kpi-cards / service-cards hooks are set on /portal/home.
+  // AI Page Summary works on every chart-card page too; KPI cards and
+  // Service Categories are home-only.
   {
     target: "page-glance",
     title: "AI-Powered Page Summary",
     description:
-      "Every page opens with an AI-generated summary of your key metrics. This gives you an instant snapshot — key numbers, trends, and highlights — without scrolling through charts.",
+      "Every analytics page opens with an AI-generated summary of your key metrics. This gives you an instant snapshot — key numbers, trends, and highlights — without scrolling through charts.",
     placement: "bottom",
     icon: "Brain",
-    route: "/portal/home",
     action: "close-panels",
-    pageSlug: "/portal/home",
+    pageSlugs: PAGE_GLANCE_PAGES,
   },
   {
     target: "kpi-cards",
@@ -70,8 +90,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "These cards show your top-line metrics at a glance — registered employees, total services availed, active engagement rates, and cross-service adoption.",
     placement: "bottom",
     icon: "BarChart3",
-    route: "/portal/home",
-    pageSlug: "/portal/home",
+    pageSlugs: ["/portal/home"],
   },
   {
     target: "service-cards",
@@ -80,45 +99,47 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "Your organisation's wellness services are organized here — OHC, Annual Health Checks, Employee Engagement, and the Habit App. Click 'View Details' on any card to dive into its dedicated analytics pages. Services are shown based on what your organisation has opted for.",
     placement: "top",
     icon: "Layers",
-    route: "/portal/home",
-    pageSlug: "/portal/home",
+    pageSlugs: ["/portal/home"],
   },
 
-  // Phase 3: OHC Section (6-8) — gated on /portal/ohc/utilization
+  // ── Phase 3: OHC Section ──
   {
     target: null,
     title: "OHC — Occupational Health Centre",
     description:
-      "The OHC section tracks on-site clinic consultations. It includes 5 dedicated pages: Utilisation (visit volumes & trends), Referral (specialist referral patterns), Emotional Wellbeing (mental health screening outcomes), Repeat Visits (frequent visitor analysis), and Health Insights (disease landscape by ICD categories). Each page has detailed charts filtered by date, location, gender, and age group.",
+      "The OHC section tracks on-site clinic consultations across Utilisation (visit volumes & trends), Referral (specialist referral patterns), Emotional Wellbeing (mental health screening), Repeat Visits (frequent visitor analysis), and Health Insights (disease landscape by ICD categories). Each page has detailed charts filtered by date, location, gender, and age group.",
     placement: "center",
     icon: "Stethoscope",
-    route: "/portal/ohc/utilization",
-    pageSlug: "/portal/ohc/utilization",
+    pageSlugs: [
+      "/portal/ohc/utilization",
+      "/portal/ohc/referral",
+      "/portal/ohc/emotional-wellbeing",
+      "/portal/ohc/repeat-visits",
+      "/portal/ohc/health-insights",
+    ],
   },
   {
-    target: null,
+    target: "kam-comments-btn",
     title: "KAM Comments",
     description:
       "Your Key Account Manager adds contextual annotations explaining trends, dips, or spikes on charts across the portal. Look for the comment icon on chart headers — click it to open the comments thread and reply directly to your KAM.",
-    placement: "center",
+    placement: "left",
     icon: "MessageSquare",
-    route: "/portal/ohc/utilization",
     action: "open-kam-comments",
-    pageSlug: "/portal/ohc/utilization",
+    pageSlugs: CHART_CARD_PAGES,
   },
   {
-    target: null,
+    target: "ask-ai-btn",
     title: "Ask Habit AI",
     description:
       "Click the sparkle icon on any chart to open the AI assistant. It analyses that chart's data, shows KAM insights, suggests questions, and lets you ask anything about the data — all powered by Habit AI.",
-    placement: "center",
+    placement: "left",
     icon: "Sparkles",
-    route: "/portal/ohc/utilization",
     action: "open-habit-ai",
-    pageSlug: "/portal/ohc/utilization",
+    pageSlugs: CHART_CARD_PAGES,
   },
 
-  // Phase 4: AHC Section (9) — gated on /portal/ahc/utilization
+  // ── Phase 4: AHC Section ──
   {
     target: null,
     title: "AHC — Annual Health Checks",
@@ -127,10 +148,14 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "center",
     icon: "ClipboardCheck",
     action: "close-panels",
-    pageSlug: "/portal/ahc/utilization",
+    pageSlugs: [
+      "/portal/ahc/utilization",
+      "/portal/ahc/comparison",
+      "/portal/ahc/action-plan",
+    ],
   },
 
-  // Phase 5: Employee Experience (10-11)
+  // ── Phase 5: Employee Experience ──
   {
     target: null,
     title: "Employee Experience",
@@ -138,8 +163,11 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "This section captures the employee voice and engagement programs: NPS (Net Promoter Score with promoter/detractor analysis), LSMP (Lifestyle & Wellbeing program participation and compliance tracking), and Alerts & Surveys. Every chart here also supports KAM comments and AI analysis.",
     placement: "center",
     icon: "Users",
-    route: "/portal/employee-experience/nps",
-    pageSlug: "/portal/employee-experience/nps",
+    pageSlugs: [
+      "/portal/employee-experience/nps",
+      "/portal/employee-experience/lsmp",
+      "/portal/employee-experience/alerts-surveys",
+    ],
   },
   {
     target: null,
@@ -148,11 +176,10 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "The Alerts & Surveys page is your action centre. It shows smart health alerts triggered by patterns in your data — like low AHC participation or NPS dips.\n\nFrom here you can:\n• Send reminder emails to targeted employee cohorts\n• Launch wellness programs for specific groups (e.g., high-risk, repeat visitors)\n• Deploy surveys to gather feedback\n\nAll actions send a request to your Key Account Manager for review and execution.",
     placement: "center",
     icon: "Bell",
-    route: "/portal/employee-experience/alerts-surveys",
-    pageSlug: "/portal/employee-experience/alerts-surveys",
+    pageSlugs: ["/portal/employee-experience/alerts-surveys"],
   },
 
-  // Phase 6: App Engagement (12)
+  // ── Phase 6: App Engagement ──
   {
     target: null,
     title: "Habit App Engagement",
@@ -160,11 +187,10 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "Track how employees engage with the Habit wellness app — steps, sleep, meditation, yoga, challenges, and overall digital wellness adoption. See adoption trends, active user rates, and engagement breakdowns across your organisation.",
     placement: "center",
     icon: "Smartphone",
-    route: "/portal/engagement",
-    pageSlug: "/portal/engagement",
+    pageSlugs: ["/portal/engagement"],
   },
 
-  // Phase 7: Correlations & Action Plan (13-14)
+  // ── Phase 7: Correlations & Action Plan ──
   {
     target: null,
     title: "Correlations",
@@ -172,8 +198,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "Discover relationships between health metrics across services. The correlation matrix shows how OHC utilisation, app engagement, NPS scores, and health outcomes influence each other — helping you identify what drives better results.",
     placement: "center",
     icon: "GitBranch",
-    route: "/portal/correlations",
-    pageSlug: "/portal/correlations",
+    pageSlugs: ["/portal/correlations"],
   },
   {
     target: null,
@@ -182,18 +207,20 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "Your consolidated action centre powered by AI. It analyses data across all dashboards to generate prioritised action items — from clinical interventions (AHC gaps, repeat-visit management) to engagement initiatives (app adoption, NPS improvement).\n\nEach action item shows the data source, impact metric, and recommended timeline. You can reach out to your KAM directly to initiate any action.",
     placement: "center",
     icon: "ListChecks",
-    route: "/portal/action-plan",
-    pageSlug: "/portal/action-plan",
+    pageSlugs: ["/portal/action-plan"],
   },
 
-  // Phase 8: Features & Completion (15-16)
+  // ── Phase 8: Features & Completion ──
+  // Filters step spotlights the filter bar (tagged on OHC utilization) on
+  // any chart-card page the tenant has.
   {
-    target: null,
+    target: "filter-bar",
     title: "Filters & Data Controls",
     description:
-      "On every analytics page, you'll find filter controls — date range pickers, location selectors, gender and age group filters. Charts update in real-time as you filter. You can also expand any chart to full width using the maximize button, and download data from the top bar.",
-    placement: "center",
+      "On every analytics page you'll find filter controls — date range pickers, location selectors, gender and age group filters. Charts update in real-time as you filter. You can also expand any chart to full width using the maximize button, and download data from the top bar.",
+    placement: "bottom",
     icon: "SlidersHorizontal",
+    pageSlugs: CHART_CARD_PAGES,
   },
   {
     target: null,

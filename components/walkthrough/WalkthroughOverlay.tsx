@@ -5,8 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useWalkthrough } from "./WalkthroughProvider";
 import { WalkthroughCard } from "./WalkthroughCard";
 import { useAIPanel } from "@/lib/ai-panel-context";
-import { useAuth } from "@/lib/contexts/auth-context";
-import { useConfig } from "@/lib/contexts/config-context";
 
 const SPOTLIGHT_PADDING = 12;
 const SPOTLIGHT_RADIUS = 12;
@@ -22,8 +20,6 @@ interface TargetRect {
 export function WalkthroughOverlay() {
   const { isActive, currentStep, steps } = useWalkthrough();
   const { openPanel, closePanel } = useAIPanel();
-  const { isPageEnabledForClient } = useAuth();
-  const { isPageVisible } = useConfig();
   const router = useRouter();
   const pathname = usePathname();
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
@@ -77,38 +73,24 @@ export function WalkthroughOverlay() {
     }
   }, [step]);
 
-  // Navigate to the step's route when step changes. Skip the push if the
-  // route isn't accessible for this tenant — otherwise middleware bounces the
-  // user back to their landing page and the URL never matches the step's
-  // intended page, leaving the spotlight pointing at nothing.
+  // Navigate to the step's resolved route when step changes. The provider has
+  // already filtered out steps whose `pageSlugs` have no accessible entry, and
+  // chose the route here based on what's accessible plus a "stay put" rule
+  // when the current pathname is already a valid candidate.
   useEffect(() => {
     if (!isActive || !step?.route) return;
-    if (!isPageEnabledForClient(step.route) || !isPageVisible(step.route)) return;
     if (pathname !== step.route) {
       router.push(step.route);
     }
-  }, [
-    isActive,
-    currentStep,
-    step,
-    pathname,
-    router,
-    isPageEnabledForClient,
-    isPageVisible,
-  ]);
+  }, [isActive, currentStep, step, pathname, router]);
 
   // Execute step actions (open KAM comments, AI panel, etc.)
   useEffect(() => {
     if (!isActive || !step?.action) return;
     // Only fire once per step
     if (actionFiredRef.current === currentStep) return;
-    // Wait for navigation to complete — but only if we actually intend to
-    // navigate. If the route is gated out, we never navigated, so don't block.
-    const willNavigate =
-      !!step.route &&
-      isPageEnabledForClient(step.route) &&
-      isPageVisible(step.route);
-    if (willNavigate && pathname !== step.route) return;
+    // Wait for navigation to complete only if we actually intend to navigate.
+    if (step.route && pathname !== step.route) return;
 
     const timer = setTimeout(() => {
       actionFiredRef.current = currentStep;
@@ -167,16 +149,7 @@ export function WalkthroughOverlay() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [
-    isActive,
-    currentStep,
-    step,
-    pathname,
-    openPanel,
-    closePanel,
-    isPageEnabledForClient,
-    isPageVisible,
-  ]);
+  }, [isActive, currentStep, step, pathname, openPanel, closePanel]);
 
   // Cleanup when walkthrough stops: close panels, reset state
   useEffect(() => {
@@ -198,13 +171,9 @@ export function WalkthroughOverlay() {
       return;
     }
 
-    // If route needs changing, wait for navigation to complete. If the route
-    // is gated out for this tenant, we never push it, so don't wait.
-    const willNavigate =
-      !!step?.route &&
-      isPageEnabledForClient(step.route) &&
-      isPageVisible(step.route);
-    if (willNavigate && pathname !== step.route) {
+    // If the step's resolved route differs from the current path, wait for
+    // navigation to complete before measuring the target.
+    if (step?.route && pathname !== step.route) {
       setVisible(true);
       setTargetRect(null);
       return;
@@ -244,15 +213,7 @@ export function WalkthroughOverlay() {
       clearTimeout(measureTimer);
       observerRef.current?.disconnect();
     };
-  }, [
-    isActive,
-    currentStep,
-    pathname,
-    measureTarget,
-    step,
-    isPageEnabledForClient,
-    isPageVisible,
-  ]);
+  }, [isActive, currentStep, pathname, measureTarget, step]);
 
   if (!isActive || !visible || !step) return null;
 
@@ -304,9 +265,11 @@ export function WalkthroughOverlay() {
         />
       </svg>
 
-      {/* Spotlight border glow */}
+      {/* Spotlight border glow — pulses gently so the highlighted feature
+          visibly pops out from the dimmed background. */}
       {targetRect && !isCenterStep && (
         <div
+          className="walkthrough-spotlight-pulse"
           style={{
             position: "absolute",
             left: targetRect.x - SPOTLIGHT_PADDING,
@@ -314,10 +277,10 @@ export function WalkthroughOverlay() {
             width: targetRect.width + SPOTLIGHT_PADDING * 2,
             height: targetRect.height + SPOTLIGHT_PADDING * 2,
             borderRadius: SPOTLIGHT_RADIUS,
-            border: "2px solid rgba(99,102,241,0.3)",
-            boxShadow: "0 0 0 4px rgba(99,102,241,0.08)",
+            border: "2px solid rgba(99,102,241,0.55)",
             pointerEvents: "none",
-            transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition:
+              "left 0.4s cubic-bezier(0.4, 0, 0.2, 1), top 0.4s cubic-bezier(0.4, 0, 0.2, 1), width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
             zIndex: 61,
           }}
         />

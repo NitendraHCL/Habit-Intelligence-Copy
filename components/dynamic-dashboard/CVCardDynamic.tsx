@@ -119,6 +119,7 @@ function AskAIBtn({
       size="icon"
       className="h-7 w-7"
       style={{ color: T.textMuted }}
+      data-walkthrough="ask-ai-btn"
       onClick={() =>
         openPanel({
           title,

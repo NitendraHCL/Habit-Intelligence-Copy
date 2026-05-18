@@ -276,6 +276,24 @@ button, a, [role="button"] {
 }
 .animate-walkthrough-card-in { animation: walkthrough-card-in 0.3s ease-out forwards; }
 
+/* Spotlight border pulse — gentle ring around the highlighted feature so it
+   visibly pops against the dimmed overlay. */
+@keyframes walkthrough-spotlight-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px rgba(99, 102, 241, 0.12),
+      0 0 0 0 rgba(99, 102, 241, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(99, 102, 241, 0.18),
+      0 0 0 14px rgba(99, 102, 241, 0);
+  }
+}
+.walkthrough-spotlight-pulse {
+  animation: walkthrough-spotlight-pulse 1.6s ease-in-out infinite;
+}
+
 /* Recharts tooltip cleanup */
 .recharts-tooltip-wrapper {
   outline: none !important;

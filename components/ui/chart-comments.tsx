@@ -133,6 +133,7 @@ export function ChartComments({
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         className="relative inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-gray-100"
         title="Chart comments"
+        data-walkthrough="kam-comments-btn"
       >
         <MessageSquareText size={14} style={{ color: T.kamBadge }} />
         {totalCount > 0 && (

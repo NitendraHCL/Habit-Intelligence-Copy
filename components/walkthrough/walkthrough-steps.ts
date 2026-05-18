@@ -21,7 +21,8 @@ export interface WalkthroughStep {
 }
 
 export const walkthroughSteps: WalkthroughStep[] = [
-  // Phase 1: Welcome & Layout (0-2)
+  // Phase 1: Welcome & Layout (0-2) — global; no route, just show on whatever
+  // page the user is on. These steps describe UI present on every page.
   {
     target: null,
     title: "Welcome to Habit Intelligence",
@@ -29,7 +30,6 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "This quick tour will walk you through your health analytics portal — from the overview dashboard to detailed service pages, AI-powered insights, and expert annotations. Let's explore!",
     placement: "center",
     icon: "Sparkles",
-    route: "/portal/home",
   },
   {
     target: "sidebar",
@@ -38,8 +38,6 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "This is your navigation hub. The portal is organized into sections — Overview, OHC, AHC, Employee Experience, App Engagement, Correlations, and Action Plans. Click any section to expand its sub-pages. You can collapse the sidebar for more screen space.",
     placement: "right",
     icon: "LayoutDashboard",
-    route: "/portal/home",
-    expandSidebar: true,
   },
   {
     target: "topbar",
@@ -48,11 +46,12 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "Download reports and check notifications from the top bar. These are available on every page across the portal.",
     placement: "bottom",
     icon: "Download",
-    route: "/portal/home",
-    expandSidebar: true,
   },
 
-  // Phase 2: Overview Page (3-5)
+  // Phase 2: Overview Page (3-5) — gated on /portal/home. Tenants without
+  // the overview page (e.g. clients with only OHC/AHC enabled) skip these,
+  // because their targets (page-glance, kpi-cards, service-cards) only
+  // exist on /portal/home.
   {
     target: "page-glance",
     title: "AI-Powered Page Summary",
@@ -62,6 +61,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     icon: "Brain",
     route: "/portal/home",
     action: "close-panels",
+    pageSlug: "/portal/home",
   },
   {
     target: "kpi-cards",
@@ -71,6 +71,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "bottom",
     icon: "BarChart3",
     route: "/portal/home",
+    pageSlug: "/portal/home",
   },
   {
     target: "service-cards",
@@ -80,6 +81,7 @@ export const walkthroughSteps: WalkthroughStep[] = [
     placement: "top",
     icon: "Layers",
     route: "/portal/home",
+    pageSlug: "/portal/home",
   },
 
   // Phase 3: OHC Section (6-8) — gated on /portal/ohc/utilization
@@ -200,6 +202,5 @@ export const walkthroughSteps: WalkthroughStep[] = [
       "You're ready to explore your organisation's health & wellness analytics! Remember:\n\n• Look for the comment icon to read KAM expert annotations\n• Click the sparkle icon to ask Habit AI about any chart\n• Use Alerts & Surveys to send reminders and launch programs for targeted cohorts\n• Use filters to slice data by date, location, and demographics\n\nYou can restart this tour anytime by clicking 'Show me Around' at the bottom of the screen.",
     placement: "center",
     icon: "PartyPopper",
-    route: "/portal/home",
   },
 ];

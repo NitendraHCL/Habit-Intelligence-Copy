@@ -146,8 +146,10 @@ export function WalkthroughProvider({ children }: { children: ReactNode }) {
         currentStep,
         totalSteps: steps.length,
         steps,
-        shouldExpandSidebar:
-          isActive && steps[currentStep]?.expandSidebar === true,
+        // Keep the sidebar expanded for the full duration of the tour. The
+        // per-step `expandSidebar` flag used to gate this, which made the
+        // sidebar toggle collapsed/expanded between steps — visually a flicker.
+        shouldExpandSidebar: isActive,
         startTour,
         nextStep,
         prevStep,

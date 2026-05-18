@@ -5,6 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { useWalkthrough } from "./WalkthroughProvider";
 import { WalkthroughCard } from "./WalkthroughCard";
 import { useAIPanel } from "@/lib/ai-panel-context";
+import { useAuth } from "@/lib/contexts/auth-context";
+import { useConfig } from "@/lib/contexts/config-context";
 
 const SPOTLIGHT_PADDING = 12;
 const SPOTLIGHT_RADIUS = 12;
@@ -20,6 +22,8 @@ interface TargetRect {
 export function WalkthroughOverlay() {
   const { isActive, currentStep, steps } = useWalkthrough();
   const { openPanel, closePanel } = useAIPanel();
+  const { isPageEnabledForClient } = useAuth();
+  const { isPageVisible } = useConfig();
   const router = useRouter();
   const pathname = usePathname();
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
@@ -73,21 +77,38 @@ export function WalkthroughOverlay() {
     }
   }, [step]);
 
-  // Navigate to the step's route when step changes
+  // Navigate to the step's route when step changes. Skip the push if the
+  // route isn't accessible for this tenant — otherwise middleware bounces the
+  // user back to their landing page and the URL never matches the step's
+  // intended page, leaving the spotlight pointing at nothing.
   useEffect(() => {
     if (!isActive || !step?.route) return;
+    if (!isPageEnabledForClient(step.route) || !isPageVisible(step.route)) return;
     if (pathname !== step.route) {
       router.push(step.route);
     }
-  }, [isActive, currentStep, step, pathname, router]);
+  }, [
+    isActive,
+    currentStep,
+    step,
+    pathname,
+    router,
+    isPageEnabledForClient,
+    isPageVisible,
+  ]);
 
   // Execute step actions (open KAM comments, AI panel, etc.)
   useEffect(() => {
     if (!isActive || !step?.action) return;
     // Only fire once per step
     if (actionFiredRef.current === currentStep) return;
-    // Wait for navigation to complete
-    if (step.route && pathname !== step.route) return;
+    // Wait for navigation to complete — but only if we actually intend to
+    // navigate. If the route is gated out, we never navigated, so don't block.
+    const willNavigate =
+      !!step.route &&
+      isPageEnabledForClient(step.route) &&
+      isPageVisible(step.route);
+    if (willNavigate && pathname !== step.route) return;
 
     const timer = setTimeout(() => {
       actionFiredRef.current = currentStep;
@@ -146,7 +167,16 @@ export function WalkthroughOverlay() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [isActive, currentStep, step, pathname, openPanel, closePanel]);
+  }, [
+    isActive,
+    currentStep,
+    step,
+    pathname,
+    openPanel,
+    closePanel,
+    isPageEnabledForClient,
+    isPageVisible,
+  ]);
 
   // Cleanup when walkthrough stops: close panels, reset state
   useEffect(() => {
@@ -168,8 +198,13 @@ export function WalkthroughOverlay() {
       return;
     }
 
-    // If route needs changing, wait for navigation to complete
-    if (step?.route && pathname !== step.route) {
+    // If route needs changing, wait for navigation to complete. If the route
+    // is gated out for this tenant, we never push it, so don't wait.
+    const willNavigate =
+      !!step?.route &&
+      isPageEnabledForClient(step.route) &&
+      isPageVisible(step.route);
+    if (willNavigate && pathname !== step.route) {
       setVisible(true);
       setTargetRect(null);
       return;
@@ -209,7 +244,15 @@ export function WalkthroughOverlay() {
       clearTimeout(measureTimer);
       observerRef.current?.disconnect();
     };
-  }, [isActive, currentStep, pathname, measureTarget, step]);
+  }, [
+    isActive,
+    currentStep,
+    pathname,
+    measureTarget,
+    step,
+    isPageEnabledForClient,
+    isPageVisible,
+  ]);
 
   if (!isActive || !visible || !step) return null;
 

@@ -752,13 +752,13 @@ export default function OHCUtilizationPage() {
     grid: { left: 70, right: 40, top: 20, bottom: 80 },
     xAxis: {
       type: "category", data: locationOrder,
-      axisLabel: { fontSize: 10, fontFamily: "Inter, sans-serif", color: T.textMuted, interval: 0, rotate: 25 },
+      axisLabel: { fontSize: 11, fontFamily: "Inter, sans-serif", color: T.textSecondary, interval: 0, rotate: 25 },
       axisTick: { show: false }, axisLine: { lineStyle: { color: T.border } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "category", data: ageGroupOrder,
-      axisLabel: { fontSize: 11, fontFamily: "Inter, sans-serif", color: T.textMuted },
+      axisLabel: { fontSize: 11, fontFamily: "Inter, sans-serif", color: T.textSecondary },
       axisTick: { show: false }, axisLine: { lineStyle: { color: T.border } },
       splitLine: { show: true, lineStyle: { color: T.borderLight, type: "dashed" } },
       // Alternating row bands per age group — each row a single uniform
@@ -1091,8 +1091,8 @@ export default function OHCUtilizationPage() {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={locationBySpecialtyData} margin={{ top: 24, right: 10, left: 0, bottom: 45 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                      <XAxis dataKey="location" tick={{ fontSize: 9, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
-                      <YAxis tick={{ fontSize: 11, fill: T.textMuted }} />
+                      <XAxis dataKey="location" tick={{ fontSize: 11, fill: T.textSecondary }} interval={0} angle={-25} textAnchor="end" />
+                      <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                       <RechartsTooltip
                         content={({ active, payload, label }: any) => {
                           if (!active || !payload?.length) return null;
@@ -1139,8 +1139,8 @@ export default function OHCUtilizationPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} />
+                    <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                     <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
                     <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} />
@@ -1166,7 +1166,7 @@ export default function OHCUtilizationPage() {
                   <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
                     <PolarGrid stroke="#E5E7EB" gridType="polygon" />
                     <PolarAngleAxis dataKey="category" tick={{ fontSize: 11, fill: T.textPrimary, fontWeight: 500 }} />
-                    <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textMuted }} angle={30} domain={[0, "auto"]} />
+                    <PolarRadiusAxis tick={{ fontSize: 11, fill: T.textSecondary }} angle={30} domain={[0, "auto"]} />
                     <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
                     <Radar name="Booked" dataKey="booked" stroke="#4f46e5" fill="none" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5" }} />
                     <Radar name="Completed" dataKey="completed" stroke="#0d9488" fill="rgba(13,148,136,0.12)" strokeWidth={2.5} dot={{ r: 4, fill: "#0d9488" }} />
@@ -1215,8 +1215,8 @@ export default function OHCUtilizationPage() {
                   <ReactECharts style={{ height: 400, width: "100%" }} option={{
                     tooltip: { backgroundColor: "#fff", borderColor: T.border, borderWidth: 1, textStyle: { fontSize: 12 }, borderRadius: 12, formatter: (p: any) => { const hours = ["6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM","1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM","9 PM","10 PM"]; const days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]; return `${days[p.data[1]] || ""} at ${hours[p.data[0]] || ""}<br/><strong>${p.data[2]}</strong> consultations`; } },
                     grid: { left: 56, right: 32, top: 58, bottom: 48 },
-                    xAxis: { type: "category", data: ["6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM","1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM","9 PM","10 PM"], axisLine: { lineStyle: { color: "#E5E7EB" } }, axisTick: { show: false }, axisLabel: { fontSize: 11 } },
-                    yAxis: { type: "category", data: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 12, fontWeight: 500 } },
+                    xAxis: { type: "category", data: ["6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM","1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM","9 PM","10 PM"], axisLine: { lineStyle: { color: "#E5E7EB" } }, axisTick: { show: false }, axisLabel: { fontSize: 11, color: T.textSecondary } },
+                    yAxis: { type: "category", data: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 12, fontWeight: 500, color: T.textSecondary } },
                     visualMap: { min: 0, max: charts?.peakHours?.max || 65, show: true, calculable: true, orient: "horizontal", top: 8, left: "center", itemWidth: 16, itemHeight: 320, inRange: { color: ["#eef2ff","#c7d2fe","#818cf8","#6366f1","#4f46e5","#3730a3"] } },
                     series: [{ type: "heatmap", data: charts?.peakHours?.data || [], itemStyle: { borderColor: "#fff", borderWidth: 3, borderRadius: 6 } }],
                   }} />
@@ -1230,8 +1230,8 @@ export default function OHCUtilizationPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={repeatTrendData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: T.textSecondary }} />
+                    <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                     <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
                     <Line type="monotone" dataKey="repeatVisits" name="Repeat Visits" stroke="#e11d48" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#e11d48", strokeWidth: 2 }} />
@@ -1559,7 +1559,7 @@ export default function OHCUtilizationPage() {
                           data: stackSpecialties,
                           axisTick: { show: false },
                           axisLine: { lineStyle: { color: T.borderLight } },
-                          axisLabel: { fontSize: 10, color: T.textMuted, rotate: 25, interval: 0 },
+                          axisLabel: { fontSize: 11, color: T.textSecondary, rotate: 25, interval: 0 },
                           splitArea: { show: false },
                         },
                         yAxis: {
@@ -1636,8 +1636,8 @@ export default function OHCUtilizationPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={locationBySpecialtyData} margin={{ top: 56, right: 10, left: 0, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="location" tick={{ fontSize: 10, fill: T.textMuted }} interval={0} angle={-25} textAnchor="end" />
-                  <YAxis tick={{ fontSize: 11, fill: T.textMuted }} domain={[0, (dataMax: number) => { const padded = dataMax * 1.1; const mag = Math.pow(10, Math.floor(Math.log10(padded))); return Math.ceil(padded / mag) * mag; }]} />
+                  <XAxis dataKey="location" tick={{ fontSize: 11, fill: T.textSecondary }} interval={0} angle={-25} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} domain={[0, (dataMax: number) => { const padded = dataMax * 1.1; const mag = Math.pow(10, Math.floor(Math.log10(padded))); return Math.ceil(padded / mag) * mag; }]} />
                   <RechartsTooltip
                     content={({ active, payload, label }: any) => {
                       if (!active || !payload?.length) return null;
@@ -1844,8 +1844,8 @@ export default function OHCUtilizationPage() {
             <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={yearlyTrends} margin={{ top: 40, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
-                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const d = yearlyTrends.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; }} />
-                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} tickFormatter={(v: string) => { const d = yearlyTrends.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; }} />
+                  <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
                     const dd = payload[0]?.payload;
@@ -1894,8 +1894,8 @@ export default function OHCUtilizationPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textMuted }} tickFormatter={(v: string) => { const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, d] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; } if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; } return v; }} interval={0} />
-                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} tickFormatter={(v: string) => { const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, d] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; } if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; } return v; }} interval={0} />
+                  <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
                     const dd = payload[0]?.payload;
@@ -2150,7 +2150,7 @@ export default function OHCUtilizationPage() {
                       );
                     }}
                   />
-                  <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textMuted }} angle={30} domain={[0, "auto"]} />
+                  <PolarRadiusAxis tick={{ fontSize: 11, fill: T.textSecondary }} angle={30} domain={[0, "auto"]} />
                   <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }} />
                   <Radar name="Booked" dataKey="booked" stroke="#4f46e5" fill="none" strokeWidth={2.5} dot={{ r: 4, fill: "#4f46e5", strokeWidth: 0 }} />
                   <Radar name="Completed" dataKey="completed" stroke="#e11d48" fill="none" strokeWidth={2.5} dot={{ r: 4, fill: "#e11d48", strokeWidth: 0 }} />
@@ -2347,7 +2347,7 @@ export default function OHCUtilizationPage() {
                 data: ["6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM","1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM","9 PM","10 PM"],
                 axisLine: { lineStyle: { color: "#E5E7EB" } },
                 axisTick: { show: false },
-                axisLabel: { fontFamily: "Inter, system-ui, sans-serif", fontSize: 11, color: T.textMuted },
+                axisLabel: { fontFamily: "Inter, system-ui, sans-serif", fontSize: 11, color: T.textSecondary },
                 splitArea: { show: false },
               },
               yAxis: {
@@ -2460,7 +2460,7 @@ export default function OHCUtilizationPage() {
               legend: { bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: T.textSecondary }, icon: "circle" },
               grid: { top: 40, bottom: 44, left: 56, right: 24 },
               xAxis: { type: "category" as const, data: yearly.map((y) => y.period), axisLabel: { fontSize: 11, color: T.textSecondary, formatter: (v: string) => { const d = yearly.find((y) => y.period === v); return d?.isYtd ? `${v} (YTD)` : v; } }, axisTick: { show: false }, axisLine: { lineStyle: { color: T.borderLight } } },
-              yAxis: { type: "value" as const, axisLabel: { fontSize: 10, color: T.textMuted }, splitLine: { lineStyle: { color: T.borderLight, type: "dashed" as const } }, axisLine: { show: false }, axisTick: { show: false } },
+              yAxis: { type: "value" as const, axisLabel: { fontSize: 11, color: T.textSecondary }, splitLine: { lineStyle: { color: T.borderLight, type: "dashed" as const } }, axisLine: { show: false }, axisTick: { show: false } },
               series: [
                 {
                   name: "Repeat Visits",
@@ -2556,7 +2556,7 @@ export default function OHCUtilizationPage() {
             },
             yAxis: {
               type: "value" as const,
-              axisLabel: { fontSize: 10, color: T.textMuted },
+              axisLabel: { fontSize: 11, color: T.textSecondary },
               splitLine: { lineStyle: { color: T.borderLight, type: "dashed" as const } },
               axisLine: { show: false },
               axisTick: { show: false },

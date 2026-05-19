@@ -111,6 +111,24 @@ function formatNum(n: number): string {
   return String(n);
 }
 
+// Period label formatter — used by both the X-axis tick formatter and the
+// tooltip header so the period displayed on hover matches the axis label.
+// "2025-03"     → "Mar '25"
+// "2025-03-15"  → "Mar 15"
+// anything else → returned as-is.
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function formatPeriodLabel(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [, m, d] = value.split("-");
+    return `${MONTH_LABELS[Number(m) - 1]} ${d}`;
+  }
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [y, m] = value.split("-");
+    return `${MONTH_LABELS[Number(m) - 1]} '${y.slice(2)}`;
+  }
+  return value;
+}
+
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
   return <div className="w-10 h-1 rounded-sm mb-3.5" style={{ background: `linear-gradient(90deg, ${color}, ${colorEnd || color})` }} />;
@@ -1894,7 +1912,7 @@ export default function OHCUtilizationPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} tickFormatter={(v: string) => { const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [, m, d] = v.split("-"); return `${MONTHS[Number(m) - 1]} ${d}`; } if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; } return v; }} interval={0} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} tickFormatter={formatPeriodLabel} interval={0} />
                   <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
@@ -1902,7 +1920,7 @@ export default function OHCUtilizationPage() {
                     const total = (dd?.completed || 0) + (dd?.cancelled || 0) + (dd?.noShow || 0);
                     return (
                       <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{formatPeriodLabel(String(label ?? ""))}</p>
                         <p>Total Appointments: <strong>{formatNum(total)}</strong></p>
                         <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.borderLight }}>
                           <p style={{ color: "#4f46e5" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>

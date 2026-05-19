@@ -420,7 +420,7 @@ export default function EngagementPage() {
         pageTitle="Habit App Engagement"
         pageSubtitle="App adoption, activity tracking, challenges, webinars and cohort engagement metrics"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalEmployeesWithAccess || 0)} employees have app access with ${formatNum(kpis?.registeredUsers || 0)} registered users. Step tracking shows ${formatNum(kpis?.avgDailySteps || 0)} average daily steps across active users. ${kpis?.totalChallenges || 0} challenges and ${kpis?.totalWebinars || 0} webinars have been conducted.`}
+        fallbackSummary={`${formatNum(kpis?.totalEmployeesWithAccess || 0)} employees have app access, of which ${formatNum(kpis?.registeredUsers || 0)} have registered. Active users average ${formatNum(kpis?.avgDailySteps || 0)} steps per day. ${kpis?.totalChallenges || 0} challenges and ${kpis?.totalWebinars || 0} webinars have run on the platform.`}
         fallbackChips={[
           { label: "Total Access", value: formatNum(kpis?.totalEmployeesWithAccess || 0) },
           { label: "Registered", value: formatNum(kpis?.registeredUsers || 0) },

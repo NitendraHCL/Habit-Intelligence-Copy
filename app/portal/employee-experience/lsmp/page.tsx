@@ -497,7 +497,7 @@ export default function LSMPPage() {
         pageTitle="Care Plan Dashboard"
         pageSubtitle="Lifestyle Management Programs Participation and Outcomes"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalEnrollments?.value || 0)} total enrollments across lifestyle management programs with ${formatNum(kpis?.activeInCarePlan?.value || 0)} currently active in care plans. Completion rate stands at ${kpis?.completionRate?.value || 0}% with ${kpis?.overallImprovement?.value || 0}% showing health improvement.`}
+        fallbackSummary={`${formatNum(kpis?.totalEnrollments?.value || 0)} employees enrolled in lifestyle management programs. ${formatNum(kpis?.activeInCarePlan?.value || 0)} are active in a care plan right now. ${kpis?.completionRate?.value || 0}% of cohorts completed their program, and ${kpis?.overallImprovement?.value || 0}% improved on their health markers.`}
         fallbackChips={[
           { label: "Enrollments", value: formatNum(kpis?.totalEnrollments?.value || 0) },
           { label: "Active", value: formatNum(kpis?.activeInCarePlan?.value || 0) },

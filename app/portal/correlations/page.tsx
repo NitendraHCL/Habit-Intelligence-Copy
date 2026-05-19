@@ -190,7 +190,7 @@ export default function CorrelationsPage() {
         pageTitle="Correlations Dashboard"
         pageSubtitle="Cross-service insights connecting OHC, Annual Health Checks (AHC), and App data"
         kpis={{}}
-        fallbackSummary="Cross-service analysis connects OHC utilization, Annual Health Check (AHC) data, mental health assessments, and app engagement data. Participation patterns reveal how engagement in one health service influences outcomes in others, enabling integrated wellness interventions."
+        fallbackSummary="Cross-service analysis connects OHC, Annual Health Checks, mental health screenings, and app engagement. The matrix below shows how participation in one service relates to outcomes in another."
         fallbackChips={[
           { label: "Services Analyzed", value: "4" },
           { label: "Data Sources", value: "OHC, AHC, App" },

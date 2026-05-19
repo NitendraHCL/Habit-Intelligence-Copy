@@ -802,7 +802,7 @@ export default function HealthInsightsPage() {
         pageSubtitle="Chronic diagnosis patterns and condition trends"
         kpis={{}}
         fallbackSummary={categoryTreemap.length > 0
-          ? `${displayCat(categoryTreemap[0]?.name || "")} is the biggest chronic disease — ${formatNum(categoryTreemap[0]?.value || 0)} visits, about ${categoryTreemap[0]?.percentage || 0}% of all chronic visits across ${categories.length} diseases. ${formatNum(ca.chronicPatients || 0)} different employees are living with at least one chronic condition.`
+          ? `${displayCat(categoryTreemap[0]?.name || "")} is the most common chronic condition with ${formatNum(categoryTreemap[0]?.value || 0)} visits, about ${categoryTreemap[0]?.percentage || 0}% of all chronic visits. ${formatNum(ca.chronicPatients || 0)} employees are living with at least one chronic condition. ${categories.length} disease categories are tracked here.`
           : "Patterns in chronic diagnoses and how conditions trend over time."}
         fallbackChips={categoryTreemap.length > 0 ? [
           { label: "Top Chronic Disease", value: displayCat(categoryTreemap[0]?.name || "—") },

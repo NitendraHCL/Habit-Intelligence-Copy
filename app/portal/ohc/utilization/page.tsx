@@ -1054,7 +1054,7 @@ export default function OHCUtilizationPage() {
         pageTitle="OHC Utilization"
         pageSubtitle="Onsite health center consultation analytics and utilization metrics"
         kpis={kpis || {}}
-        fallbackSummary={`In total, ${formatNum(kpis?.totalConsults || 0)} consultations happened, with ${formatNum(kpis?.uniquePatients || 0)} different employees using OHC across ${kpis?.locationCount || 0} clinics. ${kpis?.repeatRate || 0}% of those employees came back for a second visit in this period — a sign people are returning for follow-up care, not just one-off issues.`}
+        fallbackSummary={`OHC saw ${formatNum(kpis?.totalConsults || 0)} consultations from ${formatNum(kpis?.uniquePatients || 0)} unique employees across ${kpis?.locationCount || 0} clinics. ${kpis?.repeatRate || 0}% of them came back for at least one repeat visit.`}
         fallbackChips={[
           { label: "Total Consults", value: formatNum(kpis?.totalConsults || 0) },
           { label: "Unique Patients", value: formatNum(kpis?.uniquePatients || 0) },

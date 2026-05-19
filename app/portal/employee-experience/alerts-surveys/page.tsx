@@ -264,7 +264,7 @@ export default function AlertsSurveysPage() {
         pageTitle="Alerts & Surveys"
         pageSubtitle="Smart health alerts and survey management for your workforce"
         kpis={{}}
-        fallbackSummary="This module will enable automatic health alerts triggered by patterns in your dashboard data, along with targeted email communication and survey distribution. Alert examples below are based on actual metrics from your OHC, NPS, Engagement, and LSMP dashboards."
+        fallbackSummary="Smart health alerts fire when your dashboard data shows specific patterns. From here you can send targeted reminder emails, launch wellness programs, or deploy surveys to a cohort. The examples below are drawn from your live OHC, NPS, Engagement, and LSMP metrics."
         fallbackChips={[
           { label: "Alerts", value: "Data-driven" },
           { label: "Emails", value: "Cohort-targeted" },

@@ -606,7 +606,7 @@ export default function RepeatVisitsPage() {
           pageTitle="Repeat Visit Patterns"
           pageSubtitle="Track repeat patient patterns, condition transitions, and satisfaction across visits. Repeat patients are employees who have availed any OHC service at least twice within the selected date range."
           kpis={kpis || {}}
-          fallbackSummary={`${formatNum(kpis?.totalRepeatPatients || 0)} employees have availed any OHC service at least twice in the selected date range, accounting for ${kpis?.repeatRate || 0}% of the patient base. Average visit frequency is ${kpis?.avgFrequency || "0"} per patient. ${formatNum(kpis?.frequentRepeaters || 0)} patients have 5+ visits enrolled in follow-up care programs.`}
+          fallbackSummary={`${formatNum(kpis?.totalRepeatPatients || 0)} employees came back to OHC at least twice, a ${kpis?.repeatRate || 0}% repeat rate. Average visits per patient: ${kpis?.avgFrequency || "0"}. ${formatNum(kpis?.frequentRepeaters || 0)} patients have made 5 or more visits.`}
           fallbackChips={[
             { label: "Repeat Patients", value: formatNum(kpis?.totalRepeatPatients || 0) },
             { label: "Avg Frequency", value: `${kpis?.avgFrequency || "0"}` },

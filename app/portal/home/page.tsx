@@ -120,7 +120,7 @@ export default function HomePage() {
         pageTitle="Habit Services Overview"
         pageSubtitle="Your organisation's health & wellness snapshot"
         kpis={{}}
-        fallbackSummary="Your organization's health and wellness services span OHC consultations, Annual Health Check-ups, Employee Engagement programs, and the Habit wellness app. This dashboard provides a high-level summary of utilization, engagement, and outcomes across all service categories."
+        fallbackSummary="Your wellness program covers four services: OHC consultations, Annual Health Check-ups, Employee Engagement programs, and the Habit app. The cards below summarise utilisation, engagement, and outcomes for each. Click any service to open its dedicated dashboards."
         fallbackChips={[
           { label: "Services", value: "4 Categories" },
           { label: "Locations", value: "8 Sites" },

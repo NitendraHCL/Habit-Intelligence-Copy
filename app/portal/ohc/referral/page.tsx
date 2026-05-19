@@ -600,7 +600,7 @@ export default function ReferralAnalyticsPage() {
         pageTitle="Referral Analytics"
         pageSubtitle="How specialist referrals flow through the OHC — issuance, conversion, and the cohorts driving demand"
         kpis={kpis || {}}
-        fallbackSummary={`The OHC referral system has processed ${formatNum(kpis?.totalReferrals || 0)} referrals with a ${kpis?.conversionPct || 0}% conversion rate. In-clinic availability stands at ${kpis?.availableInClinicPct || 0}% of referrals. ${formatNum(kpis?.convertedCount || 0)} referrals have been successfully converted to specialist consultations.`}
+        fallbackSummary={`${formatNum(kpis?.totalReferrals || 0)} referrals went out, ${kpis?.conversionPct || 0}% of which converted to a specialist consultation. ${formatNum(kpis?.convertedCount || 0)} have completed so far. ${kpis?.availableInClinicPct || 0}% of referrals were available in-clinic.`}
         fallbackChips={[
           { label: "Total Referrals", value: formatNum(kpis?.totalReferrals || 0) },
           { label: "Conversion Rate", value: `${kpis?.conversionPct || 0}%` },

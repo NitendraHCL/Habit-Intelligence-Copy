@@ -266,7 +266,7 @@ export default function ActionPlanPage() {
         pageTitle="Action Plan"
         pageSubtitle="Data-driven interventions derived from dashboard insights across all services"
         kpis={{}}
-        fallbackSummary="Action items are derived from data across all dashboard pages — OHC Health Insights, App Engagement, NPS scores, Repeat Visits, LSMP enrollment, and Annual Health Check (AHC) participation. Every recommendation below is backed by specific metrics visible in the corresponding dashboard section."
+        fallbackSummary="Action items come from your data on OHC Health Insights, App Engagement, NPS, Repeat Visits, LSMP, and Annual Health Checks. Each recommendation below cites the specific metric that triggered it."
         fallbackChips={[
           { label: "Action Items", value: String(actionItems.length) },
           { label: "Critical", value: String(criticalCount) },

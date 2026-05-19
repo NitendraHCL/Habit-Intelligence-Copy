@@ -544,7 +544,7 @@ export default function NPSPage() {
         pageTitle="Net Promoter Score"
         pageSubtitle="Measures patient satisfaction and likelihood to recommend services."
         kpis={{}}
-        fallbackSummary="Patient satisfaction is tracked through NPS methodology across service categories, specialties, and locations. Scores are compared year-over-year with breakdown by feedback channel and visit frequency to identify satisfaction drivers and improvement areas."
+        fallbackSummary="Patient satisfaction is tracked using NPS across services, specialties, and locations. Scores are compared year-over-year. Breakdowns by feedback channel and visit frequency show which cohorts drive the score."
         fallbackChips={[
           { label: "Service Lines", value: "8 Categories" },
           { label: "Locations", value: "11 Sites" },

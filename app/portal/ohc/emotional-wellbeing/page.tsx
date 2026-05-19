@@ -656,7 +656,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
         pageTitle="Emotional Wellbeing Overview"
         pageSubtitle="Mental health assessment analytics, risk indicators and lifestyle insights"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalConsults || 0)} emotional wellbeing consultations happened with ${formatNum(kpis?.uniquePatients || 0)} different employees. ${formatNum(kpis?.repeatPatients || 0)} of them came back for a second session — a good sign that follow-up care is happening. The anxiety and depression screening data below helps you spot which groups may need more support.`}
+        fallbackSummary={`${formatNum(kpis?.totalConsults || 0)} emotional wellbeing consultations from ${formatNum(kpis?.uniquePatients || 0)} unique employees. ${formatNum(kpis?.repeatPatients || 0)} came back for a second session. The screening charts below break this down by anxiety and depression severity.`}
         fallbackChips={[
           { label: "Total Consults", value: formatNum(kpis?.totalConsults || 0) },
           { label: "Unique Patients", value: formatNum(kpis?.uniquePatients || 0) },

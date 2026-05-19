@@ -111,7 +111,39 @@ export function PageGlanceBox({
         )}
         {loading && <Loader2 size={14} className="animate-spin" style={{ color: "rgba(255,255,255,0.6)" }} />}
       </div>
-      <p className="text-[13px] leading-relaxed opacity-90">{summary}</p>
+      {(() => {
+        // Split the AI's summary into bullet items on sentence boundaries.
+        // The prompt asks for short period-ended sentences (one fact each),
+        // so this gives 2-3 bullets. Anything that didn't end with .!? still
+        // renders as a single bullet.
+        const points = summary
+          .split(/(?<=[.!?])\s+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return (
+          <div className="flex flex-wrap items-stretch gap-x-6 gap-y-3">
+            {points.map((point, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 flex-1"
+                style={{ minWidth: 220 }}
+              >
+                <span
+                  className="mt-[7px] rounded-full flex-shrink-0"
+                  style={{
+                    width: 6,
+                    height: 6,
+                    backgroundColor: "rgba(255,255,255,0.65)",
+                  }}
+                />
+                <p className="text-[13px] leading-relaxed opacity-90">
+                  {point}
+                </p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {chips.length > 0 && (
         <div className="flex items-center gap-3 mt-4 flex-wrap">
           {chips.map((chip, i) => (

@@ -1940,7 +1940,7 @@ export default function OHCUtilizationPage() {
                     );
                   }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <ReferenceLine y={avgConsults} stroke={T.border} strokeDasharray="5 5" />
+                  <ReferenceLine y={avgConsults} stroke={T.textSecondary} strokeDasharray="6 4" strokeWidth={1.5} />
                   <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
                   <Line type="monotone" dataKey="cancelled" name="Cancelled" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#f59e0b" }} />
                   <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />

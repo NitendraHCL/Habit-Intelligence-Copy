@@ -638,7 +638,11 @@ async function handler(request: NextRequest) {
 
     // ── Demographics (age_group comes pre-bucketed from warehouse) ──
     const SUNBURST_COLORS: Record<string, string> = { "<20": "#818cf8", "20-35": "#0d9488", "36-40": "#d4d4d8", "41-60": "#a78bfa", "61+": "#6366f1" };
-    const GENDER_COLORS: Record<string, string> = { M: "#0d9488", F: "#a78bfa", O: "#a1a1aa" };
+    // Male/Female colors deliberately chosen to NOT collide with any of the
+    // SUNBURST_COLORS age-group palette above — otherwise the inner ring
+    // (age group) and outer ring (gender) of the demographic sunburst would
+    // share hues and stop reading as distinct dimensions.
+    const GENDER_COLORS: Record<string, string> = { M: "#1E4088", F: "#be185d", O: "#a1a1aa" };
     const ageMap: Record<string, Record<string, { consults: number; patients: number }>> = {};
     for (const row of demoRows) {
       const ag = row.age_group;

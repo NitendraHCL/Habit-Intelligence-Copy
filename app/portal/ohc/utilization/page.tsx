@@ -75,7 +75,11 @@ const SUNBURST_COLORS: Record<string, string> = {
   "41-60": "#a78bfa",
   "61+": "#6366f1",
 };
-const GENDER_COLORS: Record<string, string> = { M: "#0d9488", F: "#a78bfa", O: "#a1a1aa" };
+// Kept in sync with the GENDER_COLORS map in app/api/ohc/utilization/route.ts —
+// the API bakes these colors into demographicSunburst data, and we restate them
+// here for the chart legend. Chosen to be distinct from SUNBURST_COLORS so the
+// inner-ring (age group) and outer-ring (gender) don't share hues.
+const GENDER_COLORS: Record<string, string> = { M: "#1E4088", F: "#be185d", O: "#a1a1aa" };
 
 const SPECIALTY_COLORS: Record<string, string> = {
   "General Physician": "#4f46e5", Dietetics: "#6366f1", "Internal Medicine": "#0d9488",
@@ -658,8 +662,10 @@ export default function OHCUtilizationPage() {
           itemStyle: { borderWidth: 3, borderColor: "#fff", borderRadius: 4 },
         },
         {
+          // Outer ring (gender). White label color so "M" / "F" / "O" stay
+          // legible on the dark blue / deep pink / gray slice backgrounds.
           r0: "62%", r: "85%",
-          label: { fontSize: 11, fontWeight: 600, rotate: 0, align: "center", color: T.textPrimary },
+          label: { fontSize: 12, fontWeight: 700, rotate: 0, align: "center", color: "#fff" },
           itemStyle: { borderWidth: 2, borderColor: "#fff", borderRadius: 4 },
         },
       ],

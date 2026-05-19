@@ -755,18 +755,21 @@ export default function OHCUtilizationPage() {
       axisLabel: { fontSize: 10, fontFamily: "Inter, sans-serif", color: T.textMuted, interval: 0, rotate: 25 },
       axisTick: { show: false }, axisLine: { lineStyle: { color: T.border } },
       splitLine: { show: false },
-      splitArea: {
-        show: true,
-        areaStyle: {
-          color: ["rgba(245,246,250,0.85)", "rgba(255,255,255,0)"],
-        },
-      },
     },
     yAxis: {
       type: "category", data: ageGroupOrder,
       axisLabel: { fontSize: 11, fontFamily: "Inter, sans-serif", color: T.textMuted },
       axisTick: { show: false }, axisLine: { lineStyle: { color: T.border } },
       splitLine: { show: true, lineStyle: { color: T.borderLight, type: "dashed" } },
+      // Alternating row bands per age group — each row a single uniform
+      // colour edge-to-edge. Column banding is intentionally OFF so the
+      // x-axis doesn't break the row stripes into a checkerboard.
+      splitArea: {
+        show: true,
+        areaStyle: {
+          color: ["rgba(245,246,250,0.85)", "rgba(255,255,255,0)"],
+        },
+      },
     },
     series: [{
       type: "scatter",
@@ -2274,7 +2277,7 @@ export default function OHCUtilizationPage() {
           </span>
           <span className="flex items-center gap-2 text-[11.5px]" style={{ color: T.textSecondary }}>
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold" style={{ backgroundColor: "rgba(245,246,250,0.9)", border: "1px solid #e5e7eb" }}>▤</span>
-            <span><span className="font-semibold" style={{ color: T.textPrimary }}>Shaded columns</span> — alternating bands per location for easier grouping</span>
+            <span><span className="font-semibold" style={{ color: T.textPrimary }}>Shaded rows</span> — alternating bands per age group for easier left-to-right scanning</span>
           </span>
         </div>
 

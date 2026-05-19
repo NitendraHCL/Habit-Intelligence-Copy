@@ -120,14 +120,14 @@ export function PageGlanceBox({
           .split(/(?<=[.!?])\s+/)
           .map((s) => s.trim())
           .filter(Boolean);
+        const cols = Math.min(points.length, 3) || 1;
         return (
-          <div className="flex flex-wrap items-stretch gap-x-6 gap-y-3">
+          <div
+            className="grid gap-x-6 gap-y-3 items-start"
+            style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+          >
             {points.map((point, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-2 flex-1"
-                style={{ minWidth: 220 }}
-              >
+              <div key={i} className="flex items-start gap-2">
                 <span
                   className="mt-[7px] rounded-full flex-shrink-0"
                   style={{

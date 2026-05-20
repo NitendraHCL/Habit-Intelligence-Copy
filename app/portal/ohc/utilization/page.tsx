@@ -1403,7 +1403,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Consultation breakdown by age, gender, and location</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("demographicBreakdown"), isChartVisible("locationBySpecialty")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultation volume split by age group (inner ring) and gender (outer ring) — hover any slice to reveal cohort counts." tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender">
+          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultations are split by age group on the inner ring and gender on the outer ring." tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender">
             <div ref={sunburstContainerRef} style={{ height: 360, position: "relative" }}>
               <ReactECharts
                 ref={sunburstRef}
@@ -1484,7 +1484,7 @@ export default function OHCUtilizationPage() {
             })()} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — darker cells mean more consults" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consultations at ${locationBySpecialtyData[0]?.location || "your clinic"} are broken down by specialty.` : clinicChartMode === "heatmap" ? "Darker cells mean more consults at that clinic-specialty pair." : "Each bar shows the consultations at one clinic, split by specialty."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
             {clinicChartMode !== "specialtyOnly" && (
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {stackSpecialties.map((spec: string, i: number) => (
@@ -1901,7 +1901,7 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Lines track completed, cancelled, no-show, and unique patients by day — spot which days saw the most demand across the selected range." : "Lines track completed, cancelled, no-show, and unique patients by month — spot seasonal demand peaks and shifts in utilisation.") : "Bars break out completed, cancelled, and no-show volumes each year; the line traces completed growth, with YoY % change shown above every bar."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Each day shows completed, cancelled, and no-show consults alongside unique patients." : "Each month shows completed, cancelled, and no-show consults alongside unique patients.") : "Each year shows completed, cancelled, and no-show consults with the year-over-year change."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (
@@ -2014,7 +2014,7 @@ export default function OHCUtilizationPage() {
               : "No trend data yet for this date range."} />
         </CVCard>}
 
-        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations — bigger slice, higher demand. Center shows the total and the leading specialty; hover any slice for exact counts." tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
+        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations." tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
           {(() => {
             const raw = charts?.specialtyTreemap || [];
             const top6 = raw.slice(0, 6);
@@ -2186,7 +2186,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Booked vs completed across service categories</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("categoryRadar"), isChartVisible("serviceCategoryMatrix")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Click a category to drill into its line items →" tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories">
+          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked and completed volumes are compared across Pathology, Radiology, and Cardiology." tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories">
             <div style={{ height: 340 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart
@@ -2245,7 +2245,7 @@ export default function OHCUtilizationPage() {
             })()} />
           </CVCard>}
 
-          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} subtitle={selectedSvcCategory ? "Top packages and tests by booked volume" : "Booked vs completed with completion rate · click a category on the radar to drill in"} tooltipText="Booked is the count of ordered services; Completed is those marked Completed; Completion Rate is Completed ÷ Booked." chartId="serviceCategoryMatrix" chartData={selectedSvcCategory ? serviceCategoryLineItems[selectedSvcCategory] : serviceCategories} chartTitle={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} chartDescription="Service category breakdown with booked, completed counts and completion rates" rightHeader={<ResetFilter visible={selectedSvcCategory !== ""} onClick={() => setSelectedSvcCategory("")} />}>
+          {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} subtitle={selectedSvcCategory ? "These are the top packages and tests ranked by booked volume." : "Each row shows the booked, completed, and completion rate for one category."} tooltipText="Booked is the count of ordered services; Completed is those marked Completed; Completion Rate is Completed ÷ Booked." chartId="serviceCategoryMatrix" chartData={selectedSvcCategory ? serviceCategoryLineItems[selectedSvcCategory] : serviceCategories} chartTitle={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} chartDescription="Service category breakdown with booked, completed counts and completion rates" rightHeader={<ResetFilter visible={selectedSvcCategory !== ""} onClick={() => setSelectedSvcCategory("")} />}>
             {selectedSvcCategory ? (() => {
               const drill = serviceCategoryLineItems[selectedSvcCategory] || { packages: [], tests: [] };
               const renderRow = (item: SvcLineItem, idx: number) => (
@@ -2358,7 +2358,7 @@ export default function OHCUtilizationPage() {
       </WarmSection>}
 
       {/* ── Section: Bubble Chart ── */}
-      {isChartVisible("bubbleChart") && <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle="Bubble size represents consult volume and color represents gender split. Select a specialty to explore." tooltipText="X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced." chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split">
+      {isChartVisible("bubbleChart") && <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle="Each bubble is one clinic and age group, sized by volume and coloured by gender mix." tooltipText="X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced." chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split">
         {/* ── How to read this chart ── */}
         <div className="flex items-center gap-5 mb-4 px-4 py-3 rounded-xl flex-wrap" style={{ backgroundColor: "rgba(79,70,229,0.04)", border: "1px solid rgba(79,70,229,0.08)" }}>
           <span className="flex items-center gap-2 text-[11.5px]" style={{ color: T.textSecondary }}>
@@ -2407,7 +2407,7 @@ export default function OHCUtilizationPage() {
       </CVCard>}
 
       {/* ── Peak Consultation Hours Heatmap ── */}
-      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Hourly footfall heatmap by weekday" tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday">
+      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Each cell shows the consultation volume for one weekday and hour." tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday">
         {/* ── Slider instruction ── */}
         <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.12)" }}>
           <SlidersHorizontal size={16} style={{ color: "#4f46e5", flexShrink: 0, marginTop: 1 }} />
@@ -2507,10 +2507,10 @@ export default function OHCUtilizationPage() {
         accentColor="#e11d48"
         title="Repeat Visit Trends"
         subtitle={repeatView === "yearly"
-          ? "Bars: total consults by employees who visited OHC more than once, aggregated per year. Teal line traces the year-over-year trajectory; YoY % shows change vs the prior year."
+          ? "Each year shows the repeat-visit volume with its year-over-year change."
           : isDailyView
-            ? "Solid line: total consults by repeat-visit employees by day. Dashed line: how many distinct repeat-visit employees there were. Widening gap = same people returning more often."
-            : "Solid line: total consults by repeat-visit employees by month. Dashed line: how many distinct repeat-visit employees there were. Widening gap = same people returning more often."}
+            ? "The solid line shows daily repeat visits; the dashed line shows unique repeat patients."
+            : "The solid line shows monthly repeat visits; the dashed line shows unique repeat patients."}
         tooltipText="Repeat Visits counts every consultation made by employees who have used OHC services more than once. Repeat Patients counts the unique number of such employees in each period. Note: summing Repeat Patients across periods double-counts employees who returned in multiple periods, so the yearly view shows Repeat Visits only."
         chartId="repeatTrends"
         chartData={repeatView === "yearly" ? repeatYearlyTrends : repeatTrendData}

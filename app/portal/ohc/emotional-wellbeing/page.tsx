@@ -667,54 +667,73 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 1: KPIs + Demographics + Trends   */}
       {/* ══════════════════════════════════════════ */}
-      {isChartVisible("ewbKpis") && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
+      {isChartVisible("ewbKpis") && (() => {
+        const tc = Number(kpis?.totalConsults || 0);
+        const up = Number(kpis?.uniquePatients || 0);
+        const rp = Number(kpis?.repeatPatients || 0);
+        const avgPerPatient = up > 0 ? (tc / up).toFixed(1) : "0";
+        const repeatRate = up > 0 ? Math.round((rp / up) * 100) : 0;
+        const oneVisit = up - rp;
+        const visitsFromRepeats = tc - oneVisit;
+        const avgPerRepeat = rp > 0 ? (visitsFromRepeats / rp).toFixed(1) : "0";
+        const kpiList = [
           {
             label: "Total Consults",
-            value: kpis?.totalConsults || 0,
+            value: tc,
             icon: <TrendingUp size={18} />,
             color: T.teal,
-            descriptor: "Psychologist consultations in the selected window",
-            insight: "Every recorded Psychologist session for the workforce. Watch this trend month-over-month — sustained growth indicates the program is gaining traction.",
+            tooltipText: "Completed Psychologist consultations in the selected range. Cancellations and no-shows are excluded.",
+            descriptor: "Psychologist visits",
+            insight: tc === 0 || up === 0 ? "No completed consultations in this range yet." : `Average ${avgPerPatient} visits per patient across the program.`,
           },
           {
             label: "Unique Patients",
-            value: kpis?.uniquePatients || 0,
+            value: up,
             icon: <Users size={18} />,
             color: "#4f46e5",
-            descriptor: "Distinct employees who saw a Psychologist",
-            insight: "The unduplicated reach of the program. Compare against the workforce headcount to gauge what % of employees are engaging with mental-health support.",
+            tooltipText: "Distinct patients (by UHID) with at least one completed Psychologist consultation in the range.",
+            descriptor: "Distinct patients",
+            insight: up === 0 ? "No unique patients in this range yet." : `${repeatRate}% came back for another session.`,
           },
           {
             label: "Repeat Patients",
-            value: kpis?.repeatPatients || 0,
+            value: rp,
             icon: <Repeat size={18} />,
             color: T.teal,
-            descriptor: "Employees with 2+ Psychologist visits",
-            insight: "Returning patients usually signal trust in the program — but a high count in any single cohort can flag unresolved cases or chronic concerns worth exploring.",
+            tooltipText: "Patients with two or more completed Psychologist consultations inside the selected range.",
+            descriptor: "Returning patients",
+            insight: rp === 0 ? "No returning patients in this range yet." : visitsFromRepeats <= 0 ? "No returning-patient visits in this range yet." : `Avg ${avgPerRepeat} visits per returning patient.`,
           },
-        ].map((k) => (
-          <div key={k.label} className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
-            <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[11px] font-medium tracking-[0.08em]" style={{ color: T.textSecondary }}>{k.label}</p>
-                <span style={{ color: T.textMuted }}>{k.icon}</span>
+        ];
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {kpiList.map((k) => (
+              <div key={k.label} className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+                <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[11px] font-medium tracking-[0.08em]" style={{ color: T.textSecondary }}>{k.label}</p>
+                      <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">{k.tooltipText}</TooltipContent></Tooltip>
+                    </div>
+                    <span style={{ color: T.textMuted }}>{k.icon}</span>
+                  </div>
+                  <p className="text-[34px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: k.color }}>{formatNum(k.value)}</p>
+                  <p className="text-xs mt-2" style={{ color: T.textSecondary }}>{k.descriptor}</p>
+                  <div className="mt-auto pt-4">
+                    <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
+                      {k.insight}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <p className="text-[34px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: k.color }}>{formatNum(k.value)}</p>
-              <p className="text-xs mt-2" style={{ color: T.textSecondary }}>{k.descriptor}</p>
-              <div className="mt-auto pt-4">
-                <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
-                  {k.insight}
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>}
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
-        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Demographic distribution of patients" tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
+        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution along one dimension — age, gender, location, or shift." tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
             {(["age", "gender"] as const).map((tab) => (
               <button key={tab} onClick={() => setDemoTab(tab)}
@@ -889,11 +908,18 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             )}
           </div>
-          <InsightBox text="See which age groups, genders, or clinics are using emotional-wellbeing services the most. If one group stands out, it may need a targeted programme or more counselling capacity." />
+          <InsightBox text={(() => {
+            if (demoData.length === 0) return "No demographic data in this range yet.";
+            const top = [...demoData].sort((a, b) => b.count - a.count)[0];
+            const total = demoData.reduce((s, d) => s + d.count, 0);
+            const pct = total > 0 ? Math.round((top.count / total) * 100) : 0;
+            const dim = demoTab === "shift" ? "shift" : demoTab === "location" ? "location" : demoTab === "gender" ? "gender" : "age group";
+            return `Top ${dim}: ${top.label} — ${formatNum(top.count)} patients (${pct}% of those seen).`;
+          })()} />
         </CVCard>}
 
         {/* Consult Trends */}
-        {isChartVisible("ewbTrends") && <CVCard accentColor={T.teal} title="Consult Trends" subtitle="View of total and unique consults" tooltipText="Line chart tracking total consults and unique patients over time. Toggle between yearly and monthly views. The gap between total and unique lines reveals repeat visit frequency (employees who availed the service at least twice in the selected date range) — a wider gap means more patients are returning for multiple sessions, which may indicate ongoing mental health needs."
+        {isChartVisible("ewbTrends") && <CVCard accentColor={T.teal} title="Consult Trends" subtitle="Each point shows the total consults and the unique patients for that period." tooltipText="Line chart tracking total consults and unique patients over time. Toggle between yearly and monthly views. The gap between total and unique lines reveals repeat visit frequency (employees who availed the service at least twice in the selected date range) — a wider gap means more patients are returning for multiple sessions, which may indicate ongoing mental health needs."
           chartId="ewbTrends" chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults"
 
           rightHeader={
@@ -1012,7 +1038,13 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             </div>
           </div>
-          <InsightBox text="When the total-consults line grows faster than the unique-patients line, it means the same people are coming back for more sessions. That can mean either ongoing mental-health needs or a programme that's keeping people engaged with care." />
+          <InsightBox text={(() => {
+            const trends = charts?.consultTrends || [];
+            if (trends.length === 0) return "No consult-trend data yet for this range.";
+            const totalC = trends.reduce((s, p) => s + (p.totalConsults || 0), 0);
+            const peak = trends.reduce((a, b) => ((a.totalConsults || 0) > (b.totalConsults || 0) ? a : b));
+            return `Across ${trends.length} period${trends.length === 1 ? "" : "s"}: ${formatNum(totalC)} consults total. Busiest was ${peak.period} (${formatNum(peak.totalConsults || 0)}).`;
+          })()} />
         </CVCard>}
       </div>
 
@@ -1020,7 +1052,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* SECTION 2: Critical Risk + Substance Use  */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
+        {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" subtitle="Each row shows the patients flagged on one critical risk indicator." tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
           chartId="criticalRisk" chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
 >
           {totalEwbAssessed > 0 && (
@@ -1061,7 +1093,11 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               <span className="font-extrabold text-[16px]" style={{ color: "#dc2626" }}>{criticalRisk.totalCases}</span>
             </div>
           </div>
-          <InsightBox text="Any number above zero here is a person who needs immediate clinical attention. Make sure each flagged individual has been connected to crisis support, and watch these counts closely month on month." />
+          <InsightBox text={(() => {
+            const totalCases = criticalRisk.totalCases || (criticalRisk.suicidalThoughts + criticalRisk.attemptedSelfHarm + criticalRisk.previousAttempts);
+            if (totalCases === 0) return "None flagged in this range — keep monitoring.";
+            return `${formatNum(totalCases)} patient${totalCases === 1 ? "" : "s"} flagged across the three indicators — each one needs a documented follow-up.`;
+          })()} />
         </CVCard>}
 
         {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the percentage of employees who completed an emotional wellbeing assessment and reported substance use (alcohol, tobacco, or other substances). The denominator is the total number of emotional wellbeing assessments conducted in the selected date range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
@@ -1088,7 +1124,11 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               ],
             }} />
           </div>
-          <InsightBox text="People using substances (alcohol, tobacco, etc.) are at higher risk for anxiety and depression. If this percentage is going up, awareness workshops and confidential counselling services can help." />
+          <InsightBox text={(() => {
+            if (totalEwbAssessed === 0) return "No assessments in this range yet.";
+            const approxCount = Math.round((substanceUsePct / 100) * totalEwbAssessed);
+            return `${substanceUsePct}% of assessed employees (~${formatNum(approxCount)} people) report substance use.`;
+          })()} />
         </CVCard>}
       </div>
 
@@ -1097,7 +1137,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sleep Quality */}
-        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Sleep Quality Analysis" tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
+        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Each bar shows the number of patients in one sleep-quality bucket." tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(sleepQualitySorted.length * 70, 300), height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -1112,11 +1152,17 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </ResponsiveContainer>
             </div>
           </div>
-          <InsightBox text="Bad sleep is closely tied to anxiety and depression. If most employees are reporting average or poor sleep, running a sleep-hygiene workshop and adding a sleep question to routine check-ins is usually the first practical step." />
+          <InsightBox text={(() => {
+            if (sleepQuality.length === 0) return "No sleep-quality data yet for this range.";
+            const total = sleepQuality.reduce((s, d) => s + d.count, 0);
+            const top = [...sleepQuality].sort((a, b) => b.count - a.count)[0];
+            const pct = total > 0 ? Math.round((top.count / total) * 100) : 0;
+            return `The largest bucket is ${top.label} at ${pct}% of patients (${formatNum(top.count)} of ${formatNum(total)}).`;
+          })()} />
         </CVCard>}
 
         {/* Sleep Duration — hero stat tile */}
-        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="How many of your employees get less than 7 hours of sleep" tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours">
+        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="The share of assessed employees who sleep under seven hours a night." tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours">
           {(() => {
             // API returns the warehouse's native sleep_duration buckets:
             // "7-9 hrs" / "Less than 7 hrs" / "More than 9 hrs". Fold the
@@ -1176,13 +1222,21 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Employees who sleep under 7 hours a night are at higher risk for burnout and lose mental sharpness. If a big chunk of your workforce is in the '<7 hrs' bucket, it's worth looking at flexible scheduling or workload." />
+          <InsightBox text={(() => {
+            const find = (l: string) => sleepDuration.find((d) => d.label === l)?.count || 0;
+            const notEnough = find("Less than 7 hrs");
+            const reported = notEnough + find("7-9 hrs") + find("More than 9 hrs");
+            if (reported === 0) return "No sleep-duration data yet for this range.";
+            if (notEnough === 0) return "Every reporting employee sleeps at least 7 hours.";
+            const oneIn = Math.max(2, Math.round(reported / notEnough));
+            return `1 in ${oneIn} assessed employees sleeps under 7 hours — ${formatNum(notEnough)} of ${formatNum(reported)} reporting.`;
+          })()} />
         </CVCard>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
-        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="How many of your employees consume alcohol — at a glance" tooltipText="Pictograph of 100 dots, each representing 1% of assessed employees. Amber = drinkers, teal = non-drinkers, grey = not reported. Headline shows the '1 in X' framing for quick communication." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
+        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Each dot is 1% of assessed employees, coloured by alcohol-consumption status." tooltipText="Pictograph of 100 dots, each representing 1% of assessed employees. Amber = drinkers, teal = non-drinkers, grey = not reported. Headline shows the '1 in X' framing for quick communication." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
           {(() => {
             const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
             const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
@@ -1252,11 +1306,18 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Regular drinking often shows up alongside anxiety and depression. Compare this number with the anxiety / depression scales below — if the same population shows up in both, an integrated programme works better than treating them separately." />
+          <InsightBox text={(() => {
+            const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
+            const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
+            const reported = yes + no;
+            if (reported === 0) return "No alcohol-use data yet for this range.";
+            const yesPct = Math.round((yes / reported) * 100);
+            return `${yesPct}% of those who reported (${formatNum(yes)} of ${formatNum(reported)} people) consume alcohol.`;
+          })()} />
         </CVCard>}
 
         {/* Smoking Habit */}
-        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Current smokers, ex-smokers, and never-smokers — at a glance" tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
+        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Assessed employees are split into current, ex-, and never-smokers." tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
           {(() => {
             const current = smokingHabit.find((d) => d.label === "Yes")?.count || 0;
             const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
@@ -1365,7 +1426,17 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             );
           })()}
-          <InsightBox text="Current smokers need quit-support: nicotine replacement, counselling, peer groups. The Ex-Smoker number is the success metric — if it's growing month on month, employees are quitting and the programme is working." />
+          <InsightBox text={(() => {
+            const current = smokingHabit.find((d) => d.label === "Yes")?.count || 0;
+            const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
+            const ex = smokingHabit.find((d) => d.label === "Ex-Smoker")?.count || 0;
+            const reported = current + never + ex;
+            if (reported === 0) return "No smoking-habit data yet for this range.";
+            const cur = Math.round((current / reported) * 100);
+            const exP = Math.round((ex / reported) * 100);
+            const nev = Math.max(0, 100 - cur - exP);
+            return `${cur}% currently smoke, ${exP}% have quit (the program success metric), ${nev}% never started.`;
+          })()} />
         </CVCard>}
       </div>
 
@@ -1379,7 +1450,7 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Visit Pattern */}
-          <CVCard accentColor={T.amber} title="Visit Pattern" expandable={false} tooltipText="Shows how many patients fall into each visit frequency bucket (e.g., 1 visit, 2-3 visits, 4+ visits). Click a bar to filter the adjacent Impressions chart by that visit bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
+          <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Shows how many patients fall into each visit frequency bucket (e.g., 1 visit, 2-3 visits, 4+ visits). Click a bar to filter the adjacent Impressions chart by that visit bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
             <p className="text-[11px] mb-2" style={{ color: T.textMuted }}>Click a bar to filter Impressions chart</p>
             <div className="overflow-x-auto">
               <div className="flex items-end justify-center gap-3 mt-1" style={{ height: 200, minWidth: Math.max(visitPattern.length * 85, 250) }}>
@@ -1409,11 +1480,18 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
               </div>
             </div>
             <ResetFilter visible={selectedVisitBucket !== ""} onClick={() => setSelectedVisitBucket("")} />
-            <InsightBox text="People who come back for many sessions usually have more complex or longer-term issues. Click a visit-count bucket to see what kinds of concerns dominate that group, so you can plan specialist time accordingly." />
+            <InsightBox text={(() => {
+              if (visitPattern.length === 0) return "No visit-pattern data yet for this range.";
+              const total = visitPattern.reduce((s, d) => s + d.count, 0);
+              const top = [...visitPattern].sort((a, b) => b.count - a.count)[0];
+              const topPct = total > 0 ? Math.round((top.count / total) * 100) : 0;
+              const longTail = visitPattern.filter((d) => /4|5/.test(d.label)).reduce((s, d) => s + d.count, 0);
+              return `Most patients (${topPct}%) fall in the "${top.label}" bucket${longTail > 0 ? `; ${formatNum(longTail)} return four or more times` : ""}.`;
+            })()} />
           </CVCard>
 
           {/* Impressions Analysis — horizontal ranked bars */}
-          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} expandable={false} tooltipText="Ranked breakdown of chronic-condition prevalence among assessed employees. Conditions are sorted by patient count, biggest at top — at-a-glance view of which condition is most prevalent." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
+          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} subtitle="Each bar shows how many patients reported one chronic condition." expandable={false} tooltipText="Ranked breakdown of chronic-condition prevalence among assessed employees. Conditions are sorted by patient count, biggest at top — at-a-glance view of which condition is most prevalent." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
             {(() => {
               const sorted = [...impressions].sort((a, b) => b.count - a.count);
               const total = sorted.reduce((s, i) => s + i.count, 0);
@@ -1475,7 +1553,13 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
                 </div>
               );
             })()}
-            <InsightBox text="The top condition is the most common one among assessed employees — start screening, awareness, and referrals there first. Watch the ranking over time: a falling top item means prevention is working." />
+            <InsightBox text={(() => {
+              if (impressions.length === 0) return "No impression data yet for this range.";
+              const total = impressions.reduce((s, i) => s + i.count, 0);
+              const top = [...impressions].sort((a, b) => b.count - a.count)[0];
+              const pct = total > 0 ? Math.round((top.count / total) * 100) : 0;
+              return `Top condition: ${top.category} — flagged in ${formatNum(top.count)} patients (${pct}% of those flagged).`;
+            })()} />
           </CVCard>
         </div>
       </WarmSection>}
@@ -1484,24 +1568,42 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
       {/* SECTION 5: Scales                         */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
+        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
-          <InsightBox text="Focus on the Moderate and Severe segments. If they add up to more than 20% combined, it's time to expand access to anxiety-management workshops, CBT resources, and stress-reduction programmes." />
+          <InsightBox text={(() => {
+            if (anxietyScale.length === 0) return "No anxiety-scale data yet for this range.";
+            const total = anxietyScale.reduce((s, d) => s + d.count, 0);
+            const concerning = anxietyScale.filter((d) => ["Moderate", "Severe"].includes(d.label)).reduce((s, d) => s + d.count, 0);
+            const pct = total > 0 ? Math.round((concerning / total) * 100) : 0;
+            return `${pct}% of assessments fall in Moderate or Severe — ${formatNum(concerning)} patients who may need expanded anxiety support.`;
+          })()} />
         </CVCard>}
-        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
+        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" subtitle="Each segment is the share of patients at one self-esteem level." expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
           <StackedPercentBar data={selfEsteemScale} colors={["#4f46e5", "#0d9488"]} />
-          <InsightBox text="Low self-esteem is often the root of both anxiety and depression. If the Low segment is the biggest, it usually means employees would benefit from mentorship, positive-feedback culture work, and confidence-building workshops." />
+          <InsightBox text={(() => {
+            if (selfEsteemScale.length === 0) return "No self-esteem data yet for this range.";
+            const total = selfEsteemScale.reduce((s, d) => s + d.count, 0);
+            const low = selfEsteemScale.filter((d) => d.label === "Low").reduce((s, d) => s + d.count, 0);
+            const pct = total > 0 ? Math.round((low / total) * 100) : 0;
+            return `${pct}% of patients fall in the Low band — ${formatNum(low)} people who could benefit from confidence-building support.`;
+          })()} />
         </CVCard>}
       </div>
-      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
+      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
-        <InsightBox text="Watch the Moderately Severe and Severe segments closely. Even tiny percentages here represent real people who may need immediate professional support — make sure a follow-up protocol is in place for every case." />
+        <InsightBox text={(() => {
+          if (depressionScale.length === 0) return "No depression-scale data yet for this range.";
+          const total = depressionScale.reduce((s, d) => s + d.count, 0);
+          const concerning = depressionScale.filter((d) => ["Moderately Severe", "Severe"].includes(d.label)).reduce((s, d) => s + d.count, 0);
+          const pct = total > 0 ? Math.round((concerning / total) * 100) : 0;
+          return `${formatNum(concerning)} patients (${pct}% of assessments) fall in Moderately Severe or Severe — each warrants a follow-up.`;
+        })()} />
       </CVCard>}
 
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 6: Impressions Detail (clickable) */}
       {/* ══════════════════════════════════════════ */}
-      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Click a category to see subcategory breakdown" tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={detailImpressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
+      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Each category can be opened to see the specific concerns inside it." tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={detailImpressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
         {/* Stacked bar at top */}
         <div className="mb-4">
           <div className="flex h-8 rounded-lg overflow-hidden" style={{ backgroundColor: T.borderLight }}>
@@ -1566,7 +1668,13 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
             </div>
           </div>
         )}
-        <InsightBox text="Click each category to see what specific concerns are driving visits in that area. The longest bars are the most common reasons people walked in — useful for deciding what counsellor training to invest in next." />
+        <InsightBox text={(() => {
+          if (detailImpressions.length === 0 || detailTotal === 0) return "No category data yet for this range.";
+          const top = [...detailImpressions].sort((a, b) => b.count - a.count)[0];
+          if (!top || top.count === 0) return "No category data yet for this range.";
+          const pct = Math.round((top.count / detailTotal) * 100);
+          return `Top category: ${top.category} — ${pct}% of flagged patients. Open it for the specific concerns inside.`;
+        })()} />
       </CVCard>}
     </div>
   );

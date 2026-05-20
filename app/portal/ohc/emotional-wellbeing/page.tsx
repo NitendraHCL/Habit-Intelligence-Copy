@@ -65,9 +65,20 @@ const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
 // ─── Design Tokens (imported from shared theme) ───
 
+// Muted categorical palette (Tableau-10 style) — ten distinct hues
+// at lower saturation so categories stay readable without feeling
+// loud. Each row sits in a different colour family.
 const IMPRESSION_PALETTE = [
-  "#4f46e5", "#0d9488", "#818cf8", "#14b8a6", "#7c3aed", "#8b5cf6",
-  "#a78bfa", "#06b6d4", "#34d399", "#6366f1", "#c4b5fd", "#a1a1aa",
+  "#4E79A7", // steel blue
+  "#F28E2B", // soft orange
+  "#59A14F", // sage green
+  "#A2625F", // muted terracotta
+  "#76B7B2", // muted teal
+  "#B07AA1", // mauve
+  "#9C755F", // taupe-brown
+  "#EDC948", // gold
+  "#FF9DA7", // dusty pink
+  "#7F8C99", // slate blue-grey
 ];
 
 function getImpressionColor(index: number): string {
@@ -262,7 +273,7 @@ function StackedPercentBar({ data, colors }: { data: Array<{ label: string; coun
   if (total === 0) return <div className="text-[12px]" style={{ color: T.textMuted }}>No data</div>;
   return (
     <div>
-      <div className="flex h-8 rounded-lg overflow-hidden mb-3">
+      <div className="flex h-8 rounded-lg overflow-hidden mb-1.5">
         {data.map((d, i) => {
           const pct = Math.round((d.count / total) * 10000) / 100;
           if (pct < 1) return null;
@@ -274,8 +285,17 @@ function StackedPercentBar({ data, colors }: { data: Array<{ label: string; coun
           );
         })}
       </div>
-      <div className="flex justify-between text-[10px]" style={{ color: T.textMuted }}>
-        <span>0%</span><span>50%</span><span>100%</span>
+      {/* Axis: black baseline with ticks at every 10%, labels at 0/50/100 */}
+      <div className="relative h-2">
+        <div className="absolute inset-x-0 top-0 h-px" style={{ backgroundColor: T.textPrimary }} />
+        {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((p) => (
+          <div key={p} className="absolute top-0" style={{ left: `${p}%`, width: 1, height: 6, transform: "translateX(-50%)", backgroundColor: T.textPrimary }} />
+        ))}
+      </div>
+      <div className="relative h-4 mt-1 text-[10px] font-medium" style={{ color: T.textPrimary }}>
+        <span className="absolute left-0">0%</span>
+        <span className="absolute left-1/2 -translate-x-1/2">50%</span>
+        <span className="absolute right-0">100%</span>
       </div>
       <div className="flex flex-wrap gap-3 mt-3">
         {data.map((d, i) => {
@@ -1225,7 +1245,18 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                 <BarChart data={sleepQualitySorted} margin={{ top: 20, right: 10, left: 0, bottom: 20 }}>
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: T.textSecondary }} />
                   <YAxis tick={{ fontSize: 10, fill: T.textSecondary }} />
-                  <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
+                  <RechartsTooltip content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const value = Number(payload[0]?.value || 0);
+                    const total = sleepQualitySorted.reduce((s, d) => s + d.count, 0);
+                    const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+                    return (
+                      <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                        <p>Patients: <strong>{formatNum(value)}</strong> ({pct}% of total)</p>
+                      </div>
+                    );
+                  }} />
                   <Bar dataKey="count" maxBarSize={60} radius={[4, 4, 0, 0]} label={{ position: "top", fontSize: 12, fontWeight: 700, fill: T.textPrimary }}>
                     {sleepQualitySorted.map((d) => <Cell key={d.label} fill={SLEEP_Q_COLORS[d.label] || "#818cf8"} />)}
                   </Bar>
@@ -1398,7 +1429,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
         </CVCard>}
 
         {/* Smoking Habit */}
-        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Assessed employees are split into current, ex-, and never-smokers." tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
+        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Assessed employees are split into current smokers, ex-smokers, and non-smokers." tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
           {(() => {
             const current = smokingHabit.find((d) => d.label === "Yes")?.count || 0;
             const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
@@ -1482,7 +1513,10 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                             <RechartsTooltip
                               cursor={{ stroke: T.borderLight, strokeWidth: 1 }}
                               contentStyle={{ borderRadius: 10, border: `1px solid ${T.border}`, fontSize: 11, padding: "6px 10px" }}
-                              labelFormatter={(v: any) => formatPeriod(String(v))}
+                              labelFormatter={(_v: unknown, payload: ReadonlyArray<{ payload?: { period?: string } }>) => {
+                                const period = payload?.[0]?.payload?.period;
+                                return period ? formatPeriod(period) : "";
+                              }}
                               formatter={(v: any) => [`${v}%`, "Current smokers"]}
                             />
                             <Line
@@ -1533,26 +1567,26 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           {/* Visit Pattern */}
           <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Bar chart of visit-frequency buckets (1 Visit, 2, 3, 4, 5+ Visits). Click a bar to filter the adjacent Impressions chart by that bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
             <p className="text-[11px] mb-2" style={{ color: T.textMuted }}>Click a bar to filter Impressions chart</p>
-            <div className="overflow-x-auto">
-              <div className="flex items-end justify-center gap-3 mt-1" style={{ height: 200, minWidth: Math.max(visitPattern.length * 85, 250) }}>
+            <div className="overflow-x-auto flex-1 flex">
+              <div className="flex-1 flex items-end justify-center gap-3 mt-1" style={{ minHeight: 280, minWidth: Math.max(visitPattern.length * 85, 250) }}>
                 {[...visitPattern].sort((a, b) => {
                   const order = ["1 Visit", "2 Visits", "3 Visits", "4 Visits", "5+ Visits"];
                   return order.indexOf(a.label) - order.indexOf(b.label);
                 }).map((v) => {
                   const maxV = Math.max(...visitPattern.map((p) => p.count), 1);
-                  const h = Math.max((v.count / maxV) * 160, 30);
+                  const heightPct = Math.max((v.count / maxV) * 88, 12);
                   const isSelected = selectedVisitBucket === v.label;
                   return (
-                    <div key={v.label} className="flex flex-col items-center gap-1.5 cursor-pointer"
+                    <div key={v.label} className="flex flex-col items-center gap-1.5 cursor-pointer" style={{ height: "100%", justifyContent: "flex-end" }}
                       onClick={() => setSelectedVisitBucket(isSelected ? "" : v.label)}>
                       <div className="rounded-lg flex items-end justify-center transition-all" style={{
-                        width: 70, height: h,
+                        width: 70, height: `${heightPct}%`,
                         backgroundColor: isSelected ? "#4f46e5" : selectedVisitBucket ? "#c7d2fe60" : "#c7d2fe",
                         border: isSelected ? `3px solid #4f46e5` : "2px solid #a5b4fc",
                         transform: isSelected ? "scale(1.08)" : "scale(1)",
                         boxShadow: isSelected ? "0 4px 12px rgba(212,160,23,0.4)" : "none",
                       }}>
-                        <span className="text-[13px] font-bold pb-1.5" style={{ color: "#4f46e5" }}>{formatNum(v.count)}</span>
+                        <span className="text-[13px] font-bold pb-1.5" style={{ color: isSelected ? "#fff" : "#4f46e5" }}>{formatNum(v.count)}</span>
                       </div>
                       <span className="text-[10px] font-medium text-center" style={{ color: isSelected ? T.textPrimary : T.textSecondary, fontWeight: isSelected ? 700 : 500 }}>{v.label}</span>
                     </div>
@@ -1580,7 +1614,20 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
               // Heat-graded palette: deepest red for the most prevalent,
               // tapering to amber for the smallest. Draws the eye to the
               // biggest concern without fully alarming everything.
-              const RANK_COLORS = ["#dc2626", "#ea580c", "#d97706", "#ca8a04"];
+              // Same muted Tableau-10 palette used by the lower Impressions
+              // Analysis chart so both views feel unified.
+              const RANK_COLORS = [
+                "#4E79A7", // steel blue
+                "#F28E2B", // soft orange
+                "#59A14F", // sage green
+                "#A2625F", // muted terracotta
+                "#76B7B2", // muted teal
+                "#B07AA1", // mauve
+                "#9C755F", // taupe-brown
+                "#EDC948", // gold
+                "#FF9DA7", // dusty pink
+                "#7F8C99", // slate blue-grey
+              ];
               const rowFor = (im: { category: string; count: number }, idx: number) => {
                 const pct = total > 0 ? Math.round((im.count / total) * 100) : 0;
                 const widthPct = max > 0 ? Math.max(2, Math.round((im.count / max) * 100)) : 2;
@@ -1650,7 +1697,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar of anxiety-screening results — Anxious vs Not Anxious, with Not Reported shown as a separate segment. Wider Anxious segment means a higher share of those screened were flagged." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
-          <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
+          <StackedPercentBar data={anxietyScale} colors={["#d97706", "#0d9488", "#94a3b8"]} />
           <InsightBox text={(() => {
             if (anxietyScale.length === 0) return "No anxiety-scale data yet for this range.";
             const anxious = anxietyScale.find((d) => d.label === "Anxious")?.count || 0;
@@ -1662,7 +1709,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           })()} />
         </CVCard>}
         {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" subtitle="Each segment is the share of patients at one self-esteem level." expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
-          <StackedPercentBar data={selfEsteemScale} colors={["#4f46e5", "#0d9488"]} />
+          <StackedPercentBar data={selfEsteemScale} colors={["#0d9488", "#d97706", "#94a3b8"]} />
           <InsightBox text={(() => {
             if (selfEsteemScale.length === 0) return "No self-esteem data yet for this range.";
             const total = selfEsteemScale.reduce((s, d) => s + d.count, 0);
@@ -1673,7 +1720,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
         </CVCard>}
       </div>
       {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar of depression-screening results — Minimal vs Moderate or Higher, with Not Reported shown as a separate segment. A wider Moderate-or-Higher segment means a higher share of those screened were flagged." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
-        <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
+        <StackedPercentBar data={depressionScale} colors={["#0d9488", "#d97706", "#94a3b8"]} />
         <InsightBox text={(() => {
           if (depressionScale.length === 0) return "No depression-scale data yet for this range.";
           const moderate = depressionScale.find((d) => d.label === "Moderate or Higher")?.count || 0;

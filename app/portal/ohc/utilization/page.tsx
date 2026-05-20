@@ -1312,9 +1312,16 @@ export default function OHCUtilizationPage() {
                 <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
               </Tooltip>
             ) : null}
-            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Completed consultations in selected date range</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Completed visits</p>
             <div className="mt-auto pt-4">
-              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Total volume of OHC consultations in the selected period — the headline indicator for service utilisation.</p>
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
+                const tc = Number(kpis?.totalConsults || 0);
+                const up = Number(kpis?.uniquePatients || 0);
+                const lc = Number(kpis?.locationCount || 0);
+                if (tc === 0 || up === 0) return "No completed consultations in this range yet.";
+                const avg = (tc / up).toFixed(1);
+                return `Average ${avg} visits per patient · across ${formatNum(lc)} clinics`;
+              })()}</p>
             </div>
           </div>
         </div>}
@@ -1339,9 +1346,14 @@ export default function OHCUtilizationPage() {
                 <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
               </Tooltip>
             ) : null}
-            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Distinct employees who visited OHC in selected date range</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Distinct patients</p>
             <div className="mt-auto pt-4">
-              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who visited the OHC at least once — across any service or specialty</p>
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
+                const up = Number(kpis?.uniquePatients || 0);
+                const rr = Number(kpis?.repeatRate || 0);
+                if (up === 0) return "No unique patients in this range yet.";
+                return `${rr}% returned for another visit`;
+              })()}</p>
             </div>
           </div>
         </div>}
@@ -1366,9 +1378,18 @@ export default function OHCUtilizationPage() {
                 <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
               </Tooltip>
             ) : null}
-            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Employees with 2+ OHC visits in selected date range</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Returning patients</p>
             <div className="mt-auto pt-4">
-              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>Employees who availed any OHC service at least twice — not necessarily the same specialty</p>
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
+                const tc = Number(kpis?.totalConsults || 0);
+                const up = Number(kpis?.uniquePatients || 0);
+                const rp = Number(kpis?.repeatPatients || 0);
+                if (rp === 0) return "No returning patients in this range yet.";
+                const visitsFromRepeats = tc - (up - rp);
+                if (visitsFromRepeats <= 0) return "No returning-patient visits in this range yet.";
+                const avg = (visitsFromRepeats / rp).toFixed(1);
+                return `Avg ${avg} visits per returning patient`;
+              })()}</p>
             </div>
           </div>
         </div>}

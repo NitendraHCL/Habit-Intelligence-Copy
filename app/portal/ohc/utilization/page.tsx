@@ -2390,12 +2390,12 @@ export default function OHCUtilizationPage() {
           <ResetFilter visible={selectedBubbleSpec !== ""} onClick={() => setSelectedBubbleSpec("")} />
         </div>
         <div className="overflow-x-auto"><div style={{ height: 340, minWidth: 600 }}><ReactECharts option={bubbleOption} style={{ height: "100%", width: "100%" }} /></div></div>
-        <div className="flex items-center justify-center gap-3 mt-3 text-[10px] flex-wrap" style={{ color: T.textMuted }}>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyFemale }} />Predominantly Female (&gt;75%)</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.femaleMajority }} />Female Majority (50-75%)</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.balanced }} />Balanced (~50%)</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.maleMajority }} />Male Majority (50-75%)</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyMale }} />Predominantly Male (&gt;75%)</span>
+        <div className="flex items-center justify-center gap-4 mt-3 text-[11px] font-medium flex-wrap" style={{ color: T.textSecondary }}>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyFemale }} />Predominantly Female (&gt;75%)</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.femaleMajority }} />Female Majority (50-75%)</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.balanced }} />Balanced (~50%)</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.maleMajority }} />Male Majority (50-75%)</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyMale }} />Predominantly Male (&gt;75%)</span>
         </div>
         <InsightBox text={(() => {
           const rows = (bubbleData || []) as Array<{ location: string; ageGroup: string; total: number; male: number; female: number; malePercent: number }>;

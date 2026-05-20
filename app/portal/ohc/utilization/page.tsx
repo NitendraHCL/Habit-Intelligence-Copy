@@ -1475,9 +1475,13 @@ export default function OHCUtilizationPage() {
                 );
               })()}
             </div>
-            <InsightBox text={charts?.demographicStats?.topGender?.gender && charts?.demographicStats?.topAgeGroup?.ageGroup
-              ? `Most consultations are coming from ${charts.demographicStats.topGender.gender} employees (${formatNum(charts.demographicStats.topGender.count)}), and the ${charts.demographicStats.topAgeGroup.ageGroup} year-old group is the most active with ${formatNum(charts.demographicStats.topAgeGroup.count)} visits.`
-              : "Pick a date range to see who's using OHC the most."} />
+            <InsightBox text={(() => {
+              const cohort = charts?.demographicStats?.highestCohort;
+              const total = Number(kpis?.totalConsults || 0);
+              if (!cohort || total === 0) return "Pick a date range to see who's using OHC the most.";
+              const pct = Math.round((cohort.count / total) * 100);
+              return `${cohort.ageGroup} · ${cohort.gender} are the single largest cohort — ${formatNum(cohort.count)} consults (~${pct}% of total) from ${formatNum(cohort.patients)} patients.`;
+            })()} />
           </CVCard>}
 
           {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — colour intensity grades by diagnosis count" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
@@ -1801,7 +1805,22 @@ export default function OHCUtilizationPage() {
                 </button>
               );
             })()}
-            <InsightBox text="Each bar is one clinic. The coloured sections show which specialties patients booked at that clinic. Useful for spotting clinics where one specialty dominates demand, or clinics that may need more specialists." />
+            <InsightBox text={(() => {
+              const rows = (charts?.locationBySpecialty || []) as Array<Record<string, unknown>>;
+              const specs = (charts?.topSpecialties || []) as string[];
+              const total = Number(kpis?.totalConsults || 0);
+              if (rows.length === 0 || specs.length === 0 || total === 0) return "Clinic breakdown will appear once data loads.";
+              const rowTotal = (r: Record<string, unknown>) => specs.reduce((s, k) => s + (Number(r[k]) || 0), 0);
+              const real = rows.filter((r) => r.location !== "Others").map((r) => ({ location: String(r.location), total: rowTotal(r) })).sort((a, b) => b.total - a.total);
+              if (real.length === 0) return "Clinic breakdown will appear once data loads.";
+              const top = real[0];
+              const topPct = Math.round((top.total / total) * 100);
+              if (real.length === 1) return `${top.location} accounts for ${topPct}% of all consults.`;
+              const nextN = Math.min(4, real.length - 1);
+              const nextSum = real.slice(1, 1 + nextN).reduce((s, r) => s + r.total, 0);
+              const nextPct = Math.round((nextSum / total) * 100);
+              return `${top.location} drives ${topPct}% of all consults; the next ${nextN} sites account for another ${nextPct}%.`;
+            })()} />
           </CVCard>}
         </div>
         <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
@@ -1991,7 +2010,7 @@ export default function OHCUtilizationPage() {
                 return (basePart + ytdPart).trim() || "Not enough history yet to compare years.";
               })()
             : visitTrends.length > 0
-              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); const bucket = isDailyView ? "day" : "month"; const peakLabel = isDailyView ? "The busiest day" : "The busiest month"; return `On average, ${formatNum(avgConsults)} visits per ${bucket}. ${peakLabel} was ${peak.period} with ${formatNum(peak.completed)} completed, ${formatNum(peak.cancelled)} cancelled, and ${formatNum(peak.noShow)} no-shows.`; })()
+              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); const bucket = isDailyView ? "day" : "month"; const peakLabel = isDailyView ? "Busiest day" : "Busiest month"; return `Averaging ${formatNum(avgConsults)} visits per ${bucket}. ${peakLabel}: ${peak.period} with ${formatNum(peak.completed)} completed.`; })()
               : "No trend data yet for this date range."} />
         </CVCard>}
 
@@ -2212,7 +2231,18 @@ export default function OHCUtilizationPage() {
                 </RadarChart>
               </ResponsiveContainer>
             </div>
-            <InsightBox text="Consultations are left out of this chart on purpose — they're so much bigger than everything else that they'd flatten the rest. What you're seeing here is the support services: procedures, pathology, vaccinations, cardiology, radiology, and so on." />
+            <InsightBox text={(() => {
+              const cats = (serviceCategories || []) as Array<{ category: string; booked: number; completed: number; completionRate: number }>;
+              if (cats.length === 0) return "Category data will appear once loaded.";
+              const byBooked = [...cats].sort((a, b) => b.booked - a.booked);
+              const byRate = [...cats].sort((a, b) => b.completionRate - a.completionRate);
+              const topBooked = byBooked[0];
+              const topRate = byRate[0];
+              if (topBooked.category === topRate.category) return `${topBooked.category} leads both bookings (${formatNum(topBooked.booked)}) and completion rate (${topBooked.completionRate}%).`;
+              const gap = topRate.completionRate - topBooked.completionRate;
+              const wouldAdd = Math.round(topBooked.booked * (gap / 100));
+              return `${topBooked.category} has the most bookings; ${topRate.category} leads on completion (${topRate.completionRate}% vs ${topBooked.completionRate}%). Closing the ${gap}-point gap would add ~${formatNum(wouldAdd)} completed services.`;
+            })()} />
           </CVCard>}
 
           {isChartVisible("serviceCategoryMatrix") && <CVCard accentColor="#0d9488" title={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} subtitle={selectedSvcCategory ? "Top packages and tests by booked volume" : "Booked vs completed with completion rate · click a category on the radar to drill in"} tooltipText="Booked is the count of ordered services; Completed is those marked Completed; Completion Rate is Completed ÷ Booked." chartId="serviceCategoryMatrix" chartData={selectedSvcCategory ? serviceCategoryLineItems[selectedSvcCategory] : serviceCategories} chartTitle={selectedSvcCategory ? `${selectedSvcCategory} — Top Line Items` : "Service Category Metrics"} chartDescription="Service category breakdown with booked, completed counts and completion rates" rightHeader={<ResetFilter visible={selectedSvcCategory !== ""} onClick={() => setSelectedSvcCategory("")} />}>
@@ -2312,7 +2342,17 @@ export default function OHCUtilizationPage() {
                 </table>
               </div>
             )}
-            <InsightBox text={selectedSvcCategory === "Pathology" ? "Packages are bundled offerings (Health Check / EHC / Care Plan). Tests are individual lab analytes (Vitamin B-12, Calcium, Pap Smear, etc.). If packages are big and individual tests are small, most of the work is annual screenings rather than one-off doctor orders." : selectedSvcCategory ? "These are the most-booked items. If a high-volume item has a low completion rate, fixing that one item helps more than chasing a long tail of small ones." : "Categories with completion rates below 85% likely need better scheduling or follow-up. Click any category to see what's inside."} />
+            <InsightBox text={selectedSvcCategory === "Pathology" ? "Packages are bundled offerings (Health Check / EHC / Care Plan). Tests are individual lab analytes (Vitamin B-12, Calcium, Pap Smear, etc.). If packages are big and individual tests are small, most of the work is annual screenings rather than one-off doctor orders." : selectedSvcCategory ? "These are the most-booked items. If a high-volume item has a low completion rate, fixing that one item helps more than chasing a long tail of small ones." : (() => {
+              const cats = (serviceCategories || []) as Array<{ category: string; booked: number; completed: number; completionRate: number }>;
+              if (cats.length < 2) return "Click any category on the Category Radar to see what's inside.";
+              const byRate = [...cats].sort((a, b) => a.completionRate - b.completionRate);
+              const worst = byRate[0];
+              const best = byRate[byRate.length - 1];
+              const gap = best.completionRate - worst.completionRate;
+              const wouldAdd = Math.round(worst.booked * (gap / 100));
+              if (gap <= 0) return `All three categories are completing at ${worst.completionRate}%.`;
+              return `${worst.category} completes ${worst.completionRate}% of bookings — the lowest of the three. Closing the ${gap}-pt gap to ${best.category}'s rate would add ~${formatNum(wouldAdd)} completed services.`;
+            })()} />
           </CVCard>}
         </div>
       </WarmSection>}
@@ -2357,7 +2397,13 @@ export default function OHCUtilizationPage() {
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.maleMajority }} />Male Majority (50-75%)</span>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyMale }} />Predominantly Male (&gt;75%)</span>
         </div>
-        <InsightBox text="Each bubble is one age group at one clinic. Bigger bubble = more visits. Bubble colour shows the gender split. Use the specialty tabs above to see how different departments are used across age groups and clinics." />
+        <InsightBox text={(() => {
+          const rows = (bubbleData || []) as Array<{ location: string; ageGroup: string; total: number; male: number; female: number; malePercent: number }>;
+          if (rows.length === 0) return "Bubble breakdown will appear once data loads.";
+          const top = [...rows].sort((a, b) => b.total - a.total)[0];
+          const skew = top.malePercent > 55 ? "male-heavy" : top.malePercent < 45 ? "female-heavy" : "balanced";
+          return `Largest cohort in ${activeBubbleSpec}: ${top.ageGroup} at ${top.location} — ${formatNum(top.total)} visits, ${skew} (${formatNum(top.male)} male · ${formatNum(top.female)} female).`;
+        })()} />
       </CVCard>}
 
       {/* ── Peak Consultation Hours Heatmap ── */}

@@ -607,16 +607,17 @@ export default function OHCUtilizationPage() {
         const path: string[] = (p.treePathInfo || []).map((n: any) => n?.name).filter(Boolean);
         const [ageGroup, gender] = path;
         const value = Number(p.data.value || p.value || 0);
-        const pctTotal = grandTotal > 0 ? (value / grandTotal) * 100 : 0;
-        const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+        const pctTotal = grandTotal > 0 ? Math.round((value / grandTotal) * 100) : 0;
+        const muted = `color:${T.textPrimary};font-size:11px;`;
         if (ageGroup && gender) {
           const ageTotal = nodeValue(tree.find((n) => n.name === ageGroup));
-          const pctAge = ageTotal > 0 ? (value / ageTotal) * 100 : 0;
-          return `<strong>${ageGroup} yrs · ${genderOf(gender)}</strong><br/>Consults: ${formatNum(value)} <span style="color:${T.textMuted};">(${fmtPct(pctTotal)} of total · ${fmtPct(pctAge)} of ${ageGroup})</span>`;
+          const pctAge = ageTotal > 0 ? Math.round((value / ageTotal) * 100) : 0;
+          return `<strong>${ageGroup} years · ${genderOf(gender)}</strong><div style="margin-top:4px;">${formatNum(value)} consults</div><div style="${muted}">${pctAge}% of the ${ageGroup} group</div><div style="${muted}">${pctTotal}% of all consults</div>`;
         }
         if (ageGroup) {
-          const label = genderOf(ageGroup) || `${ageGroup} yrs`;
-          return `<strong>${label}</strong><br/>Consults: ${formatNum(value)} <span style="color:${T.textMuted};">(${fmtPct(pctTotal)} of total)</span>`;
+          const isGenderRoot = ["M", "F", "O"].includes(ageGroup);
+          const label = isGenderRoot ? genderOf(ageGroup) : `${ageGroup} years`;
+          return `<strong>${label}</strong><div style="margin-top:4px;">${formatNum(value)} consults</div><div style="${muted}">${pctTotal}% of all consults</div>`;
         }
         return `<strong>← Back</strong><br/><span style="font-size:11px;color:#6B7280">Click to zoom out</span>`;
       },
@@ -1447,24 +1448,32 @@ export default function OHCUtilizationPage() {
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2 mt-3">
-              <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)" }}>
-                <p className="text-xl font-extrabold font-[var(--font-inter)]">{formatNum(charts?.demographicStats?.highestCohort?.count || 0)}</p>
-                <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-95">Highest Numbers</p>
-                <p className="text-[9px] opacity-80 font-medium">{charts?.demographicStats?.highestCohort?.ageGroup} · {charts?.demographicStats?.highestCohort?.gender}</p>
-                <p className="text-[8px] opacity-60">{formatNum(charts?.demographicStats?.highestCohort?.count || 0)} consults · {formatNum(charts?.demographicStats?.highestCohort?.patients || 0)} patients</p>
-              </div>
-              <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)" }}>
-                <p className="text-xl font-extrabold font-[var(--font-inter)]">{formatNum(charts?.demographicStats?.topGender?.count || 0)}</p>
-                <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-95">Top Gender</p>
-                <p className="text-[9px] opacity-80 font-medium">{charts?.demographicStats?.topGender?.gender}</p>
-                <p className="text-[8px] opacity-60">{formatNum(charts?.demographicStats?.topGender?.count || 0)} consults</p>
-              </div>
-              <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #7c3aed, #8b5cf6)" }}>
-                <p className="text-xl font-extrabold font-[var(--font-inter)]">{formatNum(charts?.demographicStats?.topAgeGroup?.count || 0)}</p>
-                <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-95">Top Age Group</p>
-                <p className="text-[9px] opacity-80 font-medium">{charts?.demographicStats?.topAgeGroup?.ageGroup}</p>
-                <p className="text-[8px] opacity-60">{formatNum(charts?.demographicStats?.topAgeGroup?.count || 0)} consults</p>
-              </div>
+              {(() => {
+                const total = Number(kpis?.totalConsults || 0);
+                const cohort = charts?.demographicStats?.highestCohort;
+                const tg = charts?.demographicStats?.topGender;
+                const ta = charts?.demographicStats?.topAgeGroup;
+                const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0;
+                return (
+                  <>
+                    <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-80">Top Cohort</p>
+                      <p className="text-xl font-extrabold font-[var(--font-inter)] mt-1">{cohort ? `${cohort.ageGroup} · ${cohort.gender}` : "—"}</p>
+                      <p className="text-[10px] opacity-85 font-medium mt-1">{formatNum(cohort?.count || 0)} consults · {formatNum(cohort?.patients || 0)} patients</p>
+                    </div>
+                    <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-80">Most Consults By</p>
+                      <p className="text-xl font-extrabold font-[var(--font-inter)] mt-1">{tg?.gender || "—"}</p>
+                      <p className="text-[10px] opacity-85 font-medium mt-1">{formatNum(tg?.count || 0)} consults · {pct(tg?.count || 0)}% of all</p>
+                    </div>
+                    <div className="rounded-[14px] p-3.5 text-center text-white transition-transform hover:-translate-y-px" style={{ background: "linear-gradient(135deg, #7c3aed, #8b5cf6)" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.04em] opacity-80">Top Age Group</p>
+                      <p className="text-xl font-extrabold font-[var(--font-inter)] mt-1">{ta ? `${ta.ageGroup} years` : "—"}</p>
+                      <p className="text-[10px] opacity-85 font-medium mt-1">{formatNum(ta?.count || 0)} consults · {pct(ta?.count || 0)}% of all</p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <InsightBox text={charts?.demographicStats?.topGender?.gender && charts?.demographicStats?.topAgeGroup?.ageGroup
               ? `Most consultations are coming from ${charts.demographicStats.topGender.gender} employees (${formatNum(charts.demographicStats.topGender.count)}), and the ${charts.demographicStats.topAgeGroup.ageGroup} year-old group is the most active with ${formatNum(charts.demographicStats.topAgeGroup.count)} visits.`

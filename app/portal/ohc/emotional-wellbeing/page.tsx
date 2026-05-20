@@ -65,20 +65,21 @@ const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
 // ─── Design Tokens (imported from shared theme) ───
 
-// Muted categorical palette (Tableau-10 style) — ten distinct hues
-// at lower saturation so categories stay readable without feeling
-// loud. Each row sits in a different colour family.
+// Desaturated categorical palette — each hue sits in a different
+// family (indigo / teal / violet / cyan / slate / sage / clay) but
+// at a similar gentle saturation, so no single bar pops against the
+// dashboard's overall cool aesthetic.
 const IMPRESSION_PALETTE = [
-  "#4E79A7", // steel blue
-  "#F28E2B", // soft orange
-  "#59A14F", // sage green
-  "#A2625F", // muted terracotta
-  "#76B7B2", // muted teal
-  "#B07AA1", // mauve
-  "#9C755F", // taupe-brown
-  "#EDC948", // gold
-  "#FF9DA7", // dusty pink
-  "#7F8C99", // slate blue-grey
+  "#5B6FCC", // muted indigo
+  "#4C8F8F", // muted teal
+  "#7E68B5", // muted violet
+  "#3E92C9", // muted cyan
+  "#9E8FCB", // muted lavender
+  "#6FB6A8", // muted seafoam
+  "#5C7A99", // muted slate-blue
+  "#A0826D", // muted clay
+  "#84A0B5", // muted sky
+  "#75857A", // muted sage
 ];
 
 function getImpressionColor(index: number): string {
@@ -1614,19 +1615,20 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
               // Heat-graded palette: deepest red for the most prevalent,
               // tapering to amber for the smallest. Draws the eye to the
               // biggest concern without fully alarming everything.
-              // Same muted Tableau-10 palette used by the lower Impressions
-              // Analysis chart so both views feel unified.
+              // Same desaturated palette as the lower Impressions Analysis
+              // chart so both views feel unified with the dashboard's
+              // overall cool/muted aesthetic.
               const RANK_COLORS = [
-                "#4E79A7", // steel blue
-                "#F28E2B", // soft orange
-                "#59A14F", // sage green
-                "#A2625F", // muted terracotta
-                "#76B7B2", // muted teal
-                "#B07AA1", // mauve
-                "#9C755F", // taupe-brown
-                "#EDC948", // gold
-                "#FF9DA7", // dusty pink
-                "#7F8C99", // slate blue-grey
+                "#5B6FCC", // muted indigo
+                "#4C8F8F", // muted teal
+                "#7E68B5", // muted violet
+                "#3E92C9", // muted cyan
+                "#9E8FCB", // muted lavender
+                "#6FB6A8", // muted seafoam
+                "#5C7A99", // muted slate-blue
+                "#A0826D", // muted clay
+                "#84A0B5", // muted sky
+                "#75857A", // muted sage
               ];
               const rowFor = (im: { category: string; count: number }, idx: number) => {
                 const pct = total > 0 ? Math.round((im.count / total) * 100) : 0;

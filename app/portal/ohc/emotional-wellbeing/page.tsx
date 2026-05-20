@@ -335,7 +335,7 @@ export default function EmotionalWellbeingPage() {
   }), [appliedDateRange, appliedFilters]);
 
   const { data: ewbApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<{
-    kpis?: { totalConsults?: number; uniquePatients?: number; repeatPatients?: number };
+    kpis?: { totalConsults?: number; uniquePatients?: number; repeatPatients?: number; totalEwbAssessed?: number };
     charts?: {
       demographics?: {
         age?: Array<{ label: string; count: number }>;
@@ -394,6 +394,7 @@ export default function EmotionalWellbeingPage() {
     totalConsults: ewbApi?.kpis?.totalConsults ?? 0,
     uniquePatients: ewbApi?.kpis?.uniquePatients ?? 0,
     repeatPatients: ewbApi?.kpis?.repeatPatients ?? 0,
+    totalEwbAssessed: ewbApi?.kpis?.totalEwbAssessed ?? 0,
   }), [ewbApi?.kpis]);
 
   const charts = useMemo(() => {
@@ -506,7 +507,7 @@ const subcategories: Array<{ subcategory: string; count: number }> = (charts?.im
   const smokingTrend: Array<{ period: string; pct: number }> = (charts as any)?.smokingTrend || [];
   const visitPattern: Array<{ label: string; count: number }> = charts?.visitPattern || [];
   const criticalRisk = charts?.criticalRisk || { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 };
-const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
+const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
   const substanceUsePct: number = charts?.substanceUsePct || 0;
 
   const maxCritical = Math.max(criticalRisk.suicidalThoughts, criticalRisk.attemptedSelfHarm, criticalRisk.previousAttempts, 1);
@@ -1572,10 +1573,12 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
           <InsightBox text={(() => {
             if (anxietyScale.length === 0) return "No anxiety-scale data yet for this range.";
-            const total = anxietyScale.reduce((s, d) => s + d.count, 0);
-            const concerning = anxietyScale.filter((d) => ["Moderate", "Severe"].includes(d.label)).reduce((s, d) => s + d.count, 0);
-            const pct = total > 0 ? Math.round((concerning / total) * 100) : 0;
-            return `${pct}% of assessments fall in Moderate or Severe — ${formatNum(concerning)} patients who may need expanded anxiety support.`;
+            const anxious = anxietyScale.find((d) => d.label === "Anxious")?.count || 0;
+            const notAnxious = anxietyScale.find((d) => d.label === "Not Anxious")?.count || 0;
+            const reported = anxious + notAnxious;
+            if (reported === 0) return "No anxiety-scale responses recorded in this range.";
+            const pct = Math.round((anxious / reported) * 100);
+            return `${pct}% of those screened flagged as Anxious — ${formatNum(anxious)} patients who may need expanded anxiety support.`;
           })()} />
         </CVCard>}
         {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" subtitle="Each segment is the share of patients at one self-esteem level." expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
@@ -1593,10 +1596,12 @@ const totalEwbAssessed: number = (kpis as any)?.totalEwbAssessed || 0;
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
         <InsightBox text={(() => {
           if (depressionScale.length === 0) return "No depression-scale data yet for this range.";
-          const total = depressionScale.reduce((s, d) => s + d.count, 0);
-          const concerning = depressionScale.filter((d) => ["Moderately Severe", "Severe"].includes(d.label)).reduce((s, d) => s + d.count, 0);
-          const pct = total > 0 ? Math.round((concerning / total) * 100) : 0;
-          return `${formatNum(concerning)} patients (${pct}% of assessments) fall in Moderately Severe or Severe — each warrants a follow-up.`;
+          const moderate = depressionScale.find((d) => d.label === "Moderate or Higher")?.count || 0;
+          const minimal = depressionScale.find((d) => d.label === "Minimal")?.count || 0;
+          const reported = moderate + minimal;
+          if (reported === 0) return "No depression-scale responses recorded in this range.";
+          const pct = Math.round((moderate / reported) * 100);
+          return `${formatNum(moderate)} patients (${pct}% of those screened) fall in Moderate or Higher — each warrants a follow-up.`;
         })()} />
       </CVCard>}
 

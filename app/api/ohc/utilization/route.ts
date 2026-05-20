@@ -642,7 +642,7 @@ async function handler(request: NextRequest) {
     // SUNBURST_COLORS age-group palette above — otherwise the inner ring
     // (age group) and outer ring (gender) of the demographic sunburst would
     // share hues and stop reading as distinct dimensions.
-    const GENDER_COLORS: Record<string, string> = { M: "#1E4088", F: "#be185d", O: "#a1a1aa" };
+    const GENDER_COLORS: Record<string, string> = { M: "#4f46e5", F: "#e879f9", O: "#a1a1aa" };
     const ageMap: Record<string, Record<string, { consults: number; patients: number }>> = {};
     for (const row of demoRows) {
       const ag = row.age_group;

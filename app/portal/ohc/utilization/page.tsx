@@ -79,7 +79,7 @@ const SUNBURST_COLORS: Record<string, string> = {
 // the API bakes these colors into demographicSunburst data, and we restate them
 // here for the chart legend. Chosen to be distinct from SUNBURST_COLORS so the
 // inner-ring (age group) and outer-ring (gender) don't share hues.
-const GENDER_COLORS: Record<string, string> = { M: "#1E4088", F: "#be185d", O: "#a1a1aa" };
+const GENDER_COLORS: Record<string, string> = { M: "#4f46e5", F: "#e879f9", O: "#a1a1aa" };
 
 const SPECIALTY_COLORS: Record<string, string> = {
   "General Physician": "#4f46e5", Dietetics: "#6366f1", "Internal Medicine": "#0d9488",
@@ -2358,8 +2358,12 @@ export default function OHCUtilizationPage() {
       </WarmSection>}
 
       {/* ── Section: Bubble Chart ── */}
-      {isChartVisible("bubbleChart") && <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle="Each bubble is one clinic and age group, sized by volume and coloured by gender mix." tooltipText="X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced." chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split">
-        {/* ── How to read this chart ── */}
+      {isChartVisible("bubbleChart") && (() => {
+        const singleClinicMode = locationOrder.length <= 1;
+        const onlyClinic = locationOrder[0] || "your clinic";
+        return <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle={singleClinicMode ? `Consultations at ${onlyClinic} by age group, sized by volume and coloured by gender mix.` : "Each bubble is one clinic and age group, sized by volume and coloured by gender mix."} tooltipText={singleClinicMode ? "One row per age group at this clinic. Bar length is consultation volume; bar colour shifts from blue (more male) to pink (more female), grey when balanced." : "X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced."} chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split">
+        {/* ── How to read this chart ── (hidden in single-clinic mode) */}
+        {!singleClinicMode && (
         <div className="flex items-center gap-5 mb-4 px-4 py-3 rounded-xl flex-wrap" style={{ backgroundColor: "rgba(79,70,229,0.04)", border: "1px solid rgba(79,70,229,0.08)" }}>
           <span className="flex items-center gap-2 text-[11.5px]" style={{ color: T.textSecondary }}>
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: "#4f46e5" }}>⬤</span>
@@ -2374,6 +2378,7 @@ export default function OHCUtilizationPage() {
             <span><span className="font-semibold" style={{ color: T.textPrimary }}>Shaded rows</span> — alternating bands per age group for easier left-to-right scanning</span>
           </span>
         </div>
+        )}
 
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
           {bubbleSpecs.slice(0, 10).map((spec: string) => (
@@ -2389,7 +2394,47 @@ export default function OHCUtilizationPage() {
           ))}
           <ResetFilter visible={selectedBubbleSpec !== ""} onClick={() => setSelectedBubbleSpec("")} />
         </div>
-        <div className="overflow-x-auto"><div style={{ height: 340, minWidth: 600 }}><ReactECharts option={bubbleOption} style={{ height: "100%", width: "100%" }} /></div></div>
+        {singleClinicMode ? (() => {
+          // Single-clinic list view: collapse to one row per age group with
+          // a volume bar (coloured by gender mix) and a gender-share pill.
+          const rows = ageGroupOrder
+            .map((ag) => {
+              const r = bubbleData.find((b: any) => b.ageGroup === ag);
+              if (!r) return null;
+              return { ageGroup: ag, total: r.total, male: r.male, female: r.female, malePercent: r.malePercent };
+            })
+            .filter(Boolean) as Array<{ ageGroup: string; total: number; male: number; female: number; malePercent: number }>;
+          if (rows.length === 0) {
+            return <p className="text-center text-[12px] py-12" style={{ color: T.textMuted }}>No {activeBubbleSpec} consults at {onlyClinic} in the current filter window.</p>;
+          }
+          const maxTotal = Math.max(...rows.map((r) => r.total), 1);
+          return (
+            <div className="flex flex-col gap-2.5 mt-2 mb-2">
+              {rows.map((r) => {
+                const widthPct = Math.max(2, Math.round((r.total / maxTotal) * 100));
+                const barColor = getBubbleColor(r.malePercent);
+                const malePct = r.total > 0 ? Math.round((r.male / r.total) * 100) : 0;
+                const femalePct = Math.max(0, 100 - malePct);
+                return (
+                  <div key={r.ageGroup} className="flex items-center gap-3" title={`${r.ageGroup} · ${formatNum(r.total)} visits · ${formatNum(r.male)} male, ${formatNum(r.female)} female`}>
+                    <div className="text-[12px] font-semibold tabular-nums" style={{ width: 60, color: T.textPrimary }}>{r.ageGroup}</div>
+                    <div className="flex-1 rounded-md overflow-hidden" style={{ height: 28, backgroundColor: "#F1F5F9" }}>
+                      <div style={{ width: `${widthPct}%`, height: "100%", backgroundColor: barColor, borderRadius: 6, transition: "width 200ms ease" }} />
+                    </div>
+                    <div className="text-[12.5px] font-bold tabular-nums" style={{ width: 70, textAlign: "right", color: T.textPrimary }}>{formatNum(r.total)}</div>
+                    <div className="inline-flex items-center gap-1 text-[10.5px] font-semibold tabular-nums px-2 py-1 rounded-md" style={{ backgroundColor: "#F1F5F9", color: T.textSecondary, minWidth: 110, justifyContent: "center" }}>
+                      <span style={{ color: BUBBLE_GENDER.predominantlyMale }}>M {malePct}%</span>
+                      <span style={{ color: T.textMuted }}>·</span>
+                      <span style={{ color: BUBBLE_GENDER.predominantlyFemale }}>F {femalePct}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })() : (
+          <div className="overflow-x-auto"><div style={{ height: 340, minWidth: 600 }}><ReactECharts option={bubbleOption} style={{ height: "100%", width: "100%" }} /></div></div>
+        )}
         <div className="flex items-center justify-center gap-4 mt-3 text-[11px] font-medium flex-wrap" style={{ color: T.textSecondary }}>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.predominantlyFemale }} />Predominantly Female (&gt;75%)</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: BUBBLE_GENDER.femaleMajority }} />Female Majority (50-75%)</span>
@@ -2404,7 +2449,8 @@ export default function OHCUtilizationPage() {
           const skew = top.malePercent > 55 ? "male-heavy" : top.malePercent < 45 ? "female-heavy" : "balanced";
           return `Largest cohort in ${activeBubbleSpec}: ${top.ageGroup} at ${top.location} — ${formatNum(top.total)} visits, ${skew} (${formatNum(top.male)} male · ${formatNum(top.female)} female).`;
         })()} />
-      </CVCard>}
+      </CVCard>;
+      })()}
 
       {/* ── Peak Consultation Hours Heatmap ── */}
       {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Each cell shows the consultation volume for one weekday and hour." tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday">

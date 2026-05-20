@@ -6,52 +6,39 @@ import { withCache } from "@/lib/cache/middleware";
 /* ────────────────────────────────────────────────────────────────────
  * OHC Referral API — single-table fact model.
  *
- * Source: aggregated_table.agg_appt_referral_conversion (alias `r`).
- *   Freshly prepared in 2026-05; 17 columns, 362k rows, 59 cugs,
- *   indexed on (referral_date), (conversion_status), (uhid).
+ * Source: aggregated_table.referral_conversion (alias `r`).
+ *   Freshly prepared in 2026-05; 15 columns, ~1.96M rows, 58 cugs.
  *
  *   Columns of interest:
- *     uhid, g_creation_time, referral_date, slotstarttime,
+ *     uhid, g_creation_time, slotstarttime,
+ *     age (int), gender,
  *     speciality_referred_from, doctor_referred_from,
  *     speciality_referred_to,   doctor_referred_to,
- *     age (text, e.g. "37 Y,21 D"), gender,
- *     stage, facility_mapping, cug_code_mapped, relationship,
- *     conversion_status ("Converted" | "Non Converted"),
- *     total_referral_count_date_wise (per-row count multiplier —
- *       handles same-day repeat issuances on the same uhid + slot +
- *       speciality pair).
+ *     referral_facility, facility_mapping,
+ *     cug_code_mapped, relationship, speciality_name,
+ *     consumption ("Consumed" | "Not Consumed").
  *
- * Canonical metrics:
- *   referrals  = SUM(total_referral_count_date_wise)
- *   converted  = SUM(total_referral_count_date_wise) FILTER
- *                  (conversion_status = 'Converted')
+ * Canonical metrics (each row = one referral; no count multiplier):
+ *   referrals  = COUNT(*)
+ *   converted  = COUNT(*) FILTER (consumption = 'Consumed')
  *   conversion = converted / referrals × 100
  *
- * Date filtering uses `referral_date` (when the referral was issued —
- * the indexed column the warehouse team intends as the trend axis).
- *
- * Note: all 18,765 'Non Converted' rows in the table have an empty
- * cug_code_mapped, so any tenant-scoped query is effectively 100%
- * converted. That's data shape, not API logic — it shows up faithfully
- * in the KPI and trend chart.
+ * Date filtering uses `g_creation_time` (when the referral was issued)
+ * — this is the trend axis the warehouse team intends.
  * ──────────────────────────────────────────────────────────────────── */
 
-const BASE_TABLE = "aggregated_table.agg_appt_referral_conversion";
+const BASE_TABLE = "aggregated_table.referral_conversion";
 
 // Volume / converted expressions — used wherever we need a count.
-const REFERRALS_SUM = `COALESCE(SUM(r.total_referral_count_date_wise), 0)::bigint`;
-const CONVERTED_SUM = `COALESCE(SUM(r.total_referral_count_date_wise) FILTER (WHERE r.conversion_status = 'Converted'), 0)::bigint`;
-
-// Age is stored as text like "37 Y,21 D" — extract the leading integer
-// (years) before the first non-digit. NULL when unparseable.
-const AGE_YEARS_EXPR = `NULLIF(SUBSTRING(r.age FROM '^([0-9]+)'), '')::int`;
+const REFERRALS_SUM = `COUNT(*)::bigint`;
+const CONVERTED_SUM = `COUNT(*) FILTER (WHERE r.consumption = 'Consumed')::bigint`;
 
 const AGE_GROUP_CASE = `CASE
-  WHEN ${AGE_YEARS_EXPR} < 20 THEN '<20'
-  WHEN ${AGE_YEARS_EXPR} BETWEEN 20 AND 35 THEN '20-35'
-  WHEN ${AGE_YEARS_EXPR} BETWEEN 36 AND 40 THEN '36-40'
-  WHEN ${AGE_YEARS_EXPR} BETWEEN 41 AND 60 THEN '41-60'
-  WHEN ${AGE_YEARS_EXPR} > 60 THEN '61+'
+  WHEN r.age < 20 THEN '<20'
+  WHEN r.age BETWEEN 20 AND 35 THEN '20-35'
+  WHEN r.age BETWEEN 36 AND 40 THEN '36-40'
+  WHEN r.age BETWEEN 41 AND 60 THEN '41-60'
+  WHEN r.age > 60 THEN '61+'
 END`;
 
 const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
@@ -77,12 +64,12 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   let idx = 2;
 
   if (dateFrom) {
-    conditions.push(`r.referral_date >= $${idx}::date`);
+    conditions.push(`r.g_creation_time >= $${idx}::date`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    conditions.push(`r.referral_date <= $${idx}::date`);
+    conditions.push(`r.g_creation_time <= ($${idx}::date + interval '1 day')`);
     params.push(dateTo);
     idx++;
   }
@@ -172,7 +159,7 @@ async function handler(request: NextRequest) {
     ]);
 
     // ── KPIs ──
-    // Single-pass: total = SUM(count); converted = filtered SUM.
+    // Single-pass: total = COUNT(*); converted = filtered COUNT.
     const [kpiRows, [filterLocations, filterSpecialties]] = await Promise.all([
       safeQuery(
         () => dwQuery<{ total_referrals: string; converted_count: string }>(
@@ -197,7 +184,7 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ period: string; total: string; conversions: string }>(
           `SELECT
-             to_char(date_trunc('${trendBucket}', r.referral_date), '${periodFormat}') AS period,
+             to_char(date_trunc('${trendBucket}', r.g_creation_time), '${periodFormat}') AS period,
              ${REFERRALS_SUM} AS total,
              ${CONVERTED_SUM} AS conversions
            FROM ${BASE_TABLE} r
@@ -212,10 +199,10 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ year: string; from_spec: string; to_spec: string; cnt: string }>(
           `SELECT
-             EXTRACT(YEAR FROM r.referral_date)::int::text AS year,
-             r.speciality_referred_from                    AS from_spec,
-             r.speciality_referred_to                      AS to_spec,
-             ${REFERRALS_SUM}                              AS cnt
+             EXTRACT(YEAR FROM r.g_creation_time)::int::text AS year,
+             r.speciality_referred_from                      AS from_spec,
+             r.speciality_referred_to                        AS to_spec,
+             ${REFERRALS_SUM}                                AS cnt
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
              AND r.speciality_referred_from IS NOT NULL
@@ -244,7 +231,7 @@ async function handler(request: NextRequest) {
         ),
         "specialty"
       ),
-      // Demographics: age_group × gender, weighted by SUM count.
+      // Demographics: age_group × gender, weighted by COUNT.
       safeQuery(
         () => dwQuery<{ age_group: string; gender: string; cnt: string }>(
           `SELECT

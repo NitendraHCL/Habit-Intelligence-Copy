@@ -237,7 +237,7 @@ async function handler(request: NextRequest) {
     )`;
 
     // ── Demographics: age × gender × location, plus monthly trends ──
-    const [ageRows, genderRows, locationRows, trendRows] = await Promise.all([
+    const [ageRows, genderRows, locationRows, trendRows, ageGenderRows] = await Promise.all([
       safeQuery(
         () => dwQuery<{ label: string; count: string }>(
           `SELECT ${ageGroupCase("a.age")} AS label,
@@ -291,6 +291,25 @@ async function handler(request: NextRequest) {
         ),
         "trends"
       ),
+      // Cross-tab of age × gender for the combined demographics tab.
+      // One row per (age_group, gender) bucket; the client pivots into
+      // { ageGroup, male, female, others, total } per row.
+      safeQuery(
+        () => dwQuery<{ age_group: string; gender: string; count: string }>(
+          `SELECT ${ageGroupCase("a.age")} AS age_group,
+                  CASE
+                    WHEN LOWER(TRIM(a.patient_gender)) IN ('male', 'm') THEN 'Male'
+                    WHEN LOWER(TRIM(a.patient_gender)) IN ('female', 'f') THEN 'Female'
+                    ELSE 'Others'
+                  END AS gender,
+                  COALESCE(SUM(a.total_consult_count), 0)::bigint AS count
+           FROM ${BASE_TABLE} a
+           WHERE ${q.where} AND a.age IS NOT NULL
+           GROUP BY 1, 2`,
+          q.params
+        ),
+        "ageGenderDemo"
+      ),
     ]);
 
     // Sort age rows in canonical order
@@ -299,6 +318,25 @@ async function handler(request: NextRequest) {
     const age = AGE_ORDER
       .filter((ag) => ageMap[ag])
       .map((ag) => ({ label: ag, count: ageMap[ag] }));
+
+    // Pivot the age × gender rows into one entry per age group with
+    // male / female / others / total. Sorted by AGE_ORDER, ages with
+    // zero patients drop out so the chart stays compact.
+    const ageGenderMap: Record<string, { male: number; female: number; others: number }> = {};
+    for (const r of ageGenderRows) {
+      const ag = r.age_group;
+      if (!ageGenderMap[ag]) ageGenderMap[ag] = { male: 0, female: 0, others: 0 };
+      const c = Number(r.count);
+      if (r.gender === "Male") ageGenderMap[ag].male += c;
+      else if (r.gender === "Female") ageGenderMap[ag].female += c;
+      else ageGenderMap[ag].others += c;
+    }
+    const ageGender = AGE_ORDER
+      .filter((ag) => ageGenderMap[ag])
+      .map((ag) => {
+        const row = ageGenderMap[ag];
+        return { ageGroup: ag, male: row.male, female: row.female, others: row.others, total: row.male + row.female + row.others };
+      });
 
     // ── EWB aggregates ──
     const [
@@ -712,6 +750,7 @@ async function handler(request: NextRequest) {
           gender: genderRows.map((r) => ({ label: r.label, count: Number(r.count) })),
           location: locationRows.map((r) => ({ label: r.label, count: Number(r.count) })),
           shift: [],
+          ageGender,
         },
         consultTrends: trendRows.map((r) => ({
           period: r.period,

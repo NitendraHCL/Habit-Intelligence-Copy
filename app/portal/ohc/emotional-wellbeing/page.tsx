@@ -299,7 +299,7 @@ export default function EmotionalWellbeingPage() {
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], relations: [] as string[],
   });
 
-  const [demoTab, setDemoTab] = useState<"age" | "gender" | "location" | "shift">("age");
+  const [demoTab, setDemoTab] = useState<"age" | "gender" | "location" | "shift" | "ageGender">("age");
   const [trendView, setTrendView] = useState<"year" | "month">("month");
   const [activeImpression, setActiveImpression] = useState<string>("");
   const [selectedVisitBucket, setSelectedVisitBucket] = useState<string>("");
@@ -342,6 +342,7 @@ export default function EmotionalWellbeingPage() {
         gender?: Array<{ label: string; count: number }>;
         location?: Array<{ label: string; count: number }>;
         shift?: Array<{ label: string; count: number }>;
+        ageGender?: Array<{ ageGroup: string; male: number; female: number; others: number; total: number }>;
       };
       consultTrends?: Array<{ period: string; totalConsults: number; uniquePatients: number }>;
       criticalRisk?: { suicidalThoughts: number; attemptedSelfHarm: number; previousAttempts: number; totalCases: number };
@@ -407,6 +408,7 @@ export default function EmotionalWellbeingPage() {
         gender: c?.demographics?.gender ?? [],
         location: c?.demographics?.location ?? [],
         shift: [] as Array<{ label: string; count: number }>,
+        ageGender: c?.demographics?.ageGender ?? [],
       },
       consultTrends: c?.consultTrends ?? [],
       criticalRisk: c?.criticalRisk ?? { suicidalThoughts: 0, attemptedSelfHarm: 0, previousAttempts: 0, totalCases: 0 },
@@ -459,7 +461,8 @@ export default function EmotionalWellbeingPage() {
   }, [charts?.consultTrends, trendView]);
 
   // Demographics data
-  const demoData: Array<{ label: string; count: number }> = charts?.demographics?.[demoTab] || [];
+  const demoData: Array<{ label: string; count: number }> = demoTab === "ageGender" ? [] : (charts?.demographics?.[demoTab] || []);
+  const ageGenderData = charts?.demographics?.ageGender || [];
 
   // Impressions — filtered by selected visit bucket. Normalise either field
   // name (the API returns `label`, the legacy aggregator returned `category`)
@@ -734,13 +737,17 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
-        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution along one dimension — age, gender, location, or shift." tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
+        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution by age, gender, or the two combined." tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
-            {(["age", "gender"] as const).map((tab) => (
-              <button key={tab} onClick={() => setDemoTab(tab)}
-                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-all ${demoTab === tab ? "border-current" : "border-transparent"}`}
-                style={{ color: demoTab === tab ? T.teal : T.textMuted }}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {([
+              { id: "age" as const, label: "Age" },
+              { id: "gender" as const, label: "Gender" },
+              { id: "ageGender" as const, label: "Age × Gender" },
+            ]).map((tab) => (
+              <button key={tab.id} onClick={() => setDemoTab(tab.id)}
+                className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-all ${demoTab === tab.id ? "border-current" : "border-transparent"}`}
+                style={{ color: demoTab === tab.id ? T.teal : T.textMuted }}>
+                {tab.label}
               </button>
             ))}
             <ResetFilter visible={demoTab !== "age"} onClick={() => setDemoTab("age")} />
@@ -796,6 +803,44 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()}
+
+            {/* ── Age × Gender: Stacked Horizontal Bar ── */}
+            {demoTab === "ageGender" && (() => {
+              if (ageGenderData.length === 0) {
+                return <div className="flex items-center justify-center h-full text-[12px]" style={{ color: T.textMuted }}>No age × gender data for this range.</div>;
+              }
+              const COLORS = { male: "#0d9488", female: "#a78bfa", others: "#a1a1aa" };
+              return (
+                <div style={{ height: 270 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={ageGenderData} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: T.textMuted }} />
+                      <YAxis type="category" dataKey="ageGroup" width={56} tick={{ fontSize: 11, fill: T.textSecondary }} />
+                      <RechartsTooltip content={({ active, payload, label }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const row = payload[0]?.payload || {};
+                        const total = row.total || 0;
+                        const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
+                        return (
+                          <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                            <p className="font-bold mb-1.5" style={{ color: T.textPrimary }}>{label}</p>
+                            <p style={{ color: COLORS.male }}>Male: <strong>{formatNum(row.male || 0)}</strong> ({pct(row.male || 0)}%)</p>
+                            <p style={{ color: COLORS.female }}>Female: <strong>{formatNum(row.female || 0)}</strong> ({pct(row.female || 0)}%)</p>
+                            {row.others > 0 && <p style={{ color: COLORS.others }}>Others: <strong>{formatNum(row.others)}</strong> ({pct(row.others)}%)</p>}
+                            <p className="mt-1 pt-1 border-t" style={{ borderColor: T.borderLight, color: T.textPrimary }}>Total: <strong>{formatNum(total)}</strong></p>
+                          </div>
+                        );
+                      }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                      <Bar dataKey="male" stackId="a" fill={COLORS.male} name="Male" />
+                      <Bar dataKey="female" stackId="a" fill={COLORS.female} name="Female" />
+                      <Bar dataKey="others" stackId="a" fill={COLORS.others} name="Others" />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               );
             })()}
@@ -910,6 +955,20 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
             )}
           </div>
           <InsightBox text={(() => {
+            if (demoTab === "ageGender") {
+              if (ageGenderData.length === 0) return "No age × gender data in this range yet.";
+              const grandTotal = ageGenderData.reduce((s, r) => s + r.total, 0);
+              let topGroup = ageGenderData[0].ageGroup;
+              let topGender = "Male";
+              let topCount = 0;
+              for (const row of ageGenderData) {
+                if (row.male > topCount) { topCount = row.male; topGroup = row.ageGroup; topGender = "Male"; }
+                if (row.female > topCount) { topCount = row.female; topGroup = row.ageGroup; topGender = "Female"; }
+                if (row.others > topCount) { topCount = row.others; topGroup = row.ageGroup; topGender = "Others"; }
+              }
+              const pct = grandTotal > 0 ? Math.round((topCount / grandTotal) * 100) : 0;
+              return `Top cohort: ${topGroup} · ${topGender} — ${formatNum(topCount)} patients (${pct}% of all).`;
+            }
             if (demoData.length === 0) return "No demographic data in this range yet.";
             const top = [...demoData].sort((a, b) => b.count - a.count)[0];
             const total = demoData.reduce((s, d) => s + d.count, 0);

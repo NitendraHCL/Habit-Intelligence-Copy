@@ -1484,7 +1484,7 @@ export default function OHCUtilizationPage() {
             })()} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — colour intensity grades by diagnosis count" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consult volume by specialty at ${locationBySpecialtyData[0]?.location || "your clinic"}` : clinicChartMode === "heatmap" ? "Per-clinic specialty volumes — darker cells mean more consults" : "Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
             {clinicChartMode !== "specialtyOnly" && (
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {stackSpecialties.map((spec: string, i: number) => (
@@ -1557,12 +1557,12 @@ export default function OHCUtilizationPage() {
                       <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)", color: "#fff" }}>
                         <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Specialties</p>
                         <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{items.length}</p>
-                        <p className="text-[10.5px] mt-0.5 opacity-90">in active use</p>
+                        <p className="text-[10.5px] mt-0.5 opacity-90">with consults</p>
                       </div>
                       <div className="rounded-xl px-3 py-3" style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }}>
                         <p className="text-[9px] font-semibold uppercase tracking-[0.1em] opacity-80">Top 3 Share</p>
                         <p className="text-[18px] font-extrabold leading-tight tracking-[-0.01em] mt-1 tabular-nums">{top3Share}%</p>
-                        <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{tail.length > 0 ? `tail: ${tailShare}%` : "no tail"}</p>
+                        <p className="text-[10.5px] mt-0.5 opacity-90 tabular-nums">{tail.length > 0 ? `others: ${tailShare}%` : "no others"}</p>
                       </div>
                     </div>
                   )}
@@ -1798,7 +1798,7 @@ export default function OHCUtilizationPage() {
                   <div className="flex items-center gap-2 text-xs" style={{ color: T.textSecondary }}>
                     <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#94a3b8" }} />
                     <span>
-                      <strong style={{ color: T.textPrimary }}>Other specialties:</strong> {list.length} tail specialties · <strong style={{ color: T.textPrimary }}>{formatNum(total)}</strong> consults
+                      <strong style={{ color: T.textPrimary }}>Other specialties:</strong> {list.length} smaller specialties · <strong style={{ color: T.textPrimary }}>{formatNum(total)}</strong> consults
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold" style={{ color: "#4f46e5" }}>View breakdown →</span>
@@ -1870,7 +1870,7 @@ export default function OHCUtilizationPage() {
               return (
                 <>
                   <div className="text-xs mb-3" style={{ color: T.textSecondary }}>
-                    <strong>{list.length}</strong> tail specialties grouped · <strong>{formatNum(total)}</strong> total consults
+                    <strong>{list.length}</strong> smaller specialties grouped · <strong>{formatNum(total)}</strong> total consults
                   </div>
                   <Input placeholder="Search specialty…" value={otherSpecSearch} onChange={(e) => setOtherSpecSearch(e.target.value)} className="mb-3" />
                   <ScrollArea className="h-[360px] pr-3">

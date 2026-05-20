@@ -88,6 +88,22 @@ function formatK(n: number): string {
   return String(n);
 }
 
+// Period label formatter — mirrors the Utilization page so a YYYY-MM
+// or YYYY-MM-DD string reads as "Mar '25" / "Mar 15" on both axes and
+// tooltips. Anything that doesn't match either shape comes back as-is.
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function formatPeriodLabel(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [, m, d] = value.split("-");
+    return `${MONTH_LABELS[Number(m) - 1]} ${d}`;
+  }
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [y, m] = value.split("-");
+    return `${MONTH_LABELS[Number(m) - 1]} '${y.slice(2)}`;
+  }
+  return value;
+}
+
 // ─── Accent Bar ───
 function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?: string }) {
   return <div className="w-10 h-1 rounded-sm mb-3.5" style={{ background: `linear-gradient(90deg, ${color}, ${colorEnd || color})` }} />;
@@ -737,7 +753,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
-        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution by age, gender, or the two combined." tooltipText="Tabbed view showing patient distribution across four dimensions — Age, Gender, Location, and Shift. Switch between tabs to see horizontal bar charts for each dimension. Taller bars indicate segments with more emotional wellbeing consults, helping identify which groups need the most support." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
+        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution by age, gender, or the two combined." tooltipText="Three tabs. Age shows a bar chart of patients per age band; Gender shows two proportional circles; Age × Gender shows a stacked horizontal bar with the gender mix inside each age band." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
             {([
               { id: "age" as const, label: "Age" },
@@ -760,14 +776,17 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={demoData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
-                      <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textSecondary }} />
+                      <YAxis tick={{ fontSize: 10, fill: T.textSecondary }} />
                       <RechartsTooltip content={({ active, payload, label }: any) => {
                         if (!active || !payload?.length) return null;
+                        const value = Number(payload[0]?.value || 0);
+                        const total = demoData.reduce((s, d) => s + d.count, 0);
+                        const pct = total > 0 ? Math.round((value / total) * 100) : 0;
                         return (
                           <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
                             <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                            <p>Patients: <strong>{formatNum(payload[0]?.value)}</strong></p>
+                            <p>Patients: <strong>{formatNum(value)}</strong> ({pct}% of total)</p>
                           </div>
                         );
                       }} />
@@ -818,7 +837,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={ageGenderData} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10, fill: T.textMuted }} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: T.textSecondary }} />
                       <YAxis type="category" dataKey="ageGroup" width={56} tick={{ fontSize: 11, fill: T.textSecondary }} />
                       <RechartsTooltip content={({ active, payload, label }: any) => {
                         if (!active || !payload?.length) return null;
@@ -946,7 +965,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
                 <RadarChart data={demoData} cx="50%" cy="50%" outerRadius="70%">
                   <PolarGrid stroke={T.borderLight} />
                   <PolarAngleAxis dataKey="label" tick={{ fontSize: 11, fill: T.textSecondary }} />
-                  <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textMuted }} angle={30} />
+                  <PolarRadiusAxis tick={{ fontSize: 9, fill: T.textSecondary }} angle={30} />
                   <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }} />
                   <Radar name="Patients" dataKey="count" stroke={T.teal} fill={T.teal} fillOpacity={0.3} strokeWidth={2} dot={{ r: 4, fill: T.teal }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
@@ -1078,14 +1097,14 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                  <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textMuted }} />
-                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <XAxis dataKey="period" tick={{ fontSize: 10, fill: T.textSecondary }} tickFormatter={formatPeriodLabel} />
+                  <YAxis tick={{ fontSize: 10, fill: T.textSecondary }} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
                     const dd = payload[0]?.payload;
                     return (
                       <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                        <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{formatPeriodLabel(String(label ?? ""))}</p>
                         <p style={{ color: "#4f46e5" }}>Total Consults : <strong>{formatNum(dd?.totalConsults)}</strong></p>
                         <p style={{ color: T.teal }}>Unique Patients : <strong>{formatNum(dd?.uniquePatients)}</strong></p>
                       </div>
@@ -1112,7 +1131,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* SECTION 2: Critical Risk + Substance Use  */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" subtitle="Each row shows the patients flagged on one critical risk indicator." tooltipText="Displays three critical risk indicators — Suicidal Thoughts, Attempted Self Harm, and Previous Attempts — as progress bars with patient counts. Higher values signal urgent need for intervention programs. This section requires immediate clinical attention for any non-zero values."
+        {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" subtitle="Each row shows the patients flagged on one critical risk indicator." tooltipText="Three indicators — Suicidal Thoughts, Attempted Self Harm, and Other Critical Cases — shown as red bars with the patient count and percentage of those assessed. The Total Critical Cases row sums all flags."
           chartId="criticalRisk" chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
 >
           {totalEwbAssessed > 0 && (
@@ -1160,27 +1179,29 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           })()} />
         </CVCard>}
 
-        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the percentage of employees who completed an emotional wellbeing assessment and reported substance use (alcohol, tobacco, or other substances). The denominator is the total number of emotional wellbeing assessments conducted in the selected date range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
-          <div className="flex items-center justify-center" style={{ height: 200 }}>
+        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the share of assessed employees who reported any substance use. The denominator is the total emotional-wellbeing assessments in the selected range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
+          <div className="flex items-center justify-center" style={{ height: 260 }}>
             <ReactECharts style={{ height: "100%", width: "100%" }} option={{
               series: [{
                 type: "gauge",
-                startAngle: 180,
-                endAngle: 0,
+                startAngle: 200,
+                endAngle: -20,
+                center: ["50%", "72%"],
+                radius: "115%",
                 min: 0,
                 max: 100,
                 pointer: { show: false },
-                progress: { show: true, width: 20, roundCap: true, itemStyle: { color: T.amber } },
-                axisLine: { lineStyle: { width: 20, color: [[1, "#E8E8E8"]] } },
+                progress: { show: true, width: 26, roundCap: true, itemStyle: { color: T.amber } },
+                axisLine: { lineStyle: { width: 26, color: [[1, "#E8E8E8"]] } },
                 axisTick: { show: false },
                 splitLine: { show: false },
                 axisLabel: { show: false },
-                detail: { fontSize: 36, fontWeight: 800, color: T.textPrimary, offsetCenter: [0, "10%"], formatter: "{value}%" },
+                detail: { fontSize: 44, fontWeight: 800, color: T.textPrimary, offsetCenter: [0, "5%"], formatter: "{value}%" },
                 data: [{ value: substanceUsePct }],
               }],
               graphic: [
-                { type: "text", left: "8%", bottom: "22%", style: { text: "0%", fontSize: 11, fill: T.textMuted } },
-                { type: "text", right: "8%", bottom: "22%", style: { text: "100%", fontSize: 11, fill: T.textMuted } },
+                { type: "text", left: "12%", bottom: "8%", style: { text: "0%", fontSize: 12, fontWeight: 600, fill: T.textSecondary, align: "left" } },
+                { type: "text", right: "12%", bottom: "8%", style: { text: "100%", fontSize: 12, fontWeight: 600, fill: T.textSecondary, align: "right" } },
               ],
             }} />
           </div>
@@ -1197,13 +1218,13 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sleep Quality */}
-        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Each bar shows the number of patients in one sleep-quality bucket." tooltipText="Bar chart showing the distribution of sleep quality ratings (e.g., Good, Average, Poor). Taller bars indicate more patients in that category. A high count in Poor sleep quality may correlate with elevated anxiety or depression scores." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
+        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Each bar shows the number of patients in one sleep-quality bucket." tooltipText="Bar chart of sleep-quality buckets (Good, Average, Poor). Taller bars mean more patients in that bucket." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(sleepQualitySorted.length * 70, 300), height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sleepQualitySorted} margin={{ top: 20, right: 10, left: 0, bottom: 20 }}>
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: T.textSecondary }} />
-                  <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                  <YAxis tick={{ fontSize: 10, fill: T.textSecondary }} />
                   <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontSize: 12 }} />
                   <Bar dataKey="count" maxBarSize={60} radius={[4, 4, 0, 0]} label={{ position: "top", fontSize: 12, fontWeight: 700, fill: T.textPrimary }}>
                     {sleepQualitySorted.map((d) => <Cell key={d.label} fill={SLEEP_Q_COLORS[d.label] || "#818cf8"} />)}
@@ -1296,7 +1317,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
-        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Each dot is 1% of assessed employees, coloured by alcohol-consumption status." tooltipText="Pictograph of 100 dots, each representing 1% of assessed employees. Amber = drinkers, teal = non-drinkers, grey = not reported. Headline shows the '1 in X' framing for quick communication." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
+        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Each dot is 1% of assessed employees, coloured by alcohol-consumption status." tooltipText="100-cell waffle on responders only — each cell is 1% of those who reported. Amber cells are drinkers, teal are non-drinkers. Headline shows the '1 in X' framing; Not Reported is shown separately in the legend." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
           {(() => {
             const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
             const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
@@ -1510,7 +1531,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Visit Pattern */}
-          <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Shows how many patients fall into each visit frequency bucket (e.g., 1 visit, 2-3 visits, 4+ visits). Click a bar to filter the adjacent Impressions chart by that visit bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
+          <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Bar chart of visit-frequency buckets (1 Visit, 2, 3, 4, 5+ Visits). Click a bar to filter the adjacent Impressions chart by that bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
             <p className="text-[11px] mb-2" style={{ color: T.textMuted }}>Click a bar to filter Impressions chart</p>
             <div className="overflow-x-auto">
               <div className="flex items-end justify-center gap-3 mt-1" style={{ height: 200, minWidth: Math.max(visitPattern.length * 85, 250) }}>
@@ -1551,7 +1572,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           </CVCard>
 
           {/* Impressions Analysis — horizontal ranked bars */}
-          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} subtitle="Each bar shows how many patients reported one chronic condition." expandable={false} tooltipText="Ranked breakdown of chronic-condition prevalence among assessed employees. Conditions are sorted by patient count, biggest at top — at-a-glance view of which condition is most prevalent." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
+          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} subtitle="Each bar shows how many patients reported one chronic condition." expandable={false} tooltipText="Ranked bar list of the most-flagged impressions from emotional-wellbeing assessments. Sorted by patient count — the most prevalent is at the top." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
             {(() => {
               const sorted = [...impressions].sort((a, b) => b.count - a.count);
               const total = sorted.reduce((s, i) => s + i.count, 0);
@@ -1628,7 +1649,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* SECTION 5: Scales                         */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of anxiety assessments (e.g., Minimal, Mild, Moderate, Severe). Wider segments for Moderate/Severe indicate a higher proportion of employees with significant anxiety levels." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
+        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar of anxiety-screening results — Anxious vs Not Anxious, with Not Reported shown as a separate segment. Wider Anxious segment means a higher share of those screened were flagged." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
           <StackedPercentBar data={anxietyScale} colors={SCALE_COLORS} />
           <InsightBox text={(() => {
             if (anxietyScale.length === 0) return "No anxiety-scale data yet for this range.";
@@ -1651,7 +1672,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           })()} />
         </CVCard>}
       </div>
-      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar showing the severity distribution of depression assessments (e.g., Minimal, Mild, Moderate, Moderately Severe, Severe). Wider segments for higher severity levels indicate a greater proportion needing clinical attention." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
+      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar of depression-screening results — Minimal vs Moderate or Higher, with Not Reported shown as a separate segment. A wider Moderate-or-Higher segment means a higher share of those screened were flagged." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
         <StackedPercentBar data={depressionScale} colors={SCALE_COLORS} />
         <InsightBox text={(() => {
           if (depressionScale.length === 0) return "No depression-scale data yet for this range.";

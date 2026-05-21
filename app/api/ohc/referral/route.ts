@@ -29,6 +29,22 @@ import { withCache } from "@/lib/cache/middleware";
 
 const BASE_TABLE = "aggregated_table.referral_conversion";
 
+// Tenant-specific specialty whitelist. CISCO01 only wants these seven
+// referred-to specialties surfaced on the Referral dashboard; every
+// other client sees the full set. Applies to KPIs, charts, and the
+// filter-options dropdown.
+const TENANT_SPECIALTY_WHITELIST: Record<string, string[]> = {
+  CISCO01: [
+    "Obstetrics And Gynecology",
+    "General Physician",
+    "Family Medicine",
+    "Internal Medicine",
+    "Physiotherapy",
+    "Psychologist",
+    "Dietetics",
+  ],
+};
+
 // Volume / converted expressions — used wherever we need a count.
 const REFERRALS_SUM = `COUNT(*)::bigint`;
 const CONVERTED_SUM = `COUNT(*) FILTER (WHERE r.consumption = 'Consumed')::bigint`;
@@ -62,6 +78,15 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const conditions: string[] = [`r.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
   let idx = 2;
+
+  // Tenant-level specialty restriction (CISCO01 today). Pinned ahead of
+  // user filters so all downstream charts and KPIs respect it.
+  const whitelist = TENANT_SPECIALTY_WHITELIST[cugCode];
+  if (whitelist?.length) {
+    conditions.push(`r.speciality_referred_to = ANY($${idx})`);
+    params.push(whitelist);
+    idx++;
+  }
 
   if (dateFrom) {
     conditions.push(`r.g_creation_time >= $${idx}::date`);
@@ -135,14 +160,19 @@ async function handler(request: NextRequest) {
     }
 
     // ── Filter options (unfiltered apart from tenant scope) ──
+    // Tenant whitelist is applied here too so dropdowns never offer a
+    // specialty that the rest of the page is configured to hide.
+    const filterWhitelist = TENANT_SPECIALTY_WHITELIST[cugCode];
     const filterPromise = Promise.all([
       safeQuery(
         () => dwQuery<{ v: string }>(
           `SELECT DISTINCT r.facility_mapping AS v
            FROM ${BASE_TABLE} r
-           WHERE r.cug_code_mapped = $1 AND r.facility_mapping IS NOT NULL AND TRIM(r.facility_mapping) <> ''
+           WHERE r.cug_code_mapped = $1
+             AND r.facility_mapping IS NOT NULL AND TRIM(r.facility_mapping) <> ''
+             ${filterWhitelist ? "AND r.speciality_referred_to = ANY($2)" : ""}
            ORDER BY 1`,
-          [cugCode]
+          filterWhitelist ? [cugCode, filterWhitelist] : [cugCode]
         ),
         "filterLocations"
       ),
@@ -150,9 +180,11 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ v: string }>(
           `SELECT DISTINCT r.speciality_referred_to AS v
            FROM ${BASE_TABLE} r
-           WHERE r.cug_code_mapped = $1 AND r.speciality_referred_to IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
+           WHERE r.cug_code_mapped = $1
+             AND r.speciality_referred_to IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
+             ${filterWhitelist ? "AND r.speciality_referred_to = ANY($2)" : ""}
            ORDER BY 1`,
-          [cugCode]
+          filterWhitelist ? [cugCode, filterWhitelist] : [cugCode]
         ),
         "filterSpecialties"
       ),

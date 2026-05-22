@@ -1,15 +1,540 @@
-// TODO: Replace with dwQuery() using fact_kx / habit_intelligence schemas
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
+import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
 
-async function handler() {
-  return NextResponse.json({
-    kpis: {},
-    charts: {
-      bmiVsBp: [],
-      riskDistribution: [],
+/* ────────────────────────────────────────────────────────────────────
+ * Correlations API — Emotional Wellbeing → Chronic Care Insights
+ *
+ * Builds a tenant-scoped comparison between two cohorts:
+ *   • Emotional Wellbeing — Engaged: any uhid that has a row in
+ *     aggregated_table.emotional_wellbeing
+ *   • Not Yet Engaged: every other uhid that appears in
+ *     aggregated_table.agg_kpi for the same tenant
+ *
+ * For each cohort we compute headline counts, gender / age splits,
+ * chronic share, and the top chronic conditions ranked by patient
+ * count. We also rank the conditions whose prevalence differs most
+ * between the two cohorts.
+ *
+ * Insights and the action plan are generated rule-based from the
+ * computed numbers (see buildInsights / buildActionPlan below), so
+ * the card stays self-consistent without a live LLM call. Available
+ * specialties for each tenant are looked up from agg_kpi so the
+ * action plan only ever proposes camps the clinic can actually run.
+ *
+ * All-time scope on purpose — date filters from the page header are
+ * ignored here; the EWB cohorts at most tenants are too small to
+ * slice further without driving the numbers to noise.
+ * ──────────────────────────────────────────────────────────────────── */
+
+const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"] as const;
+
+type Cohort = "engaged" | "notEngaged";
+
+interface ConditionRate {
+  disease: string;
+  patients: number;
+  share: number; // % of cohort
+}
+
+interface CohortStats {
+  patients: number;
+  shareOfBase: number; // % of total OHC users
+  gender: { male: number; female: number; other: number; malePct: number; femalePct: number };
+  ageGroup: Array<{ label: string; count: number; pct: number }>;
+  chronicShare: number;       // % with any chronic dx
+  topConditions: ConditionRate[];
+}
+
+interface BiggestDiff {
+  disease: string;
+  engagedPct: number;
+  notEngagedPct: number;
+  gap: number; // engagedPct - notEngagedPct
+}
+
+async function handler(request: NextRequest) {
+  try {
+    await requireAuth();
+
+    const { searchParams } = new URL(request.url);
+    const clientId = searchParams.get("clientId");
+    const cugCode = await getSessionCugCode(clientId ?? undefined);
+    if (!cugCode) {
+      return NextResponse.json({ error: "No client selected" }, { status: 400 });
+    }
+
+    const failedQueries: string[] = [];
+    async function safeQuery<T>(fn: () => Promise<T[]>, tag: string): Promise<T[]> {
+      try { return await fn(); } catch (e) {
+        console.error(`Correlations query failed [${tag}]:`, e);
+        failedQueries.push(tag);
+        return [];
+      }
+    }
+
+    // ── 1. Cohort split (engaged vs not_engaged) with gender + age ──
+    // Latest age_group / gender per uhid (most recent visit row in agg_kpi).
+    const cohortRows = await safeQuery(
+      () => dwQuery<{
+        cohort: Cohort; patients: string;
+        male: string; female: string; other: string;
+        age_group: string | null; age_count: string;
+      }>(
+        `WITH ewb AS (
+          SELECT DISTINCT uhid
+          FROM aggregated_table.emotional_wellbeing
+          WHERE cug_code_mapped = $1
+        ),
+        latest_demo AS (
+          SELECT DISTINCT ON (a.uhid)
+            a.uhid,
+            a.patient_gender,
+            a.age_group
+          FROM aggregated_table.agg_kpi a
+          WHERE a.cug_code_mapped = $1
+          ORDER BY a.uhid, a.consult_date DESC NULLS LAST
+        ),
+        tagged AS (
+          SELECT
+            d.uhid,
+            LOWER(TRIM(COALESCE(d.patient_gender, ''))) AS gnorm,
+            d.age_group,
+            CASE WHEN ewb.uhid IS NOT NULL THEN 'engaged' ELSE 'notEngaged' END AS cohort
+          FROM latest_demo d
+          LEFT JOIN ewb USING (uhid)
+        )
+        SELECT
+          cohort,
+          (SELECT COUNT(*) FROM tagged t2 WHERE t2.cohort = t.cohort)::bigint AS patients,
+          (SELECT COUNT(*) FROM tagged t2 WHERE t2.cohort = t.cohort AND t2.gnorm IN ('male','m'))::bigint AS male,
+          (SELECT COUNT(*) FROM tagged t2 WHERE t2.cohort = t.cohort AND t2.gnorm IN ('female','f'))::bigint AS female,
+          (SELECT COUNT(*) FROM tagged t2 WHERE t2.cohort = t.cohort AND t2.gnorm NOT IN ('male','m','female','f'))::bigint AS other,
+          t.age_group,
+          COUNT(*)::bigint AS age_count
+        FROM tagged t
+        GROUP BY t.cohort, t.age_group`,
+        [cugCode]
+      ),
+      "cohorts"
+    );
+
+    // ── 2. Chronic share per cohort ──
+    const chronicRows = await safeQuery(
+      () => dwQuery<{ cohort: Cohort; total: string; with_chronic: string }>(
+        `WITH ewb AS (
+          SELECT DISTINCT uhid
+          FROM aggregated_table.emotional_wellbeing
+          WHERE cug_code_mapped = $1
+        ),
+        pts AS (
+          SELECT DISTINCT a.uhid,
+            CASE WHEN ewb.uhid IS NOT NULL THEN 'engaged' ELSE 'notEngaged' END AS cohort
+          FROM aggregated_table.agg_kpi a
+          LEFT JOIN ewb USING (uhid)
+          WHERE a.cug_code_mapped = $1
+        ),
+        chronic AS (
+          SELECT DISTINCT uhid
+          FROM aggregated_table.agg_diagnosis
+          WHERE cug_code_mapped = $1
+            AND status IN ('Chronic','Acute or Chronic')
+        )
+        SELECT cohort,
+          COUNT(*)::bigint AS total,
+          COUNT(*) FILTER (WHERE chronic.uhid IS NOT NULL)::bigint AS with_chronic
+        FROM pts
+        LEFT JOIN chronic USING (uhid)
+        GROUP BY cohort`,
+        [cugCode]
+      ),
+      "chronic"
+    );
+
+    // ── 3. Top conditions per cohort + biggest gap ──
+    const diseaseRows = await safeQuery(
+      () => dwQuery<{ cohort: Cohort; disease: string; patients: string }>(
+        `WITH ewb AS (
+          SELECT DISTINCT uhid
+          FROM aggregated_table.emotional_wellbeing
+          WHERE cug_code_mapped = $1
+        ),
+        dx AS (
+          SELECT DISTINCT a.uhid, a.disease
+          FROM aggregated_table.agg_diagnosis a
+          WHERE a.cug_code_mapped = $1
+            AND a.status IN ('Chronic','Acute or Chronic')
+            AND a.disease IS NOT NULL
+            AND TRIM(a.disease) <> ''
+        )
+        SELECT
+          CASE WHEN ewb.uhid IS NOT NULL THEN 'engaged' ELSE 'notEngaged' END AS cohort,
+          dx.disease,
+          COUNT(DISTINCT dx.uhid)::bigint AS patients
+        FROM dx
+        LEFT JOIN ewb USING (uhid)
+        GROUP BY cohort, dx.disease`,
+        [cugCode]
+      ),
+      "diseases"
+    );
+
+    // ── 4. Available specialties at this clinic (drives action plan) ──
+    const specRows = await safeQuery(
+      () => dwQuery<{ specialty: string }>(
+        `SELECT DISTINCT speciality_name AS specialty
+         FROM aggregated_table.agg_kpi
+         WHERE cug_code_mapped = $1
+           AND speciality_name IS NOT NULL
+           AND TRIM(speciality_name) <> ''`,
+        [cugCode]
+      ),
+      "specialties"
+    );
+
+    // ── Assemble cohort stats ──
+    const cohorts: Record<Cohort, CohortStats> = {
+      engaged: emptyCohortStats(),
+      notEngaged: emptyCohortStats(),
+    };
+
+    // Cohort totals + gender from cohortRows (subquery returns the same total
+    // on every row for a cohort — pick once per cohort).
+    const seenTotals = new Set<Cohort>();
+    for (const r of cohortRows) {
+      if (!seenTotals.has(r.cohort)) {
+        cohorts[r.cohort].patients = Number(r.patients);
+        cohorts[r.cohort].gender = {
+          male: Number(r.male),
+          female: Number(r.female),
+          other: Number(r.other),
+          malePct: 0,
+          femalePct: 0,
+        };
+        seenTotals.add(r.cohort);
+      }
+    }
+    // Age buckets
+    const ageMap: Record<Cohort, Record<string, number>> = { engaged: {}, notEngaged: {} };
+    for (const r of cohortRows) {
+      if (!r.age_group) continue;
+      ageMap[r.cohort][r.age_group] = (ageMap[r.cohort][r.age_group] || 0) + Number(r.age_count);
+    }
+    for (const c of ["engaged", "notEngaged"] as Cohort[]) {
+      const total = cohorts[c].patients;
+      const g = cohorts[c].gender;
+      const sumG = g.male + g.female + g.other;
+      g.malePct = sumG > 0 ? Math.round((g.male / sumG) * 100) : 0;
+      g.femalePct = sumG > 0 ? Math.round((g.female / sumG) * 100) : 0;
+      cohorts[c].ageGroup = AGE_ORDER.filter((ag) => ageMap[c][ag])
+        .map((ag) => ({
+          label: ag,
+          count: ageMap[c][ag],
+          pct: total > 0 ? Math.round((ageMap[c][ag] / total) * 100) : 0,
+        }));
+    }
+
+    // Chronic share
+    for (const r of chronicRows) {
+      const total = Number(r.total);
+      const withC = Number(r.with_chronic);
+      cohorts[r.cohort].chronicShare = total > 0 ? Math.round((withC / total) * 100) : 0;
+    }
+
+    // Top conditions + biggest-gap ranking
+    const conditionPatients: Record<string, { engaged: number; notEngaged: number }> = {};
+    for (const r of diseaseRows) {
+      if (!conditionPatients[r.disease]) conditionPatients[r.disease] = { engaged: 0, notEngaged: 0 };
+      conditionPatients[r.disease][r.cohort] = Number(r.patients);
+    }
+
+    const buildTop = (c: Cohort, n: number): ConditionRate[] => {
+      const total = cohorts[c].patients;
+      return Object.entries(conditionPatients)
+        .map(([disease, counts]) => ({
+          disease,
+          patients: counts[c],
+          share: total > 0 ? Math.round((counts[c] / total) * 1000) / 10 : 0,
+        }))
+        .filter((d) => d.patients > 0)
+        .sort((a, b) => b.patients - a.patients)
+        .slice(0, n);
+    };
+    cohorts.engaged.topConditions = buildTop("engaged", 4);
+    cohorts.notEngaged.topConditions = buildTop("notEngaged", 4);
+
+    // Share of base — engaged vs. total OHC users (engaged + notEngaged).
+    const totalUsers = cohorts.engaged.patients + cohorts.notEngaged.patients;
+    cohorts.engaged.shareOfBase = totalUsers > 0 ? Math.round((cohorts.engaged.patients / totalUsers) * 100) : 0;
+    cohorts.notEngaged.shareOfBase = totalUsers > 0 ? 100 - cohorts.engaged.shareOfBase : 0;
+
+    // Biggest-gap conditions — engaged-share minus not-engaged-share, ranked
+    // by absolute gap. Require ≥5 engaged patients so we don't surface noise.
+    const engagedTotal = cohorts.engaged.patients;
+    const notEngagedTotal = cohorts.notEngaged.patients;
+    const biggestDiffs: BiggestDiff[] = Object.entries(conditionPatients)
+      .filter(([, counts]) => counts.engaged >= 5)
+      .map(([disease, counts]) => {
+        const ePct = engagedTotal > 0 ? Math.round((counts.engaged / engagedTotal) * 1000) / 10 : 0;
+        const nPct = notEngagedTotal > 0 ? Math.round((counts.notEngaged / notEngagedTotal) * 1000) / 10 : 0;
+        return { disease, engagedPct: ePct, notEngagedPct: nPct, gap: Math.round((ePct - nPct) * 10) / 10 };
+      })
+      .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+      .slice(0, 6);
+
+    // Available specialties (lower-cased lookup set for the action-plan engine)
+    const availableSpecialties = new Set(
+      specRows.map((r) => r.specialty.toLowerCase().trim())
+    );
+
+    const insights = buildInsights(cohorts, biggestDiffs, totalUsers);
+    const actionPlan = buildActionPlan(cohorts, biggestDiffs, availableSpecialties);
+
+    return NextResponse.json({
+      // Stubbed-out legacy fields kept for backward compat with existing card grid.
+      kpis: {},
+      charts: { bmiVsBp: [], riskDistribution: [] },
+      engagementMix: {
+        engaged: cohorts.engaged,
+        notEngaged: cohorts.notEngaged,
+        biggestDifferences: biggestDiffs,
+        insights,
+        actionPlan,
+        availableSpecialtyCount: availableSpecialties.size,
+      },
+      lastUpdated: new Date().toISOString(),
+      meta: { hadErrors: failedQueries.length > 0, failedQueries },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("Correlations API error:", error);
+    return NextResponse.json({ error: "Internal server error", details: String(error) }, { status: 500 });
+  }
+}
+
+function emptyCohortStats(): CohortStats {
+  return {
+    patients: 0,
+    shareOfBase: 0,
+    gender: { male: 0, female: 0, other: 0, malePct: 0, femalePct: 0 },
+    ageGroup: [],
+    chronicShare: 0,
+    topConditions: [],
+  };
+}
+
+// ─── Insights: deterministic, derived from the cohort numbers ───
+function buildInsights(
+  cohorts: Record<Cohort, CohortStats>,
+  diffs: BiggestDiff[],
+  totalUsers: number,
+): { clinical: string[]; operational: string[] } {
+  const clinical: string[] = [];
+  const operational: string[] = [];
+
+  if (cohorts.engaged.patients === 0) {
+    return {
+      clinical: ["No Emotional Wellbeing assessments recorded for this client yet."],
+      operational: ["Programme has not launched at this tenant — no engagement to analyse."],
+    };
+  }
+
+  // Clinical lines — tight one-line bullets.
+  const sorted = diffs.length > 0 ? [...diffs].sort((a, b) => b.gap - a.gap) : [];
+  const top = sorted[0];
+  if (top && top.notEngagedPct > 0) {
+    const factor = (top.engagedPct / top.notEngagedPct).toFixed(1);
+    clinical.push(`${stripParens(top.disease)} runs ${factor}× higher in engaged group (${top.engagedPct}% vs ${top.notEngagedPct}%).`);
+  } else if (top) {
+    clinical.push(`${stripParens(top.disease)} is over-indexed in engaged group (${top.engagedPct}% vs ${top.notEngagedPct}%).`);
+  }
+  const chronicGap = cohorts.engaged.chronicShare - cohorts.notEngaged.chronicShare;
+  if (chronicGap >= 5) {
+    clinical.push(`${cohorts.engaged.chronicShare}% have a chronic condition vs ${cohorts.notEngaged.chronicShare}% baseline (+${chronicGap}%).`);
+  }
+  // If we have a second strong condition gap, surface it too.
+  if (sorted[1] && sorted[1].gap > 0) {
+    clinical.push(`${stripParens(sorted[1].disease)} also higher in engaged group (${sorted[1].engagedPct}% vs ${sorted[1].notEngagedPct}%).`);
+  }
+
+  // Operational lines — tight one-line bullets.
+  if (totalUsers > 0) {
+    operational.push(`Reach is ${cohorts.engaged.shareOfBase}% of the OHC user base (${cohorts.engaged.patients.toLocaleString("en-IN")} of ${totalUsers.toLocaleString("en-IN")}).`);
+  }
+  const femaleGap = cohorts.engaged.gender.femalePct - cohorts.notEngaged.gender.femalePct;
+  if (femaleGap >= 10) {
+    operational.push(`Engaged group is ${femaleGap}% more female (${cohorts.engaged.gender.femalePct}% vs ${cohorts.notEngaged.gender.femalePct}%) — outreach to men is the bigger gap.`);
+  } else if (femaleGap <= -10) {
+    operational.push(`Engaged group is ${Math.abs(femaleGap)}% more male (${cohorts.engaged.gender.malePct}% vs ${cohorts.notEngaged.gender.malePct}%) — outreach to women is the bigger gap.`);
+  }
+  const engagedAge = cohorts.engaged.ageGroup.find((a) => a.label === "20-35");
+  const notEngagedAge = cohorts.notEngaged.ageGroup.find((a) => a.label === "20-35");
+  if (engagedAge && notEngagedAge && engagedAge.pct - notEngagedAge.pct >= 5) {
+    operational.push(`Engaged cohort skews younger — ${engagedAge.pct}% are 20–35 vs ${notEngagedAge.pct}% baseline.`);
+  }
+
+  // Cap each side to 2 — keeps the AI block compact and scannable.
+  return { clinical: clinical.slice(0, 2), operational: operational.slice(0, 2) };
+}
+
+// ─── Action plan: rule-based template library; only emit templates whose
+// required specialties are present in agg_kpi for this tenant. Each item
+// renders as a bold title + one short rationale line — no separate
+// description field, which keeps the action-plan column scannable. ───
+interface ActionTemplate {
+  id: string;
+  title: string;
+  triggerDisease: string[]; // disease names (case-insensitive substring match)
+  requires: string[];       // specialty names (case-insensitive)
+  rationale: (diffs: BiggestDiff[]) => string;
+}
+
+const CLINICAL_TEMPLATES: ActionTemplate[] = [
+  {
+    id: "lipid-drive",
+    title: "Lipid Health Drive",
+    triggerDisease: ["dyslipidemia"],
+    requires: ["internal medicine", "dietetics"],
+    rationale: (d) => `Targets Dyslipidemia at ${pctOf(d, "dyslipidemia")}% in engaged group`,
+  },
+  {
+    id: "womens-wellness",
+    title: "Women's Wellness Day",
+    triggerDisease: ["polycystic ovarian syndrome", "pcos"],
+    requires: ["obstetrics and gynecology"],
+    rationale: (d) => `Addresses PCOS at ${pctOf(d, "polycystic")}% and the female skew`,
+  },
+  {
+    id: "joint-pain",
+    title: "Joint Pain Clinic",
+    triggerDisease: ["arthritis"],
+    requires: ["physiotherapy", "general physician"],
+    rationale: (d) => `Addresses Arthritis at ${pctOf(d, "arthritis")}% in engaged group`,
+  },
+  {
+    id: "anaemia-screen",
+    title: "Anaemia Quick-Screen",
+    triggerDisease: ["anaemia", "anemia"],
+    requires: ["general physician", "dietetics"],
+    rationale: (d) => `Addresses Anaemia at ${pctOf(d, "anaemia")}% in engaged group`,
+  },
+  {
+    id: "diabetes-prevention",
+    title: "Diabetes Prevention Day",
+    triggerDisease: ["prediabetes", "pre-dm", "diabetes mellitus", "diabetes"],
+    requires: ["internal medicine", "dietetics"],
+    rationale: (d) => `Targets Prediabetes / Diabetes at ${pctOf(d, "diabetes") || pctOf(d, "prediabetes")}% in engaged group`,
+  },
+  {
+    id: "liver-care",
+    title: "Liver Health Clinic",
+    triggerDisease: ["liver"],
+    requires: ["internal medicine"],
+    rationale: (d) => `Targets Chronic Liver Disease at ${pctOf(d, "liver")}% in engaged group`,
+  },
+];
+
+interface OperationalTemplate {
+  id: string;
+  title: string;
+  requires: string[];
+  shouldFire: (cohorts: Record<Cohort, CohortStats>) => boolean;
+  rationale: (cohorts: Record<Cohort, CohortStats>) => string;
+}
+
+const OPERATIONAL_TEMPLATES: OperationalTemplate[] = [
+  {
+    id: "men-outreach",
+    title: "Men 36+ Outreach",
+    requires: ["family medicine"],
+    shouldFire: (c) => c.engaged.gender.femalePct - c.notEngaged.gender.femalePct >= 10,
+    rationale: () => "Family-Medicine-anchored sessions for the under-engaged male majority",
+  },
+  {
+    id: "women-outreach",
+    title: "Women's Emotional Wellbeing Drive",
+    requires: ["psychologist"],
+    shouldFire: (c) => c.notEngaged.gender.femalePct - c.engaged.gender.femalePct >= 10,
+    rationale: () => "Psychologist-anchored sessions for the under-engaged female majority",
+  },
+  {
+    id: "senior-outreach",
+    title: "Senior Employee Programme",
+    requires: ["family medicine"],
+    shouldFire: (c) => {
+      const eng = c.engaged.ageGroup.find((a) => a.label === "41-60")?.pct ?? 0;
+      const nen = c.notEngaged.ageGroup.find((a) => a.label === "41-60")?.pct ?? 0;
+      return nen - eng >= 5;
     },
-  });
+    rationale: (c) => {
+      const eng = c.engaged.ageGroup.find((a) => a.label === "41-60")?.pct ?? 0;
+      const nen = c.notEngaged.ageGroup.find((a) => a.label === "41-60")?.pct ?? 0;
+      return `Family-Medicine sessions for 41–60 age band — under-represented in engaged group (${eng}% vs ${nen}%)`;
+    },
+  },
+];
+
+function buildActionPlan(
+  cohorts: Record<Cohort, CohortStats>,
+  diffs: BiggestDiff[],
+  availableSpecialties: Set<string>,
+): {
+  clinical: { title: string; rationale: string; specialties: string[] }[];
+  operational: { title: string; rationale: string; specialties: string[] }[];
+} {
+  const hasAll = (req: string[]) => req.every((s) => availableSpecialties.has(s.toLowerCase()));
+  // Title-case the specialty names back from the lower-case match keys.
+  const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Clinical: only fire templates whose disease appears among the biggest-gap
+  // conditions (engaged-side over-index) AND whose required specialties exist.
+  const overIndexed = diffs.filter((d) => d.gap > 0);
+  const clinical = CLINICAL_TEMPLATES
+    .filter((t) => overIndexed.some((d) => t.triggerDisease.some((td) => d.disease.toLowerCase().includes(td))))
+    .filter((t) => hasAll(t.requires))
+    .slice(0, 5)
+    .map((t) => ({ title: t.title, rationale: t.rationale(diffs), specialties: t.requires.map(titleCase) }));
+
+  // Priority recommendation: when Emotional Wellbeing reach is very low
+  // (<5% of the OHC user base), prepend a free-consult drive at the top of
+  // the action plan so it's the first thing the clinical team sees. Only
+  // surfaces when the Psychologist specialty is actually running.
+  const LOW_REACH_THRESHOLD = 5;
+  if (
+    cohorts.engaged.shareOfBase < LOW_REACH_THRESHOLD &&
+    cohorts.engaged.patients > 0 &&
+    availableSpecialties.has("psychologist")
+  ) {
+    clinical.unshift({
+      title: "Free Psychology Consult Day",
+      rationale: `Reach is only ${cohorts.engaged.shareOfBase}% — offer a free workplace-wide consult to drive baseline engagement.`,
+      specialties: ["Psychologist"],
+    });
+  }
+
+  // Operational: fire any template whose precondition matches.
+  const operational = OPERATIONAL_TEMPLATES
+    .filter((t) => t.shouldFire(cohorts))
+    .filter((t) => hasAll(t.requires))
+    .slice(0, 2)
+    .map((t) => ({ title: t.title, rationale: t.rationale(cohorts), specialties: t.requires.map(titleCase) }));
+
+  return { clinical: clinical.slice(0, 6), operational };
+}
+
+// Helper — strip parenthetical detail off long disease names for prose
+function stripParens(s: string): string {
+  return s.replace(/\s*\([^)]*\)\s*/g, "").trim();
+}
+
+// Helper — look up the engaged-side share of a condition by substring match,
+// formatted as an integer percent. Returns 0 if not found.
+function pctOf(diffs: BiggestDiff[], needle: string): number {
+  const hit = diffs.find((d) => d.disease.toLowerCase().includes(needle.toLowerCase()));
+  return hit ? Math.round(hit.engagedPct) : 0;
 }
 
 export const GET = withCache(handler, { endpoint: "correlations" });

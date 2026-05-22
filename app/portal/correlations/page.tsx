@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { T } from "@/lib/ui/theme";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
+import { ChartComments } from "@/components/ui/chart-comments";
 
 function formatNum(n: number): string {
   if (!n && n !== 0) return "0";
@@ -38,11 +39,13 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 // ─── Card ───
 function CVCard({
   children, className = "", accentColor, title, subtitle, tooltipText, expandable = true,
-  chartData, chartTitle, chartDescription,
+  chartData, chartTitle, chartDescription, chartId, pageSlug,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  /** Pass both chartId + pageSlug to expose the chart-comments thread (KAMs, super-admins, etc.) on this card. */
+  chartId?: string; pageSlug?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -67,12 +70,15 @@ function CVCard({
                 </div>
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
-              {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
-              {expandable && (
-                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 ml-2" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
-                  {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                </Button>
-              )}
+              <div className="flex items-center gap-1 shrink-0 ml-2">
+                {chartId && pageSlug && <ChartComments chartId={chartId} pageSlug={pageSlug} />}
+                {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
+                {expandable && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: T.textMuted }} onClick={() => setExpanded(!expanded)}>
+                    {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -458,6 +464,8 @@ function WorkforceEngagementMix({ data }: { data: EngagementMix }) {
         chartData={data}
         chartTitle="Emotional Wellbeing → Chronic Care Insights"
         chartDescription="Compares Emotional Wellbeing assessed patients against the rest of the OHC user base."
+        chartId="engagementMix"
+        pageSlug="/portal/correlations"
       >
         <div className="px-2 py-10 text-center text-[13px]" style={{ color: T.textMuted }}>
           No Emotional Wellbeing assessments recorded for this client yet.
@@ -479,6 +487,8 @@ function WorkforceEngagementMix({ data }: { data: EngagementMix }) {
       chartData={data}
       chartTitle="Emotional Wellbeing → Chronic Care Insights"
       chartDescription="Maps mental-health engagement (Emotional Wellbeing assessments) against chronic-disease patterns, and generates an AI clinical + operational action plan from the data."
+      chartId="engagementMix"
+      pageSlug="/portal/correlations"
     >
       {/* Compact hero strip — one-line summary of the four anchor numbers */}
       <div className="flex flex-wrap gap-2 mt-3 mb-4">

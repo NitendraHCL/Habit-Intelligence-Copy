@@ -28,7 +28,19 @@ import { withCache } from "@/lib/cache/middleware";
  * slice further without driving the numbers to noise.
  * ──────────────────────────────────────────────────────────────────── */
 
-const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"] as const;
+// Consistent 10-year buckets for the Emotional Wellbeing card. Bucketed
+// from the raw `age` integer in agg_kpi, not the warehouse's mixed-width
+// `age_group` column.
+const AGE_ORDER = ["≤20", "21-30", "31-40", "41-50", "51-60", "60+"] as const;
+const AGE_BUCKET_CASE = `CASE
+  WHEN a.age IS NULL THEN NULL
+  WHEN a.age <= 20 THEN '≤20'
+  WHEN a.age BETWEEN 21 AND 30 THEN '21-30'
+  WHEN a.age BETWEEN 31 AND 40 THEN '31-40'
+  WHEN a.age BETWEEN 41 AND 50 THEN '41-50'
+  WHEN a.age BETWEEN 51 AND 60 THEN '51-60'
+  WHEN a.age > 60 THEN '60+'
+END`;
 
 type Cohort = "engaged" | "notEngaged";
 
@@ -51,7 +63,9 @@ interface BiggestDiff {
   disease: string;
   engagedPct: number;
   notEngagedPct: number;
-  gap: number; // engagedPct - notEngagedPct
+  engagedCount: number;     // raw patient count in engaged cohort
+  notEngagedCount: number;  // raw patient count in not-engaged cohort
+  gap: number;              // engagedPct - notEngagedPct
 }
 
 async function handler(request: NextRequest) {
@@ -91,7 +105,7 @@ async function handler(request: NextRequest) {
           SELECT DISTINCT ON (a.uhid)
             a.uhid,
             a.patient_gender,
-            a.age_group
+            ${AGE_BUCKET_CASE} AS age_group
           FROM aggregated_table.agg_kpi a
           WHERE a.cug_code_mapped = $1
           ORDER BY a.uhid, a.consult_date DESC NULLS LAST
@@ -278,7 +292,14 @@ async function handler(request: NextRequest) {
       .map(([disease, counts]) => {
         const ePct = engagedTotal > 0 ? Math.round((counts.engaged / engagedTotal) * 1000) / 10 : 0;
         const nPct = notEngagedTotal > 0 ? Math.round((counts.notEngaged / notEngagedTotal) * 1000) / 10 : 0;
-        return { disease, engagedPct: ePct, notEngagedPct: nPct, gap: Math.round((ePct - nPct) * 10) / 10 };
+        return {
+          disease,
+          engagedPct: ePct,
+          notEngagedPct: nPct,
+          engagedCount: counts.engaged,
+          notEngagedCount: counts.notEngaged,
+          gap: Math.round((ePct - nPct) * 10) / 10,
+        };
       })
       .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
       .slice(0, 6);

@@ -161,7 +161,7 @@ interface CohortStats {
   chronicShare: number;
   topConditions: Array<{ disease: string; patients: number; share: number }>;
 }
-interface BiggestDiff { disease: string; engagedPct: number; notEngagedPct: number; gap: number }
+interface BiggestDiff { disease: string; engagedPct: number; notEngagedPct: number; engagedCount: number; notEngagedCount: number; gap: number }
 interface EngagementMix {
   engaged: CohortStats;
   notEngaged: CohortStats;
@@ -271,8 +271,8 @@ function CohortColumn({ cohort, label, accent }: { cohort: CohortStats; label: s
           {otherPct > 0 && <div style={{ width: `${otherPct}%`, backgroundColor: OTHER }} />}
         </div>
         <div className="flex items-center justify-between mt-1 text-[11px]" style={{ color: T.textSecondary }}>
-          <span><span style={{ color: MALE }}>● </span>Male {malePct}%</span>
-          <span><span style={{ color: FEMALE }}>● </span>Female {femalePct}%</span>
+          <span><span style={{ color: MALE }}>● </span>Male {malePct}% <span className="tabular-nums" style={{ color: T.textMuted }}>({cohort.gender.male.toLocaleString("en-IN")})</span></span>
+          <span><span style={{ color: FEMALE }}>● </span>Female {femalePct}% <span className="tabular-nums" style={{ color: T.textMuted }}>({cohort.gender.female.toLocaleString("en-IN")})</span></span>
         </div>
       </div>
 
@@ -286,17 +286,24 @@ function CohortColumn({ cohort, label, accent }: { cohort: CohortStats; label: s
               <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, backgroundColor: T.borderLight }}>
                 <div style={{ width: `${Math.max(0, Math.min(100, a.pct))}%`, height: "100%", backgroundColor: "#0d9488" }} />
               </div>
-              <span className="tabular-nums font-semibold text-right" style={{ color: T.textPrimary, width: 30 }}>{a.pct}%</span>
+              <span className="tabular-nums font-semibold text-right whitespace-nowrap" style={{ color: T.textPrimary }}>{a.pct}% <span className="font-normal" style={{ color: T.textMuted }}>({a.count.toLocaleString("en-IN")})</span></span>
             </div>
           ))}
         </div>
       </div>
 
       {/* Chronic share */}
-      <div className="flex items-baseline justify-between pt-2" style={{ borderTop: `1px solid ${T.borderLight}` }}>
-        <p className="text-[11.5px] font-semibold" style={{ color: T.textSecondary }}>Chronic share</p>
-        <p className="text-[16px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>{cohort.chronicShare}%</p>
-      </div>
+      {(() => {
+        const chronicCount = Math.round((cohort.patients * cohort.chronicShare) / 100);
+        return (
+          <div className="flex items-baseline justify-between pt-2" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+            <p className="text-[11.5px] font-semibold" style={{ color: T.textSecondary }}>Chronic share</p>
+            <p className="text-[16px] font-extrabold tabular-nums whitespace-nowrap" style={{ color: T.textPrimary }}>
+              {cohort.chronicShare}% <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>({chronicCount.toLocaleString("en-IN")})</span>
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Top conditions — bars sized by share, ranked */}
       <div>
@@ -310,7 +317,9 @@ function CohortColumn({ cohort, label, accent }: { cohort: CohortStats; label: s
                 <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, backgroundColor: T.borderLight }}>
                   <div style={{ width: `${w}%`, height: "100%", backgroundColor: accent }} />
                 </div>
-                <span className="tabular-nums font-semibold text-right" style={{ color: T.textPrimary, width: 32 }}>{Math.round(c.share)}%</span>
+                <span className="tabular-nums font-semibold text-right whitespace-nowrap" style={{ color: T.textPrimary }}>
+                  {Math.round(c.share)}% <span className="font-normal" style={{ color: T.textMuted }}>({c.patients.toLocaleString("en-IN")})</span>
+                </span>
               </div>
             );
           })}
@@ -468,14 +477,20 @@ function ConditionsStrip({ rows }: { rows: BiggestDiff[] }) {
                 <div className="flex-1 rounded-full overflow-hidden" style={{ height: 8, backgroundColor: T.borderLight }}>
                   <div style={{ width: `${eWidth}%`, height: "100%", backgroundColor: ENG, borderRadius: 999, transition: "width 200ms ease" }} />
                 </div>
-                <span className="text-[11.5px] tabular-nums font-bold" style={{ color: T.textPrimary, width: 42, textAlign: "right" }}>{r.engagedPct}%</span>
+                <span className="text-[11.5px] tabular-nums whitespace-nowrap text-right" style={{ color: T.textPrimary, minWidth: 84 }}>
+                  <span className="font-bold">{r.engagedPct}%</span>
+                  <span className="ml-1" style={{ color: T.textMuted }}>({r.engagedCount.toLocaleString("en-IN")})</span>
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <div className="flex-1 rounded-full overflow-hidden" style={{ height: 8, backgroundColor: T.borderLight }}>
                   <div style={{ width: `${nWidth}%`, height: "100%", backgroundColor: NEG, borderRadius: 999, transition: "width 200ms ease" }} />
                 </div>
-                <span className="text-[11.5px] tabular-nums" style={{ color: T.textSecondary, width: 42, textAlign: "right" }}>{r.notEngagedPct}%</span>
+                <span className="text-[11.5px] tabular-nums whitespace-nowrap text-right" style={{ color: T.textSecondary, minWidth: 84 }}>
+                  {r.notEngagedPct}%
+                  <span className="ml-1" style={{ color: T.textMuted }}>({r.notEngagedCount.toLocaleString("en-IN")})</span>
+                </span>
               </div>
 
               <div className="text-[12px] font-bold tabular-nums text-right" style={{ color: gapColor }}>
@@ -715,7 +730,7 @@ function WorkforceEngagementMix({ data }: { data: EngagementMix }) {
     >
       {/* Compact hero strip — one-line summary of the four anchor numbers */}
       <div className="flex flex-wrap gap-2 mt-3 mb-4">
-        <HeroPill value={`${engaged.shareOfBase}%`} label="of OHC users assessed" accent="#4f46e5" />
+        <HeroPill value={`${engaged.shareOfBase}% (${engaged.patients.toLocaleString("en-IN")})`} label="of OHC users assessed" accent="#4f46e5" />
         <HeroPill
           value={`${femaleSkew >= 0 ? "+" : ""}${femaleSkew}%`}
           label={femaleSkew >= 0 ? "more female than workforce" : "less female than workforce"}

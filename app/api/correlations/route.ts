@@ -552,7 +552,7 @@ const VISIT_COST_INR = 800;
 // Conservative industry estimate.
 const ENGAGEMENT_RATE = 0.6;
 // Maximum chronic-disease rows to surface on the card.
-const CARE_ADVANTAGE_DISEASE_LIMIT = 8;
+const CARE_ADVANTAGE_DISEASE_LIMIT = 10;
 
 interface CareAdvantageRow {
   disease: string;                  // raw disease name (UI strips parenthetical)

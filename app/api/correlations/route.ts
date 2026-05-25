@@ -291,6 +291,12 @@ async function handler(request: NextRequest) {
     const insights = buildInsights(cohorts, biggestDiffs, totalUsers);
     const actionPlan = buildActionPlan(cohorts, biggestDiffs, availableSpecialties);
 
+    // ── Chronic Conditions → OHC Care Advantage ──
+    // Per-disease comparison of workforce chronic patients vs the share actively
+    // seen at OHC in the last 12 months — used to quantify externally-avoided
+    // visits and to surface specialty-matched outreach programmes.
+    const careAdvantage = await buildCareAdvantage(cugCode, availableSpecialties, safeQuery);
+
     return NextResponse.json({
       // Stubbed-out legacy fields kept for backward compat with existing card grid.
       kpis: {},
@@ -303,6 +309,7 @@ async function handler(request: NextRequest) {
         actionPlan,
         availableSpecialtyCount: availableSpecialties.size,
       },
+      careAdvantage,
       lastUpdated: new Date().toISOString(),
       meta: { hadErrors: failedQueries.length > 0, failedQueries },
     });
@@ -535,6 +542,223 @@ function stripParens(s: string): string {
 function pctOf(diffs: BiggestDiff[], needle: string): number {
   const hit = diffs.find((d) => d.disease.toLowerCase().includes(needle.toLowerCase()));
   return hit ? Math.round(hit.engagedPct) : 0;
+}
+
+// ─── Chronic Conditions → OHC Care Advantage ───
+// Default benchmark cost per external OPD visit (₹). Configurable per tenant
+// later — kept here as a single constant for now.
+const VISIT_COST_INR = 800;
+// Share of targeted unengaged employees expected to actually onboard a drive.
+// Conservative industry estimate.
+const ENGAGEMENT_RATE = 0.6;
+// Maximum chronic-disease rows to surface on the card.
+const CARE_ADVANTAGE_DISEASE_LIMIT = 8;
+
+interface CareAdvantageRow {
+  disease: string;                  // raw disease name (UI strips parenthetical)
+  workforcePatients: number;        // distinct uhid with this chronic dx ever
+  activePatients: number;           // of those, uhid with ≥1 OHC visit in last 12 months
+  activeRatePct: number;            // active / workforce × 100
+  avgSpecialties: number;           // avg distinct specialties per active patient (12 mo)
+  visitsAvoided: number;            // total OHC visits by active patients (12 mo)
+  costAvoidedInr: number;           // visitsAvoided × VISIT_COST_INR
+}
+
+interface CareProgrammeOpportunity {
+  programme: string;                // human-readable programme title
+  disease: string;                  // disease this programme targets
+  unengagedHeadcount: number;       // workforcePatients − activePatients
+  specialties: string[];            // specialties used by the programme
+  capturedValueInr: number;         // unengaged × ENGAGEMENT_RATE × avg visits × cost
+  description: string;              // soft-consultative one-liner
+}
+
+interface CareAdvantageResponse {
+  rows: CareAdvantageRow[];
+  totals: {
+    workforcePatients: number;
+    activePatients: number;
+    activeRatePct: number;
+    visitsAvoided: number;
+    costAvoidedInr: number;
+  };
+  programmeOpportunities: CareProgrammeOpportunity[];
+  totalOpportunityHeadcount: number;
+  totalOpportunityValueInr: number;
+  benchmark: { visitCostInr: number; engagementRate: number };
+}
+
+// Disease → outreach programme template library. Each template names its
+// required specialties; we only emit programmes whose specialties actually
+// run at the tenant's clinic.
+const CARE_PROGRAMMES: ReadonlyArray<{
+  programme: string;
+  match: string[];          // case-insensitive substrings against disease name
+  requires: string[];        // case-insensitive specialty names
+}> = [
+  { programme: "Lipid Wellness Drive", match: ["dyslipidemia"], requires: ["internal medicine", "dietetics"] },
+  { programme: "Diabetes Quarterly Review", match: ["diabetes", "prediabetes", "pre-dm"], requires: ["internal medicine", "dietetics"] },
+  { programme: "Heart-Health Check-Up", match: ["hypertension", "cvd", "cardiovascular"], requires: ["general physician"] },
+  { programme: "Nutrition + GP Follow-up", match: ["anaemia", "anemia"], requires: ["general physician", "dietetics"] },
+  { programme: "Joint Care Programme", match: ["arthritis"], requires: ["physiotherapy"] },
+  { programme: "Thyroid Wellness Programme", match: ["thyroid"], requires: ["internal medicine"] },
+  { programme: "Weight Management Drive", match: ["obesity"], requires: ["dietetics"] },
+  { programme: "Liver Health Programme", match: ["liver"], requires: ["internal medicine"] },
+  { programme: "Workplace Wellness Programme", match: ["stress", "mental health"], requires: ["psychologist"] },
+  { programme: "Women's Wellness Day", match: ["pcos"], requires: ["obstetrics and gynecology"] },
+];
+
+async function buildCareAdvantage(
+  cugCode: string,
+  availableSpecialties: Set<string>,
+  safeQuery: <T>(fn: () => Promise<T[]>, tag: string) => Promise<T[]>,
+): Promise<CareAdvantageResponse> {
+  // ── Per-disease query: workforce + active + visits + avg specialties ──
+  const rowsRaw = await safeQuery(
+    () => dwQuery<{
+      disease: string;
+      workforce: string;
+      active: string;
+      visits_12mo: string;
+      avg_specs: string;
+    }>(
+      `WITH chronic AS (
+         SELECT DISTINCT uhid, disease
+         FROM aggregated_table.agg_diagnosis
+         WHERE cug_code_mapped = $1
+           AND status IN ('Chronic','Acute or Chronic')
+           AND disease IS NOT NULL AND TRIM(disease) <> ''
+       ),
+       activity AS (
+         -- "Active" = at least 2 completed OHC visits in the last 12 months,
+         -- the minimum clinically meaningful follow-up cadence for a chronic
+         -- patient. Patients with 0 or 1 visits drop out and become the
+         -- re-engagement opportunity.
+         SELECT
+           uhid,
+           SUM(total_consult_count)::int AS visits_12mo,
+           COUNT(DISTINCT speciality_name)::int AS specs_12mo
+         FROM aggregated_table.agg_kpi
+         WHERE cug_code_mapped = $1
+           AND stage = 'Completed'
+           AND consult_date >= (CURRENT_DATE - INTERVAL '12 months')
+         GROUP BY uhid
+         HAVING SUM(total_consult_count) >= 2
+       )
+       SELECT
+         c.disease,
+         COUNT(DISTINCT c.uhid)::bigint AS workforce,
+         COUNT(DISTINCT c.uhid) FILTER (WHERE a.uhid IS NOT NULL)::bigint AS active,
+         COALESCE(SUM(a.visits_12mo) FILTER (WHERE a.uhid IS NOT NULL), 0)::bigint AS visits_12mo,
+         COALESCE(AVG(a.specs_12mo) FILTER (WHERE a.uhid IS NOT NULL), 0)::float AS avg_specs
+       FROM chronic c
+       LEFT JOIN activity a ON a.uhid = c.uhid
+       GROUP BY c.disease
+       ORDER BY workforce DESC
+       LIMIT ${CARE_ADVANTAGE_DISEASE_LIMIT}`,
+      [cugCode]
+    ),
+    "careAdvantageRows"
+  );
+
+  // ── Totals query (distinct patients across all chronic dx) ──
+  const totalsRaw = await safeQuery(
+    () => dwQuery<{ total_workforce: string; total_active: string; total_visits: string }>(
+      `WITH chronic_uhids AS (
+         SELECT DISTINCT uhid
+         FROM aggregated_table.agg_diagnosis
+         WHERE cug_code_mapped = $1
+           AND status IN ('Chronic','Acute or Chronic')
+       ),
+       activity AS (
+         SELECT uhid, SUM(total_consult_count)::int AS visits_12mo
+         FROM aggregated_table.agg_kpi
+         WHERE cug_code_mapped = $1
+           AND stage = 'Completed'
+           AND consult_date >= (CURRENT_DATE - INTERVAL '12 months')
+         GROUP BY uhid
+         HAVING SUM(total_consult_count) >= 2
+       )
+       SELECT
+         COUNT(DISTINCT c.uhid)::bigint AS total_workforce,
+         COUNT(DISTINCT c.uhid) FILTER (WHERE a.uhid IS NOT NULL)::bigint AS total_active,
+         COALESCE(SUM(a.visits_12mo) FILTER (WHERE a.uhid IS NOT NULL), 0)::bigint AS total_visits
+       FROM chronic_uhids c
+       LEFT JOIN activity a ON a.uhid = c.uhid`,
+      [cugCode]
+    ),
+    "careAdvantageTotals"
+  );
+
+  // ── Build per-disease rows ──
+  const rows: CareAdvantageRow[] = rowsRaw.map((r) => {
+    const workforce = Number(r.workforce);
+    const active = Number(r.active);
+    const visits = Number(r.visits_12mo);
+    const avgSpecs = Math.round(Number(r.avg_specs) * 10) / 10;
+    return {
+      disease: r.disease,
+      workforcePatients: workforce,
+      activePatients: active,
+      activeRatePct: workforce > 0 ? Math.round((active / workforce) * 100) : 0,
+      avgSpecialties: avgSpecs,
+      visitsAvoided: visits,
+      costAvoidedInr: visits * VISIT_COST_INR,
+    };
+  });
+
+  const totalsRow = totalsRaw[0] || { total_workforce: "0", total_active: "0", total_visits: "0" };
+  const tWorkforce = Number(totalsRow.total_workforce);
+  const tActive = Number(totalsRow.total_active);
+  const tVisits = Number(totalsRow.total_visits);
+
+  // ── Programme opportunities ──
+  // For each disease row, find a matching programme whose required specialties
+  // exist at the clinic. Headcount = workforce − active; captured value uses
+  // the per-disease avg visits if we have it, else falls back to 4 visits / yr.
+  const hasAll = (req: string[]) => req.every((s) => availableSpecialties.has(s.toLowerCase()));
+  const programmes: CareProgrammeOpportunity[] = [];
+  for (const row of rows) {
+    const tmpl = CARE_PROGRAMMES.find((p) => p.match.some((m) => row.disease.toLowerCase().includes(m)));
+    if (!tmpl) continue;
+    if (!hasAll(tmpl.requires)) continue;
+    const unengaged = row.workforcePatients - row.activePatients;
+    if (unengaged <= 0) continue;
+    const avgVisits = row.activePatients > 0 ? row.visitsAvoided / row.activePatients : 4;
+    const captured = Math.round(unengaged * ENGAGEMENT_RATE * avgVisits * VISIT_COST_INR);
+    // Title-case specialty names back from the lower-case match keys.
+    const tc = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+    const cleanDisease = row.disease.replace(/\s*\([^)]*\)\s*/g, "").replace(/\s*\[[^\]]*\]\s*/g, "").trim();
+    programmes.push({
+      programme: tmpl.programme,
+      disease: cleanDisease,
+      unengagedHeadcount: unengaged,
+      specialties: tmpl.requires.map(tc),
+      capturedValueInr: captured,
+      description: `Could engage ${unengaged} employees with ${cleanDisease} who aren't on regular follow-up.`,
+    });
+  }
+  // Sort opportunities by unengaged headcount desc so the biggest reach gap
+  // surfaces first.
+  programmes.sort((a, b) => b.unengagedHeadcount - a.unengagedHeadcount);
+
+  const totalOpportunityHeadcount = programmes.reduce((s, p) => s + p.unengagedHeadcount, 0);
+  const totalOpportunityValueInr = programmes.reduce((s, p) => s + p.capturedValueInr, 0);
+
+  return {
+    rows,
+    totals: {
+      workforcePatients: tWorkforce,
+      activePatients: tActive,
+      activeRatePct: tWorkforce > 0 ? Math.round((tActive / tWorkforce) * 100) : 0,
+      visitsAvoided: tVisits,
+      costAvoidedInr: tVisits * VISIT_COST_INR,
+    },
+    programmeOpportunities: programmes,
+    totalOpportunityHeadcount,
+    totalOpportunityValueInr,
+    benchmark: { visitCostInr: VISIT_COST_INR, engagementRate: ENGAGEMENT_RATE },
+  };
 }
 
 export const GET = withCache(handler, { endpoint: "correlations" });

@@ -174,9 +174,49 @@ interface EngagementMix {
   availableSpecialtyCount: number;
 }
 
-// Slim parenthetical detail off long disease names for compact rendering.
+// ── Chronic Conditions → OHC Care Advantage types ──
+interface CareAdvantageRow {
+  disease: string;
+  workforcePatients: number;
+  activePatients: number;
+  activeRatePct: number;
+  avgSpecialties: number;
+  visitsAvoided: number;
+  costAvoidedInr: number;
+}
+interface CareProgrammeOpportunity {
+  programme: string;
+  disease: string;
+  unengagedHeadcount: number;
+  specialties: string[];
+  capturedValueInr: number;
+  description: string;
+}
+interface CareAdvantage {
+  rows: CareAdvantageRow[];
+  totals: {
+    workforcePatients: number;
+    activePatients: number;
+    activeRatePct: number;
+    visitsAvoided: number;
+    costAvoidedInr: number;
+  };
+  programmeOpportunities: CareProgrammeOpportunity[];
+  totalOpportunityHeadcount: number;
+  totalOpportunityValueInr: number;
+  benchmark: { visitCostInr: number; engagementRate: number };
+}
+
+// Slim parenthetical AND bracketed detail off long disease names for compact
+// rendering. Without the bracket strip, "Arthritis [including Osteoarthritis
+// (OA) and other …]" collapses to "Arthritis [including Osteoarthritis and
+// other …]" with the inner-parens removal eating the surrounding spaces.
 function shortDisease(s: string): string {
-  return s.replace(/\s*\([^)]*\)\s*/g, "").trim();
+  return s
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s*\[[^\]]*\]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ─── Mini horizontal bar used inside cohort breakdowns ───
@@ -449,6 +489,189 @@ function ConditionsStrip({ rows }: { rows: BiggestDiff[] }) {
   );
 }
 
+// ─── Tinted hero pill — used by the Care Advantage card ───
+// Subtle accent-tinted background gives each metric its own colour identity
+// without screaming. The row sits as a 4-up grid, not bordered chips.
+function TintedPill({ value, label, accent }: { value: string; label: string; accent: string }) {
+  return (
+    <div className="flex items-baseline gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: `${accent}10`, border: `1px solid ${accent}33` }}>
+      <span className="text-[18px] font-extrabold tabular-nums leading-none" style={{ color: accent }}>{value}</span>
+      <span className="text-[11.5px] leading-snug" style={{ color: T.textSecondary }}>{label}</span>
+    </div>
+  );
+}
+
+// ─── Chronic Conditions → OHC Care Advantage Card ───
+// Number formatters: rupee value in Lakh for any amount ≥ 1L, else with
+// thousand separators. Visit counts always use the IN locale grouping.
+function formatInr(amount: number): string {
+  if (!amount && amount !== 0) return "—";
+  if (amount >= 1_00_00_000) return `₹${(amount / 1_00_00_000).toFixed(2)} Cr`;
+  if (amount >= 1_00_000) return `₹${(amount / 1_00_000).toFixed(amount >= 10_00_000 ? 1 : 2)} L`;
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+function formatCount(n: number): string {
+  return n.toLocaleString("en-IN");
+}
+
+function ChronicCareAdvantageCard({ data }: { data: CareAdvantage }) {
+  const { rows, totals, programmeOpportunities, totalOpportunityHeadcount, totalOpportunityValueInr, benchmark } = data;
+  const [planExpanded, setPlanExpanded] = useState(false);
+  const VISIBLE_PROGRAMMES = 2;
+
+  if (rows.length === 0) {
+    return (
+      <CVCard
+        accentColor="#0d9488"
+        title="Chronic Conditions → OHC Care Advantage"
+        subtitle="No chronic-disease data yet for this client."
+        tooltipText="Shows how OHC is absorbing chronic-care visits for the workforce, with named programme opportunities for the un-engaged segment."
+        chartData={data}
+        chartTitle="Chronic Conditions → OHC Care Advantage"
+        chartId="careAdvantage"
+        pageSlug="/portal/correlations"
+      >
+        <div className="px-2 py-10 text-center text-[13px]" style={{ color: T.textMuted }}>
+          No chronic-disease patients recorded for this client yet.
+        </div>
+      </CVCard>
+    );
+  }
+
+  const visibleProgrammes = planExpanded ? programmeOpportunities : programmeOpportunities.slice(0, VISIBLE_PROGRAMMES);
+  const hiddenProgrammes = Math.max(0, programmeOpportunities.length - VISIBLE_PROGRAMMES);
+
+  return (
+    <CVCard
+      accentColor="#0d9488"
+      title="Chronic Conditions → OHC Care Advantage"
+      subtitle={`Shows how OHC is absorbing chronic-care visits for your workforce, and the next outreach opportunities. All percentages cover the last 12 months. External-visit cost benchmarked at ${formatInr(benchmark.visitCostInr)}.`}
+      tooltipText="Per-disease comparison of workforce chronic patients vs. those actively followed up at OHC in the last 12 months. Active = at least 2 completed OHC consults in the window. Programme opportunities are filtered to specialties this clinic actually runs."
+      chartData={data}
+      chartTitle="Chronic Conditions → OHC Care Advantage"
+      chartDescription="Per-disease workforce chronic patients vs OHC-active in last 12 months. Quantifies external visits and rupee value absorbed and surfaces named outreach programme opportunities for unengaged employees."
+      chartId="careAdvantage"
+      pageSlug="/portal/correlations"
+    >
+      {/* Hero pill strip — each pill gets a tinted background matching its accent */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-3 mb-3">
+        <TintedPill value={`${totals.activeRatePct}%`} label="chronic patients active at OHC" accent="#0d9488" />
+        <TintedPill value={`~${formatCount(totals.visitsAvoided)}`} label="external visits avoided / yr" accent="#4f46e5" />
+        <TintedPill value={`~${formatInr(totals.costAvoidedInr)}`} label="external cost avoided / yr" accent="#7c3aed" />
+        <TintedPill value={`${formatCount(totalOpportunityHeadcount)}`} label="employees in expansion programmes" accent="#d97706" />
+      </div>
+
+      {/* Per-disease table — compact rows with a magnitude bar behind the rupee column */}
+      <div className="rounded-2xl overflow-hidden mb-3" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12.5px]" style={{ borderCollapse: "collapse", minWidth: 760 }}>
+            <thead>
+              <tr style={{ backgroundColor: "#f8fafc" }}>
+                <th className="text-left px-4 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>Disease</th>
+                <th className="text-right px-3 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>Patients in workforce</th>
+                <th className="text-right px-3 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>
+                  Active at OHC
+                  <div className="text-[10px] font-medium" style={{ color: T.textMuted }}>(last 12 months)</div>
+                </th>
+                <th className="text-right px-3 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>
+                  Coordinated care
+                  <div className="text-[10px] font-medium" style={{ color: T.textMuted }}>(avg specialties / yr)</div>
+                </th>
+                <th className="text-right px-3 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>External visits avoided / yr</th>
+                <th className="text-right px-3 py-2 font-bold text-[11.5px]" style={{ color: T.textSecondary }}>External cost avoided / yr</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const maxCost = Math.max(...rows.map((r) => r.costAvoidedInr), 1);
+                return rows.map((r, idx) => {
+                  const barWidth = Math.max(4, Math.round((r.costAvoidedInr / maxCost) * 100));
+                  return (
+                    <tr key={r.disease} style={{ borderTop: `1px solid ${T.borderLight}`, backgroundColor: idx % 2 === 1 ? "#fcfcfd" : "#fff" }}>
+                      <td className="text-left px-4 py-1.5 font-semibold truncate max-w-[260px]" style={{ color: T.textPrimary }} title={r.disease}>{shortDisease(r.disease)}</td>
+                      <td className="text-right px-3 py-1.5 tabular-nums" style={{ color: T.textPrimary }}>{formatCount(r.workforcePatients)}</td>
+                      <td className="text-right px-3 py-1.5 tabular-nums" style={{ color: T.textPrimary }}>
+                        <span className="font-bold">{r.activeRatePct}%</span>
+                        <span className="text-[11px] ml-1" style={{ color: T.textSecondary }}>({formatCount(r.activePatients)})</span>
+                      </td>
+                      <td className="text-right px-3 py-1.5 tabular-nums" style={{ color: T.textPrimary }}>{r.avgSpecialties.toFixed(1)}</td>
+                      <td className="text-right px-3 py-1.5 tabular-nums font-semibold" style={{ color: T.textPrimary }}>{formatCount(r.visitsAvoided)}</td>
+                      <td className="text-right px-3 py-1.5 tabular-nums font-bold relative" style={{ color: "#0d9488" }}>
+                        {/* Magnitude bar behind the value — instantly shows which diseases drive value */}
+                        <div className="absolute inset-y-1 right-2 rounded" style={{ width: `calc(${barWidth}% - 1rem)`, backgroundColor: "#0d948814", maxWidth: "calc(100% - 1rem)" }} />
+                        <span className="relative">~{formatInr(r.costAvoidedInr)}</span>
+                      </td>
+                    </tr>
+                  );
+                });
+              })()}
+              {/* Totals row — heavier visual weight */}
+              <tr style={{ borderTop: `2px solid ${T.border}`, backgroundColor: "#f3f4f6" }}>
+                <td className="text-left px-4 py-2 font-extrabold uppercase text-[11px] tracking-[0.06em]" style={{ color: T.textPrimary }}>Total</td>
+                <td className="text-right px-3 py-2 tabular-nums font-extrabold" style={{ color: T.textPrimary }}>{formatCount(totals.workforcePatients)}</td>
+                <td className="text-right px-3 py-2 tabular-nums font-extrabold" style={{ color: T.textPrimary }}>
+                  {totals.activeRatePct}%
+                  <span className="text-[11px] font-semibold ml-1" style={{ color: T.textSecondary }}>({formatCount(totals.activePatients)})</span>
+                </td>
+                <td className="text-right px-3 py-2" style={{ color: T.textMuted }}>—</td>
+                <td className="text-right px-3 py-2 tabular-nums font-extrabold" style={{ color: T.textPrimary }}>{formatCount(totals.visitsAvoided)}</td>
+                <td className="text-right px-3 py-2 tabular-nums font-extrabold text-[13.5px]" style={{ color: "#0d9488" }}>~{formatInr(totals.costAvoidedInr)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* AI Programme Opportunities */}
+      {programmeOpportunities.length > 0 && (
+        <div className="rounded-2xl px-5 py-4" style={{ border: "1px solid #c7d2fe", backgroundColor: "#f5f3ff" }}>
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-[13px] font-bold" style={{ color: T.textPrimary }}>AI-generated programme opportunities</p>
+              <span className="text-[9px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#c7d2fe", color: "#3730a3" }}>✦ AI</span>
+            </div>
+            {totalOpportunityValueInr > 0 && (
+              <p className="text-[11px] italic" style={{ color: "#4338ca" }}>
+                ~{formatInr(totalOpportunityValueInr)} additional value if all engaged
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {visibleProgrammes.map((p) => (
+              <div key={p.programme} className="rounded-lg px-4 py-3" style={{ backgroundColor: "#fff", border: "1px solid #e0e7ff" }}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <p className="text-[13px] font-bold leading-snug" style={{ color: T.textPrimary }}>{p.programme}</p>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {p.specialties.map((s) => (
+                      <span key={s} className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ backgroundColor: "#eef2ff", color: "#4338ca" }}>{s}</span>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[12px] mt-1 leading-snug" style={{ color: T.textSecondary }}>{p.description}</p>
+                <p className="text-[11.5px] mt-1.5 leading-snug font-semibold" style={{ color: "#0d9488" }}>
+                  Estimated captured value if engaged: ~{formatInr(p.capturedValueInr)} / year
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {hiddenProgrammes > 0 || planExpanded ? (
+            <button
+              onClick={() => setPlanExpanded((v) => !v)}
+              className="mt-3 self-start text-[11.5px] font-bold inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors"
+              style={{ color: "#4338ca", backgroundColor: "#e0e7ff" }}
+            >
+              {planExpanded ? "View less" : `View ${hiddenProgrammes} more programme opportunit${hiddenProgrammes === 1 ? "y" : "ies"}`}
+              <span className="text-[10px]">{planExpanded ? "▲" : "▼"}</span>
+            </button>
+          ) : null}
+        </div>
+      )}
+    </CVCard>
+  );
+}
+
 // ─── Emotional Wellbeing → Chronic Care Insights Card ───
 function WorkforceEngagementMix({ data }: { data: EngagementMix }) {
   const { engaged, notEngaged, biggestDifferences, insights, actionPlan } = data;
@@ -549,6 +772,7 @@ export default function CorrelationsPage() {
   const mentalPhysical = d?.mentalPhysical || fallbackData.mentalPhysical;
   const appEngagement = d?.appEngagement || fallbackData.appEngagement;
   const engagementMix: EngagementMix | undefined = d?.engagementMix;
+  const careAdvantage: CareAdvantage | undefined = d?.careAdvantage;
 
   if (isLoading) {
     return (
@@ -612,6 +836,7 @@ export default function CorrelationsPage() {
             pageSlug="/portal/correlations"
             pageTitle="Correlations"
             charts={[
+              { id: "careAdvantage", label: "Chronic Conditions → OHC Care Advantage" },
               { id: "engagementMix", label: "Emotional Wellbeing → Chronic Care Insights" },
               { id: "ohcToAhc", label: "OHC Utilization → AHC Uptake" },
               { id: "ahcToOhc", label: "AHC Abnormalities → OHC Follow-ups" },
@@ -628,6 +853,11 @@ export default function CorrelationsPage() {
         <div className="px-4 py-2 rounded-xl text-sm font-medium text-center mb-4" style={{ backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
           Preview Mode — changes not saved yet
         </div>
+      )}
+
+      {/* ── Chronic Conditions → OHC Care Advantage (full-row, sits above Emotional Wellbeing card) ── */}
+      {isChartVisible("careAdvantage") && careAdvantage && (
+        <ChronicCareAdvantageCard data={careAdvantage} />
       )}
 
       {/* ── Emotional Wellbeing → Chronic Care Insights (full-row, above grid) ── */}

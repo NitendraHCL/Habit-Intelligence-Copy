@@ -528,7 +528,7 @@ function WorkforceEngagementMix({ data }: { data: EngagementMix }) {
 // ─── Main Page ───
 export default function CorrelationsPage() {
   usePageAccess("/portal/correlations");
-  const { data, isLoading, mutate } = useDashboardData("correlations");
+  const { data, isLoading, refresh, isRefreshing } = useDashboardData("correlations");
   const { user } = useAuth();
   const { isChartVisible: globalVisible } = useConfig();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
@@ -541,7 +541,7 @@ export default function CorrelationsPage() {
     }
     return globalVisible("/portal/correlations", chartId);
   };
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
 
   const d = data as any;
   const ohcToAhc = d?.ohcToAhc || fallbackData.ohcToAhc;
@@ -579,17 +579,34 @@ export default function CorrelationsPage() {
       />
 
       <div className="flex items-center justify-end gap-2 mb-4">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={async () => { setIsRefreshing(true); await mutate(); setIsRefreshing(false); }}
-              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
-            >
-              <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Refresh data</TooltipContent>
-        </Tooltip>
+        <div className="relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={async () => {
+                  const ok = await refresh();
+                  if (ok) {
+                    setShowRefreshToast(true);
+                    setTimeout(() => setShowRefreshToast(false), 3000);
+                  }
+                }}
+                disabled={isRefreshing}
+                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className={`size-4 text-gray-600 ${isRefreshing ? "animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh data</TooltipContent>
+          </Tooltip>
+          {showRefreshToast && (
+            <div className="absolute top-full right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div className="flex items-center gap-2 rounded-lg bg-[#111827] px-3 py-2 text-white shadow-lg whitespace-nowrap">
+                <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <span className="text-[12px] font-medium">Data refreshed</span>
+              </div>
+            </div>
+          )}
+        </div>
         {isSuperAdmin && (
           <ConfigurePanel
             pageSlug="/portal/correlations"

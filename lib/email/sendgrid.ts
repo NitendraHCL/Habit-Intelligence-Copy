@@ -77,5 +77,17 @@ export async function sendTransactionalEmail(params: SendEmailParams): Promise<v
     text: params.text,
     ...(params.html ? { html: params.html } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    // Disable SendGrid's automatic click + open tracking for every
+    // transactional email. The tracker rewrites every link to look like
+    // `https://u22544346.ct.sendgrid.net/ls/click?upn=...` which (a) hides
+    // the real URL from the user's tooltip / address bar and (b) makes
+    // corporate spam filters and security-aware recipients suspicious.
+    // For OTPs, password notifications and the welcome email there is no
+    // value in tracking opens or clicks — turn it off so URLs render as
+    // their genuine selves.
+    trackingSettings: {
+      clickTracking: { enable: false, enableText: false },
+      openTracking: { enable: false },
+    },
   });
 }

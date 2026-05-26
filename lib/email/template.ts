@@ -82,7 +82,7 @@ export function renderBrandedEmail(params: BrandedEmailParams): BrandedEmail {
           <tr>
             <td style="padding:24px 32px 28px;border-top:1px solid #E5E7EB;">
               <p style="margin:0 0 6px;font-size:12px;color:#6B7280;">
-                Need help? Reach us at <a href="mailto:support.healthcare@hclhealthcare.in" style="color:#4F46E5;text-decoration:none;">support.healthcare@hclhealthcare.in</a>.
+                Need help? Reach us at <a href="mailto:customerexperience@hclhealthcare.in" style="color:#4F46E5;text-decoration:none;">customerexperience@hclhealthcare.in</a>.
               </p>
               <p style="margin:0;font-size:11px;color:#9CA3AF;">
                 Habit Intelligence by HCL Healthcare &middot; © ${new Date().getFullYear()} HCL Healthcare. All rights reserved.
@@ -103,7 +103,7 @@ export function renderBrandedEmail(params: BrandedEmailParams): BrandedEmail {
     `${params.title}\n\n` +
     `${params.intro}\n\n` +
     `${params.textBody}\n\n` +
-    `Need help? Email support.healthcare@hclhealthcare.in\n` +
+    `Need help? Email customerexperience@hclhealthcare.in\n` +
     `— Habit Intelligence`;
 
   const attachments: InlineAttachment[] = cachedLogo

@@ -49,16 +49,20 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
         </td>
       </tr>
     </table>
-    <div style="margin:18px 0;">
+    <div style="margin:18px 0 6px;">
       <a href="${escapeHtml(signInUrl)}" style="display:inline-block;background:linear-gradient(135deg,#4F46E5 0%,#6D28D9 100%);color:#FFFFFF;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">Sign in to Habit Intelligence</a>
     </div>
+    <p style="margin:0 0 14px;font-size:12px;line-height:1.55;color:#6B7280;">
+      Or copy this link into your browser:<br>
+      <a href="${escapeHtml(signInUrl)}" style="color:#4F46E5;text-decoration:none;word-break:break-all;">${escapeHtml(signInUrl)}</a>
+    </p>
     <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#374151;">
       For your security, we'll ask you to choose your own password the first time you sign in. The temporary one above only works once.
     </p>
   `;
   const reassuranceHtml = `
     <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#6B7280;">
-      Didn't expect this email? Forward it to <a href="mailto:support.healthcare@hclhealthcare.in" style="color:#4F46E5;text-decoration:none;">support.healthcare@hclhealthcare.in</a> and we'll look into it.
+      Didn't expect this email? Forward it to <a href="mailto:customerexperience@hclhealthcare.in" style="color:#4F46E5;text-decoration:none;">customerexperience@hclhealthcare.in</a> and we'll look into it.
     </p>
   `;
 
@@ -73,7 +77,7 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
       `Temporary password: ${params.tempPassword}\n\n` +
       `Sign in: ${signInUrl}\n\n` +
       `For your security, you'll be asked to choose your own password the first time you sign in. The temporary one above only works once.\n\n` +
-      `Didn't expect this email? Forward it to support.healthcare@hclhealthcare.in and we'll look into it.`,
+      `Didn't expect this email? Forward it to customerexperience@hclhealthcare.in and we'll look into it.`,
   });
 
   await sendTransactionalEmail({
@@ -134,14 +138,18 @@ export async function sendPasswordChangedEmail(
     <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#374151;">
       Any existing sign-in sessions have been ended for security — you'll need to sign in again with the new password.
     </p>
-    <div style="margin:18px 0 0;">
+    <div style="margin:18px 0 6px;">
       <a href="${escapeHtml(signInUrl)}" style="display:inline-block;background:linear-gradient(135deg,#4F46E5 0%,#6D28D9 100%);color:#FFFFFF;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">Open Habit Intelligence</a>
     </div>
+    <p style="margin:0;font-size:12px;line-height:1.55;color:#6B7280;">
+      Or copy this link into your browser:<br>
+      <a href="${escapeHtml(signInUrl)}" style="color:#4F46E5;text-decoration:none;word-break:break-all;">${escapeHtml(signInUrl)}</a>
+    </p>
   `;
   const reassuranceHtml = `
     <p style="margin:18px 0 0;font-size:13px;line-height:1.6;color:#DC2626;">
       <strong>Wasn't you?</strong> Contact your administrator or email
-      <a href="mailto:support.healthcare@hclhealthcare.in" style="color:#DC2626;text-decoration:underline;">support.healthcare@hclhealthcare.in</a>
+      <a href="mailto:customerexperience@hclhealthcare.in" style="color:#DC2626;text-decoration:underline;">customerexperience@hclhealthcare.in</a>
       immediately so we can secure your account.
     </p>
   `;
@@ -155,7 +163,7 @@ export async function sendPasswordChangedEmail(
       `When: ${formattedWhen}\n\n` +
       `Any existing sign-in sessions have been ended for security — you'll need to sign in again with the new password.\n\n` +
       `Sign in: ${signInUrl}\n\n` +
-      `Wasn't you? Contact your administrator or email support.healthcare@hclhealthcare.in immediately so we can secure your account.`,
+      `Wasn't you? Contact your administrator or email customerexperience@hclhealthcare.in immediately so we can secure your account.`,
   });
 
   await sendTransactionalEmail({

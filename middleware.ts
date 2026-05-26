@@ -13,6 +13,10 @@ const PUBLIC_ROUTES = [
   "/api/auth/login",
   "/api/auth/verify-otp",
   "/api/auth/resend-otp",
+  // Password-reset endpoints — sit before the user has a session, gated by
+  // their own pending cookie instead of the standard auth check.
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
 ];
 // Static file extensions to skip
 const STATIC_EXTENSIONS = [".ico", ".png", ".jpg", ".svg", ".css", ".js", ".woff", ".woff2"];

@@ -31,6 +31,7 @@ model User {
   annotations         DashboardAnnotation[]
   chartComments       ChartComment[]
   loginOtps           LoginOtp[]
+  passwordResetOtps   PasswordResetOtp[]
 
   @@map("users")
 }
@@ -93,6 +94,35 @@ model LoginOtp {
   @@index([userId])
   @@index([expiresAt])
   @@map("login_otps")
+}
+
+/// Password-reset challenge — separate from `LoginOtp` so a stolen login
+/// OTP can never be replayed as a password reset and vice versa. Lifecycle:
+///   1. `forgot-password` issues a row with an OTP hash and pending cookie.
+///   2. `verify-otp` confirms the code and stamps `verifiedAt`; the row
+///      now authorizes a single password reset for the next ~5 minutes.
+///   3. `reset-password` reads the row, ensures `verifiedAt IS NOT NULL`
+///      and `expiresAt > now`, updates the password, deletes the row, and
+///      invalidates every session for that user.
+model PasswordResetOtp {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  otpHash      String   @map("otp_hash")
+  pendingToken String   @unique @map("pending_token")
+  /// Stamped when the OTP has been successfully verified. Until this is
+  /// set, /reset-password refuses to change the password. After reset,
+  /// the row is hard-deleted (so the pending cookie cannot be replayed).
+  verifiedAt   DateTime? @map("verified_at")
+  expiresAt    DateTime @map("expires_at")
+  attempts     Int      @default(0)
+  resendCount  Int      @default(0) @map("resend_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_otps")
 }
 
 // ── Client / Tenant ──

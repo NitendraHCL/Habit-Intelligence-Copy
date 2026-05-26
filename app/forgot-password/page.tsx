@@ -1,118 +1,65 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Eye, EyeOff, Lock, ShieldCheck, ArrowLeft, Mail } from "lucide-react";
+import { Eye, EyeOff, Lock, ShieldCheck, ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
 
-// Step machine for the login form. We keep this dead simple — credentials
-// first, OTP second. On any terminal MFA error we bounce back to step 1 so
-// the user re-enters their password (which re-issues a fresh OTP).
+/**
+ * Three-step state machine for forgot-password:
+ *   1. email      → user types their email, we email an OTP
+ *   2. otp        → user enters the 6-digit code
+ *   3. newPassword → user sets a new password (+ confirm)
+ *   4. done       → success card with a link back to /login
+ *
+ * The flow never auto-signs the user in. After reset, they go to /login
+ * and use the new password (and pass MFA if it's enabled for them).
+ *
+ * On reload at step 2 or 3, the user gets bounced back to step 1 — we
+ * don't try to resume mid-flow. It's a one-shot path.
+ */
 type Step =
-  | { kind: "credentials" }
-  | { kind: "otp"; maskedEmail: string; expiresAt: string };
+  | { kind: "email" }
+  | { kind: "otp"; maskedEmail: string; expiresAt: string }
+  | { kind: "newPassword"; maskedEmail: string }
+  | { kind: "done" };
 
-function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/portal/home";
-
-  const [step, setStep] = useState<Step>({ kind: "credentials" });
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleCredentialsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Login failed");
-        return;
-      }
-
-      // MFA path — move to the OTP step. NO session has been minted yet.
-      if (data.needsMfa) {
-        setStep({
-          kind: "otp",
-          maskedEmail: data.maskedEmail,
-          expiresAt: data.expiresAt,
-        });
-        return;
-      }
-
-      // No-MFA path — session is already set; go home.
-      router.push(redirect);
-      router.refresh();
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const backToCredentials = () => {
-    setStep({ kind: "credentials" });
-    setError("");
-    // Keep the email pre-filled but clear the password — they have to
-    // re-enter it to start a fresh challenge.
-    setPassword("");
-  };
+export default function ForgotPasswordPage() {
+  const [step, setStep] = useState<Step>({ kind: "email" });
 
   return (
     <div className="min-h-screen bg-white">
       <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[minmax(0,440px)_1fr]">
-        {/* LEFT: form */}
         <div className="relative flex flex-col px-8 py-10 lg:px-14 lg:py-12">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo-habit-expanded.svg"
-            alt="Habit Intelligence"
-            className="h-9 w-auto"
-          />
+          <img src="/logo-habit-expanded.svg" alt="Habit Intelligence" className="h-9 w-auto" />
 
           <div className="flex-1 flex flex-col justify-center max-w-[380px] w-full">
-            {step.kind === "credentials" ? (
-              <CredentialsStep
-                email={email}
-                password={password}
-                showPassword={showPassword}
-                error={error}
-                loading={loading}
-                onEmailChange={setEmail}
-                onPasswordChange={setPassword}
-                onToggleShowPassword={() => setShowPassword((v) => !v)}
-                onSubmit={handleCredentialsSubmit}
+            {step.kind === "email" && (
+              <EmailStep
+                onNext={(maskedEmail, expiresAt) =>
+                  setStep({ kind: "otp", maskedEmail, expiresAt })
+                }
               />
-            ) : (
+            )}
+            {step.kind === "otp" && (
               <OtpStep
                 maskedEmail={step.maskedEmail}
                 expiresAt={step.expiresAt}
-                onBack={backToCredentials}
-                onSuccess={() => {
-                  router.push(redirect);
-                  router.refresh();
-                }}
-                onTerminalFailure={(msg) => {
-                  setError(msg);
-                  setStep({ kind: "credentials" });
-                }}
+                onBack={() => setStep({ kind: "email" })}
+                onSuccess={() =>
+                  setStep({ kind: "newPassword", maskedEmail: step.maskedEmail })
+                }
+                onTerminal={() => setStep({ kind: "email" })}
               />
             )}
+            {step.kind === "newPassword" && (
+              <NewPasswordStep
+                onSuccess={() => setStep({ kind: "done" })}
+                onTerminal={() => setStep({ kind: "email" })}
+              />
+            )}
+            {step.kind === "done" && <DoneStep />}
           </div>
 
           <div className="space-y-3 pt-6">
@@ -137,7 +84,6 @@ function LoginForm() {
           </div>
         </div>
 
-        {/* RIGHT: product preview */}
         <div
           className="hidden lg:flex relative items-center justify-center px-12 py-12 overflow-hidden"
           style={{
@@ -192,7 +138,6 @@ function LoginForm() {
                 <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
                 <span>8 sites</span>
               </div>
-
               <div className="mt-6 flex items-center justify-center gap-5 text-[11px] text-[#64748B]">
                 <span className="flex items-center gap-1.5">
                   <Lock size={12} className="text-[#475569]" />
@@ -212,39 +157,58 @@ function LoginForm() {
   );
 }
 
-// ─── credentials step ─────────────────────────────────────────────────────
+// ─── step 1: email ────────────────────────────────────────────────────────
 
-function CredentialsStep({
-  email,
-  password,
-  showPassword,
-  error,
-  loading,
-  onEmailChange,
-  onPasswordChange,
-  onToggleShowPassword,
-  onSubmit,
+function EmailStep({
+  onNext,
 }: {
-  email: string;
-  password: string;
-  showPassword: boolean;
-  error: string;
-  loading: boolean;
-  onEmailChange: (v: string) => void;
-  onPasswordChange: (v: string) => void;
-  onToggleShowPassword: () => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onNext: (maskedEmail: string, expiresAt: string) => void;
 }) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't start the reset.");
+        return;
+      }
+      onNext(data.maskedEmail, data.expiresAt);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
+      <Link
+        href="/login"
+        className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] hover:text-[#475569] transition-colors mb-4"
+      >
+        <ArrowLeft size={13} /> Back to sign-in
+      </Link>
+
       <h1 className="text-[26px] font-semibold text-[#0F172A] tracking-[-0.01em]">
-        Sign in to Habit Intelligence
+        Reset your password
       </h1>
-      <p className="text-[14px] text-[#64748B] mt-2">
-        Enter your credentials to access the analytics portal.
+      <p className="text-[14px] text-[#64748B] mt-2 leading-relaxed">
+        Enter the email tied to your Habit Intelligence account. We&rsquo;ll send you a
+        6-digit code to verify it&rsquo;s really you.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-5">
+      <form onSubmit={onSubmit} className="mt-7 space-y-5">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-[13px] rounded-lg px-3 py-2.5">
             {error}
@@ -259,62 +223,29 @@ function CredentialsStep({
             id="email"
             type="email"
             value={email}
-            onChange={(e) => onEmailChange(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="you@company.com"
             required
+            autoFocus
             autoComplete="email"
             className="w-full h-11 px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5] transition"
           />
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label htmlFor="password" className="text-[13px] font-medium text-[#334155]">
-              Password
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-[12px] text-[#4f46e5] hover:underline"
-            >
-              Forgot password?
-            </Link>
-          </div>
-          <div className="relative">
-            <input
-              id="password"
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder="Enter your password"
-              required
-              autoComplete="current-password"
-              className="w-full h-11 px-3.5 pr-11 rounded-lg border border-[#E2E8F0] bg-white text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5] transition"
-            />
-            <button
-              type="button"
-              onClick={onToggleShowPassword}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569] transition-colors"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </div>
         </div>
 
         <button
           type="submit"
           disabled={loading}
           style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
-          className="w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#4f46e5]/25 mt-1"
+          className="w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#4f46e5]/25"
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {loading ? "Sending code…" : "Send verification code"}
         </button>
       </form>
     </>
   );
 }
 
-// ─── OTP step ─────────────────────────────────────────────────────────────
+// ─── step 2: OTP ──────────────────────────────────────────────────────────
 
 const OTP_RESEND_COOLDOWN_SECONDS = 30;
 
@@ -323,13 +254,13 @@ function OtpStep({
   expiresAt,
   onBack,
   onSuccess,
-  onTerminalFailure,
+  onTerminal,
 }: {
   maskedEmail: string;
   expiresAt: string;
   onBack: () => void;
   onSuccess: () => void;
-  onTerminalFailure: (msg: string) => void;
+  onTerminal: () => void;
 }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -342,19 +273,16 @@ function OtpStep({
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Autofocus the OTP input on mount.
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Resend cooldown ticker.
   useEffect(() => {
     if (cooldownSec <= 0) return;
     const t = setInterval(() => setCooldownSec((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [cooldownSec]);
 
-  // Minutes-left ticker (just for the helper line "Code expires in N min").
   useEffect(() => {
     const t = setInterval(() => {
       setMinutesLeft(Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 60000)));
@@ -362,7 +290,7 @@ function OtpStep({
     return () => clearInterval(t);
   }, [expiresAt]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setInfo("");
@@ -372,7 +300,7 @@ function OtpStep({
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/auth/verify-otp", {
+      const res = await fetch("/api/auth/reset-password/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ otp: code }),
@@ -380,7 +308,7 @@ function OtpStep({
       const data = await res.json();
       if (!res.ok) {
         if (data.terminal) {
-          onTerminalFailure(data.error || "Verification failed.");
+          onTerminal();
           return;
         }
         const remaining =
@@ -398,22 +326,22 @@ function OtpStep({
     }
   };
 
-  const handleResend = async () => {
+  const onResend = async () => {
     setError("");
     setInfo("");
     setResending(true);
     try {
-      const res = await fetch("/api/auth/resend-otp", { method: "POST" });
+      const res = await fetch("/api/auth/reset-password/resend-otp", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         if (data.terminal) {
-          onTerminalFailure(data.error || "Verification session expired.");
+          onTerminal();
           return;
         }
         setError(data.error || "Couldn't resend the code.");
         return;
       }
-      setInfo("A new code has been sent to your email.");
+      setInfo("A new code has been sent.");
       setCooldownSec(OTP_RESEND_COOLDOWN_SECONDS);
       setCode("");
       inputRef.current?.focus();
@@ -431,21 +359,21 @@ function OtpStep({
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] hover:text-[#475569] transition-colors mb-4"
       >
-        <ArrowLeft size={13} /> Back to sign-in
+        <ArrowLeft size={13} /> Use a different email
       </button>
 
       <h1 className="text-[26px] font-semibold text-[#0F172A] tracking-[-0.01em]">
-        Verify it&rsquo;s you
+        Check your email
       </h1>
       <p className="text-[14px] text-[#64748B] mt-2 leading-relaxed">
-        We sent a 6-digit code to{" "}
-        <span className="inline-flex items-center gap-1 font-medium text-[#334155]">
-          <Mail size={13} /> {maskedEmail}
+        If <span className="font-medium text-[#334155]">{maskedEmail}</span> is registered with us,
+        we just sent a 6-digit code there.{" "}
+        <span className="inline-flex items-center gap-1 text-[#475569]">
+          <Mail size={13} /> Check your inbox.
         </span>
-        . Enter it below to finish signing in.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+      <form onSubmit={onSubmit} className="mt-7 space-y-5">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-[13px] rounded-lg px-3 py-2.5">
             {error}
@@ -486,14 +414,14 @@ function OtpStep({
           style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
           className="w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#4f46e5]/25"
         >
-          {submitting ? "Verifying…" : "Verify and sign in"}
+          {submitting ? "Verifying…" : "Verify code"}
         </button>
 
         <div className="flex items-center justify-between text-[12px]">
           <span className="text-[#64748B]">Didn&rsquo;t get the email?</span>
           <button
             type="button"
-            onClick={handleResend}
+            onClick={onResend}
             disabled={resending || cooldownSec > 0}
             className="text-[#4f46e5] font-medium hover:underline disabled:no-underline disabled:text-[#94A3B8] disabled:cursor-not-allowed"
           >
@@ -505,10 +433,164 @@ function OtpStep({
   );
 }
 
-export default function LoginPage() {
+// ─── step 3: new password ─────────────────────────────────────────────────
+
+const MIN_PASSWORD_LENGTH = 8;
+
+function NewPasswordStep({
+  onSuccess,
+  onTerminal,
+}: {
+  onSuccess: () => void;
+  onTerminal: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const lengthOk = password.length >= MIN_PASSWORD_LENGTH;
+  const matches = password.length > 0 && password === confirm;
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!lengthOk) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (!matches) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.terminal) {
+          onTerminal();
+          return;
+        }
+        setError(data.error || "Couldn't update your password.");
+        return;
+      }
+      onSuccess();
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
+    <>
+      <h1 className="text-[26px] font-semibold text-[#0F172A] tracking-[-0.01em]">
+        Set a new password
+      </h1>
+      <p className="text-[14px] text-[#64748B] mt-2 leading-relaxed">
+        Choose something you haven&rsquo;t used elsewhere. After this, you&rsquo;ll be signed
+        out of all devices and need to sign in again.
+      </p>
+
+      <form onSubmit={onSubmit} className="mt-7 space-y-5">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-[13px] rounded-lg px-3 py-2.5">
+            {error}
+          </div>
+        )}
+
+        <div>
+          <label htmlFor="new-password" className="block text-[13px] font-medium text-[#334155] mb-1.5">
+            New password
+          </label>
+          <div className="relative">
+            <input
+              id="new-password"
+              type={showPw ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+              required
+              autoFocus
+              autoComplete="new-password"
+              className="w-full h-11 px-3.5 pr-11 rounded-lg border border-[#E2E8F0] bg-white text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5] transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569] transition-colors"
+              aria-label={showPw ? "Hide password" : "Show password"}
+            >
+              {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+          <p className={`text-[11.5px] mt-1.5 ${lengthOk ? "text-emerald-600" : "text-[#94A3B8]"}`}>
+            {lengthOk ? "✓ Looks good." : `Minimum ${MIN_PASSWORD_LENGTH} characters.`}
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="confirm-password" className="block text-[13px] font-medium text-[#334155] mb-1.5">
+            Confirm new password
+          </label>
+          <input
+            id="confirm-password"
+            type={showPw ? "text" : "password"}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="Type it again"
+            required
+            autoComplete="new-password"
+            className="w-full h-11 px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5] transition"
+          />
+          {confirm.length > 0 && (
+            <p className={`text-[11.5px] mt-1.5 ${matches ? "text-emerald-600" : "text-red-600"}`}>
+              {matches ? "✓ Passwords match." : "Passwords don't match."}
+            </p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting || !lengthOk || !matches}
+          style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
+          className="w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#4f46e5]/25"
+        >
+          {submitting ? "Updating…" : "Update password"}
+        </button>
+      </form>
+    </>
+  );
+}
+
+// ─── step 4: done ─────────────────────────────────────────────────────────
+
+function DoneStep() {
+  return (
+    <div className="flex flex-col items-start">
+      <div className="flex items-center justify-center rounded-full bg-emerald-100 mb-4" style={{ width: 44, height: 44 }}>
+        <CheckCircle2 className="text-emerald-600" size={26} />
+      </div>
+      <h1 className="text-[26px] font-semibold text-[#0F172A] tracking-[-0.01em]">
+        Password updated
+      </h1>
+      <p className="text-[14px] text-[#64748B] mt-2 leading-relaxed">
+        You&rsquo;ve been signed out of all devices for security. Use your new password to
+        sign in again.
+      </p>
+      <Link
+        href="/login"
+        className="mt-7 inline-flex items-center justify-center w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 transition-all shadow-sm shadow-[#4f46e5]/25"
+        style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
+      >
+        Go to sign-in
+      </Link>
+    </div>
   );
 }

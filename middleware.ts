@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SESSION_COOKIE = "hi_session";
 
-// Routes that don't require authentication
-const PUBLIC_ROUTES = ["/login", "/api/auth/login"];
+// Routes that don't require authentication.
+// The MFA endpoints sit in the gap between credentials and session: they
+// run *after* /login mints the short-lived pending-OTP cookie but *before*
+// /verify-otp issues the real session, so they must be reachable without
+// an `hi_session` cookie. Their own handlers enforce the pending-OTP
+// cookie instead.
+const PUBLIC_ROUTES = [
+  "/login",
+  "/api/auth/login",
+  "/api/auth/verify-otp",
+  "/api/auth/resend-otp",
+];
 // Static file extensions to skip
 const STATIC_EXTENSIONS = [".ico", ".png", ".jpg", ".svg", ".css", ".js", ".woff", ".woff2"];
 

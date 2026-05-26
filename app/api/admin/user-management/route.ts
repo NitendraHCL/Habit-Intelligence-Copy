@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
         isActive: true,
         clientId: true,
         lastLoginAt: true,
+        mfaEnabled: true,
         createdAt: true,
         client: { select: { id: true, cugName: true, cugCode: true } },
         clientAssignments: {

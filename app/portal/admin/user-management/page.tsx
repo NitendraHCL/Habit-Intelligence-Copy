@@ -13,6 +13,8 @@ interface UserRow {
   isActive: boolean;
   clientId: string | null;
   lastLoginAt: string | null;
+  /** Email-OTP MFA — defaults to false. Admins flip it per-user. */
+  mfaEnabled: boolean;
   createdAt: string;
   client: { id: string; cugName: string; cugCode: string | null } | null;
   clientAssignments: { id: string; clientId: string; client: { id: string; cugName: string; cugCode: string | null } }[];
@@ -75,6 +77,24 @@ export default function UserManagementPage() {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !row.isActive }),
+    });
+    mutate();
+  }
+
+  async function toggleMfa(row: UserRow) {
+    const turningOn = !row.mfaEnabled;
+    if (
+      turningOn &&
+      !window.confirm(
+        `Turn on MFA for ${row.name}?\n\nThey'll get a 6-digit code by email at every sign-in. Any open sessions for this user will be signed out so they re-authenticate.`
+      )
+    ) {
+      return;
+    }
+    await fetch(`/api/admin/user-management/${row.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mfaEnabled: turningOn }),
     });
     mutate();
   }
@@ -161,6 +181,7 @@ export default function UserManagementPage() {
                   {tab === "internal" && (
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Assigned CUGs</th>
                   )}
+                  <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-600" title="Email-OTP two-factor authentication">MFA</th>
                   <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-600">Status</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-600">Actions</th>
                 </tr>
@@ -187,6 +208,30 @@ export default function UserManagementPage() {
                           : u.role === "KAM" ? "None" : "All"}
                       </td>
                     )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => toggleMfa(u)}
+                          role="switch"
+                          aria-checked={u.mfaEnabled}
+                          aria-label={u.mfaEnabled ? "Turn MFA off" : "Turn MFA on"}
+                          title={u.mfaEnabled
+                            ? "MFA on — click to turn off"
+                            : "MFA off — click to require email OTP at sign-in"}
+                          className={`relative inline-flex h-[18px] w-[34px] shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+                            u.mfaEnabled ? "bg-indigo-600" : "bg-gray-300"
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`inline-block h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform ${
+                              u.mfaEnabled ? "translate-x-[18px]" : "translate-x-[2px]"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <button
                         type="button"

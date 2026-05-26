@@ -7,6 +7,24 @@ import type { SessionUser, AuthSession } from "@/lib/types";
 const SESSION_COOKIE = "hi_session";
 const SESSION_EXPIRY_DAYS = 7;
 
+/**
+ * Idle-logout window. A session is treated as expired (and deleted) when no
+ * authenticated activity has been recorded for this many minutes. Kept here
+ * as a named constant + ms helper so both the server (this file) and the
+ * client (IdleTimer component) can reference the same value via the
+ * `/api/auth/session-policy` endpoint.
+ */
+export const IDLE_TIMEOUT_MINUTES = 60;
+const IDLE_TIMEOUT_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
+
+/**
+ * How often we'll touch the `last_activity` column. Writing on every request
+ * would hammer Postgres; we only persist a refresh if at least this many
+ * seconds have passed since the last persisted activity. The check itself
+ * still happens on every request — it's just the DB write that's throttled.
+ */
+const ACTIVITY_WRITE_THROTTLE_MS = 30 * 1000;
+
 export async function hashPassword(password: string): Promise<string> {
   const rounds = Number(process.env.BCRYPT_ROUNDS) || 12;
   return bcryptjs.hash(password, rounds);
@@ -62,11 +80,35 @@ export async function getSession(): Promise<AuthSession | null> {
     },
   });
 
-  if (!session || session.expiresAt < new Date()) {
+  const now = new Date();
+
+  // Hard expiry — the 7-day session lifetime.
+  if (!session || session.expiresAt < now) {
     if (session) {
       await prisma.session.delete({ where: { id: session.id } });
     }
     return null;
+  }
+
+  // Idle expiry — treat the session as logged-out if no activity has been
+  // recorded inside the rolling IDLE_TIMEOUT window. Delete the session
+  // row so the cookie becomes useless on subsequent requests too.
+  const idleMs = now.getTime() - session.lastActivity.getTime();
+  if (idleMs > IDLE_TIMEOUT_MS) {
+    await prisma.session.delete({ where: { id: session.id } });
+    return null;
+  }
+
+  // Refresh lastActivity — but throttle the DB write so we're not writing
+  // on every single API call (could be dozens per page render). The idle
+  // check above still runs on every request; we just don't always persist.
+  if (idleMs > ACTIVITY_WRITE_THROTTLE_MS) {
+    // Fire-and-forget — we don't need to await this. Even if it fails,
+    // the session stays valid for the next request thanks to throttle.
+    prisma.session.update({
+      where: { id: session.id },
+      data: { lastActivity: now },
+    }).catch(() => { /* swallow — non-critical */ });
   }
 
   const user: SessionUser = {

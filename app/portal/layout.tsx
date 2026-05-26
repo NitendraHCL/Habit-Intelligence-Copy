@@ -9,6 +9,7 @@ import AskHabitAI from "@/components/ai/AskHabitAI";
 import { WalkthroughProvider } from "@/components/walkthrough/WalkthroughProvider";
 import { WalkthroughOverlay } from "@/components/walkthrough/WalkthroughOverlay";
 import { WalkthroughTrigger } from "@/components/walkthrough/WalkthroughTrigger";
+import { IdleTimer } from "@/components/auth/IdleTimer";
 
 export default function PortalLayout({
   children,
@@ -17,6 +18,8 @@ export default function PortalLayout({
 }) {
   return (
     <AuthProvider>
+      {/* 60-min inactivity auto-logout — mounted once for the whole portal */}
+      <IdleTimer />
       <ConfigProvider>
       <FilterProvider>
         <AIPanelProvider>

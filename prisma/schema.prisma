@@ -19,6 +19,9 @@ model User {
   isActive     Boolean  @default(true) @map("is_active")
   clientId     String?  @map("client_id")
   lastLoginAt  DateTime? @map("last_login_at")
+  /// Email-OTP MFA on/off. Defaults to false for every user (including
+  /// super-admins). Admins flip this per-user from the user-management UI.
+  mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -27,21 +30,28 @@ model User {
   clientAssignments   UserClientAssignment[]
   annotations         DashboardAnnotation[]
   chartComments       ChartComment[]
+  loginOtps           LoginOtp[]
 
   @@map("users")
 }
 
 model Session {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  token        String   @unique
+  expiresAt    DateTime @map("expires_at")
+  /// Last authenticated activity timestamp — refreshed on each authenticated
+  /// API call (with a short throttle window in code). Sessions where
+  /// `now - lastActivity` exceeds the configured idle window are treated
+  /// as expired and deleted on next access.
+  lastActivity DateTime @default(now()) @map("last_activity")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
   @@index([expiresAt])
+  @@index([lastActivity])
   @@map("sessions")
 }
 
@@ -51,6 +61,38 @@ enum Role {
   KAM
   CLIENT_ADMIN
   CLIENT_VIEWER
+}
+
+/// One-time-password challenge for email-based MFA. A row is created when
+/// the user submits valid credentials and their `mfaEnabled` is true. The
+/// pendingToken cookie maps the browser to a row here; the OTP itself is
+/// hashed (never stored in plaintext). Rows are short-lived — `expiresAt`
+/// is ~5 minutes out — and are deleted on successful verification or hard
+/// failure (too many attempts).
+model LoginOtp {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  /// SHA-256 hash of the 6-digit OTP. Compared via timing-safe equal.
+  otpHash        String   @map("otp_hash")
+  /// Opaque token issued to the browser via a short-lived cookie so the
+  /// /verify-otp call knows which OTP row to consume without exposing the
+  /// row id directly.
+  pendingToken   String   @unique @map("pending_token")
+  expiresAt      DateTime @map("expires_at")
+  attempts       Int      @default(0)
+  /// How many resend requests have been issued for this challenge.
+  resendCount    Int      @default(0) @map("resend_count")
+  /// Stamped when the OTP has been successfully verified. Verified rows
+  /// are deleted right after a session is minted, but we keep this column
+  /// for the brief window in between to make the verify step idempotent.
+  consumedAt     DateTime? @map("consumed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("login_otps")
 }
 
 // ── Client / Tenant ──

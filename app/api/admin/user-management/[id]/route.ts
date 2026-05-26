@@ -15,7 +15,7 @@ export async function PUT(
     }
     const { id } = await params;
     const body = await request.json();
-    const { name, email, password, role, clientId, isActive, assignedCugIds } = body ?? {};
+    const { name, email, password, role, clientId, isActive, assignedCugIds, mfaEnabled } = body ?? {};
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
@@ -24,16 +24,36 @@ export async function PUT(
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (clientId !== undefined) updateData.clientId = clientId;
+    if (mfaEnabled !== undefined) updateData.mfaEnabled = Boolean(mfaEnabled);
 
     // If switching to a non-external role, clear clientId
     if (role && ["SUPER_ADMIN", "INTERNAL_OPS", "KAM"].includes(role)) {
       updateData.clientId = null;
     }
 
+    // When MFA is being turned ON, invalidate any existing sessions so the
+    // affected user is forced to re-authenticate and pass the OTP step on
+    // their next visit. We only do this on the OFF→ON transition — turning
+    // MFA off does not need to bounce active sessions.
+    let invalidateSessions = false;
+    if (mfaEnabled !== undefined) {
+      const before = await prisma.user.findUnique({
+        where: { id },
+        select: { mfaEnabled: true },
+      });
+      if (before && !before.mfaEnabled && Boolean(mfaEnabled)) {
+        invalidateSessions = true;
+      }
+    }
+
     const user = await prisma.user.update({
       where: { id },
       data: updateData as any,
     });
+
+    if (invalidateSessions) {
+      await prisma.session.deleteMany({ where: { userId: id } });
+    }
 
     // For KAM, sync CUG assignments
     if (role === "KAM" && Array.isArray(assignedCugIds)) {

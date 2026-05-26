@@ -738,7 +738,20 @@ async function buildCareAdvantage(
   // exist at the clinic. Headcount = workforce − active; captured value uses
   // the per-disease avg visits if we have it, else falls back to 4 visits / yr.
   const hasAll = (req: string[]) => req.every((s) => availableSpecialties.has(s.toLowerCase()));
-  const programmes: CareProgrammeOpportunity[] = [];
+  // Title-case specialty names back from the lower-case match keys.
+  const tc = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Group disease rows by the programme template they match. Two diseases
+  // (e.g., Diabetes mellitus + Prediabetes, or Hypertension + CVD) often
+  // hit the same template — we want ONE merged programme card per template,
+  // not two duplicates. Headcounts and captured-value are summed; the
+  // description lists all triggering diseases.
+  type AccumEntry = {
+    programme: string;
+    requires: string[];
+    parts: { disease: string; unengaged: number; captured: number }[];
+  };
+  const acc = new Map<string, AccumEntry>();
   for (const row of rows) {
     const tmpl = CARE_PROGRAMMES.find((p) => p.match.some((m) => row.disease.toLowerCase().includes(m)));
     if (!tmpl) continue;
@@ -747,18 +760,33 @@ async function buildCareAdvantage(
     if (unengaged <= 0) continue;
     const avgVisits = row.activePatients > 0 ? row.visitsAvoided / row.activePatients : 4;
     const captured = Math.round(unengaged * ENGAGEMENT_RATE * avgVisits * VISIT_COST_INR);
-    // Title-case specialty names back from the lower-case match keys.
-    const tc = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
     const cleanDisease = row.disease.replace(/\s*\([^)]*\)\s*/g, "").replace(/\s*\[[^\]]*\]\s*/g, "").trim();
-    programmes.push({
-      programme: tmpl.programme,
-      disease: cleanDisease,
-      unengagedHeadcount: unengaged,
-      specialties: tmpl.requires.map(tc),
-      capturedValueInr: captured,
-      description: `Could engage ${unengaged} employees with ${cleanDisease} who aren't on regular follow-up.`,
-    });
+    const entry = acc.get(tmpl.programme) ?? { programme: tmpl.programme, requires: tmpl.requires, parts: [] };
+    entry.parts.push({ disease: cleanDisease, unengaged, captured });
+    acc.set(tmpl.programme, entry);
   }
+
+  // Collapse each accumulator entry into one programme card. When a
+  // template covers multiple diseases, the description names them all.
+  const programmes: CareProgrammeOpportunity[] = Array.from(acc.values()).map((e) => {
+    const totalUnengaged = e.parts.reduce((s, p) => s + p.unengaged, 0);
+    const totalCaptured = e.parts.reduce((s, p) => s + p.captured, 0);
+    // Build the "could engage X with A and Y with B" sentence.
+    const phrasePerDisease = e.parts.map((p) => `${p.unengaged.toLocaleString("en-IN")} with ${p.disease}`);
+    const peopleList = phrasePerDisease.length === 1
+      ? phrasePerDisease[0]
+      : phrasePerDisease.length === 2
+        ? phrasePerDisease.join(" and ")
+        : phrasePerDisease.slice(0, -1).join(", ") + ", and " + phrasePerDisease[phrasePerDisease.length - 1];
+    return {
+      programme: e.programme,
+      disease: e.parts.map((p) => p.disease).join(" + "),
+      unengagedHeadcount: totalUnengaged,
+      specialties: e.requires.map(tc),
+      capturedValueInr: totalCaptured,
+      description: `Could engage ${peopleList} who aren't on regular follow-up.`,
+    };
+  });
   // Sort opportunities by unengaged headcount desc so the biggest reach gap
   // surfaces first.
   programmes.sort((a, b) => b.unengagedHeadcount - a.unengagedHeadcount);

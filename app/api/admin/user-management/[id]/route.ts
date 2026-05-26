@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { hashPassword } from "@/lib/auth/session";
+import {
+  validatePassword,
+  checkPasswordHistory,
+  archivePreviousPasswordHash,
+} from "@/lib/auth/password-policy";
 
 // ── PUT /api/admin/user-management/:id — update user
 export async function PUT(
@@ -20,11 +25,31 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = String(email).toLowerCase().trim();
-    if (password) updateData.passwordHash = await hashPassword(password);
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (clientId !== undefined) updateData.clientId = clientId;
     if (mfaEnabled !== undefined) updateData.mfaEnabled = Boolean(mfaEnabled);
+
+    // Password handling: enforce policy + history-no-reuse, then archive
+    // the previous hash. We compute the new hash here but apply it as part
+    // of the same `prisma.user.update` below so the change is atomic.
+    let oldHashForArchive: string | null = null;
+    if (password) {
+      const validation = validatePassword(password);
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
+      }
+      const historyCheck = await checkPasswordHistory(id, password);
+      if (!historyCheck.ok) {
+        return NextResponse.json({ error: historyCheck.error }, { status: 400 });
+      }
+      const existing = await prisma.user.findUnique({
+        where: { id },
+        select: { passwordHash: true },
+      });
+      oldHashForArchive = existing?.passwordHash ?? null;
+      updateData.passwordHash = await hashPassword(password);
+    }
 
     // If switching to a non-external role, clear clientId
     if (role && ["SUPER_ADMIN", "INTERNAL_OPS", "KAM"].includes(role)) {
@@ -53,6 +78,11 @@ export async function PUT(
 
     if (invalidateSessions) {
       await prisma.session.deleteMany({ where: { userId: id } });
+    }
+
+    // Roll the old password into history if it was changed in this PUT.
+    if (oldHashForArchive) {
+      await archivePreviousPasswordHash(id, oldHashForArchive);
     }
 
     // For KAM, sync CUG assignments

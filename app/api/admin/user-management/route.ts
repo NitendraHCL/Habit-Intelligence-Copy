@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { hashPassword } from "@/lib/auth/session";
+import { validatePassword } from "@/lib/auth/password-policy";
 
 // ── GET /api/admin/user-management?type=internal|external
 export async function GET(request: NextRequest) {
@@ -72,6 +73,13 @@ export async function POST(request: NextRequest) {
         { error: "name, email, password, and role are required" },
         { status: 400 }
       );
+    }
+
+    // Enforce password policy. New users have no history yet — no
+    // reuse check needed; the initial complexity/length check is enough.
+    const policyResult = validatePassword(password);
+    if (!policyResult.ok) {
+      return NextResponse.json({ error: policyResult.error }, { status: 400 });
     }
 
     // Validate role

@@ -6,9 +6,11 @@ import {
   consumePasswordResetOtp,
   PENDING_RESET_COOKIE,
 } from "@/lib/auth/password-reset-otp";
-
-/** Server-side minimum. Match whatever the user-management form expects. */
-const MIN_PASSWORD_LENGTH = 8;
+import {
+  validatePassword,
+  checkPasswordHistory,
+  archivePreviousPasswordHash,
+} from "@/lib/auth/password-policy";
 
 /**
  * Step 3 of the password reset flow: set a new password.
@@ -18,20 +20,22 @@ const MIN_PASSWORD_LENGTH = 8;
  *  • The matching `password_reset_otps` row must have `verifiedAt` set
  *    (caller has already proven OTP possession via /verify-otp)
  *  • The row must not have expired (5 minutes from verify, see helper)
+ *  • The new password clears the policy (complexity + length + history)
  *
  * On success: row is deleted (cookie now useless), password is updated,
- * AND every active session for that user is destroyed — anyone holding a
- * stolen cookie is booted, the legitimate user re-logs in fresh.
+ * the old hash is rolled into PasswordHistory, AND every active session
+ * for that user is destroyed — anyone holding a stolen cookie is booted,
+ * the legitimate user re-logs in fresh.
  */
 export async function POST(request: NextRequest) {
   try {
     const { newPassword } = await request.json();
 
-    if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD_LENGTH) {
-      return NextResponse.json(
-        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
-        { status: 400 }
-      );
+    // Validate complexity / length BEFORE touching the OTP row so weak
+    // passwords don't burn the user's one-shot reset window.
+    const validation = validatePassword(newPassword);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     const cookieStore = await cookies();
@@ -58,7 +62,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message, terminal: true }, { status: 401 });
     }
 
-    const passwordHash = await hashPassword(newPassword);
+    // History check — fail before any destructive change.
+    const historyCheck = await checkPasswordHistory(result.userId, newPassword);
+    if (!historyCheck.ok) {
+      return NextResponse.json({ error: historyCheck.error }, { status: 400 });
+    }
+
+    const oldUser = await prisma.user.findUnique({
+      where: { id: result.userId },
+      select: { passwordHash: true },
+    });
+    const newHash = await hashPassword(newPassword);
 
     // Update password and wipe every existing session in a single
     // transaction. Anyone holding an old hi_session cookie is locked out
@@ -67,10 +81,16 @@ export async function POST(request: NextRequest) {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: result.userId },
-        data: { passwordHash },
+        data: { passwordHash: newHash },
       }),
       prisma.session.deleteMany({ where: { userId: result.userId } }),
     ]);
+
+    // Roll the previous hash into history (outside the transaction since
+    // it does pruning and isn't security-critical to the moment of reset).
+    if (oldUser?.passwordHash) {
+      await archivePreviousPasswordHash(result.userId, oldUser.passwordHash);
+    }
 
     // Clear the pending cookie so the next /reset-password call (replay)
     // cannot reuse it — the row is gone, but belt-and-braces.

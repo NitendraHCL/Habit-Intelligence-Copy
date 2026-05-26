@@ -32,6 +32,7 @@ model User {
   chartComments       ChartComment[]
   loginOtps           LoginOtp[]
   passwordResetOtps   PasswordResetOtp[]
+  passwordHistory     PasswordHistory[]
 
   @@map("users")
 }
@@ -123,6 +124,24 @@ model PasswordResetOtp {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_otps")
+}
+
+/// Rolling list of previous bcrypt password hashes per user. Used to enforce
+/// the no-reuse-last-N policy: when a user changes their password, we
+/// compare the new plaintext against every row here PLUS user.passwordHash.
+/// On accept, we move the OLD user.passwordHash into here and prune the
+/// oldest rows so we keep at most (HISTORY_DEPTH - 1) entries — the current
+/// password sits on user.passwordHash itself.
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
 }
 
 // ── Client / Tenant ──

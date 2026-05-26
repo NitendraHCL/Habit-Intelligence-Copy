@@ -4,6 +4,10 @@ import { useState } from "react";
 import useSWR from "swr";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Plus, Pencil, Trash2, Users, UserCheck, Shield, Eye, EyeOff } from "lucide-react";
+import {
+  PasswordPolicyChecklist,
+  isPasswordPolicyMet,
+} from "@/components/auth/PasswordPolicyChecklist";
 
 interface UserRow {
   id: string;
@@ -344,6 +348,11 @@ function UserForm({
       if (!name || !email || (!row && !password)) {
         throw new Error("Name, email, and password are required");
       }
+      // When a password is provided (always on create, optional on edit),
+      // it must clear the policy client-side. Server re-validates.
+      if (password && !isPasswordPolicyMet(password)) {
+        throw new Error("Password doesn't meet the requirements — see the checklist below the field.");
+      }
       if (type === "external" && !clientId) {
         throw new Error("Please select a CUG for this external user");
       }
@@ -420,7 +429,7 @@ function UserForm({
                 type={showPw ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={row ? "••••••••" : "Min 8 characters"}
+                placeholder={row ? "••••••••" : "Type a strong password"}
                 className="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg text-sm"
               />
               <button
@@ -431,6 +440,13 @@ function UserForm({
                 {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
+            {/* Show the policy checklist whenever the field is non-empty.
+                For edit-user, the field is intentionally optional — empty
+                means "keep current" and we don't need to render the rules
+                until they start typing. */}
+            {password.length > 0 && (
+              <PasswordPolicyChecklist password={password} className="mt-2" />
+            )}
           </div>
 
           {/* Role */}
@@ -523,8 +539,14 @@ function UserForm({
           <button
             type="button"
             onClick={save}
-            disabled={saving}
-            className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40"
+            disabled={
+              saving ||
+              // Disable when a password has been started but doesn't yet
+              // satisfy the policy. Leaving the field blank on an EDIT is
+              // fine — that means "keep current".
+              (password.length > 0 && !isPasswordPolicyMet(password))
+            }
+            className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? "Saving…" : row ? "Save Changes" : "Create User"}
           </button>

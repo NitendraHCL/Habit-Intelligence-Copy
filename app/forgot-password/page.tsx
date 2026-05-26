@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Eye, EyeOff, Lock, ShieldCheck, ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
+import {
+  PasswordPolicyChecklist,
+  isPasswordPolicyMet,
+} from "@/components/auth/PasswordPolicyChecklist";
 
 /**
  * Three-step state machine for forgot-password:
@@ -435,8 +439,6 @@ function OtpStep({
 
 // ─── step 3: new password ─────────────────────────────────────────────────
 
-const MIN_PASSWORD_LENGTH = 8;
-
 function NewPasswordStep({
   onSuccess,
   onTerminal,
@@ -450,14 +452,14 @@ function NewPasswordStep({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const lengthOk = password.length >= MIN_PASSWORD_LENGTH;
+  const policyOk = isPasswordPolicyMet(password);
   const matches = password.length > 0 && password === confirm;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!lengthOk) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    if (!policyOk) {
+      setError("Please meet every password requirement.");
       return;
     }
     if (!matches) {
@@ -515,7 +517,7 @@ function NewPasswordStep({
               type={showPw ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+              placeholder="Type a strong password"
               required
               autoFocus
               autoComplete="new-password"
@@ -530,9 +532,7 @@ function NewPasswordStep({
               {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
             </button>
           </div>
-          <p className={`text-[11.5px] mt-1.5 ${lengthOk ? "text-emerald-600" : "text-[#94A3B8]"}`}>
-            {lengthOk ? "✓ Looks good." : `Minimum ${MIN_PASSWORD_LENGTH} characters.`}
-          </p>
+          <PasswordPolicyChecklist password={password} className="mt-2.5" />
         </div>
 
         <div>
@@ -558,7 +558,7 @@ function NewPasswordStep({
 
         <button
           type="submit"
-          disabled={submitting || !lengthOk || !matches}
+          disabled={submitting || !policyOk || !matches}
           style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
           className="w-full h-11 text-white text-[14px] font-semibold rounded-lg hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#4f46e5]/25"
         >

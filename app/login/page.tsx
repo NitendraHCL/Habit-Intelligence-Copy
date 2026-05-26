@@ -55,6 +55,14 @@ function LoginForm() {
         return;
       }
 
+      // Force-change path (no MFA on this account, but admin set the
+      // password and the user must pick their own first). No session yet
+      // — they finish via /change-password.
+      if (data.needsPasswordChange) {
+        router.push(`/change-password?redirect=${encodeURIComponent(redirect)}`);
+        return;
+      }
+
       // No-MFA path — session is already set; go home.
       router.push(redirect);
       router.refresh();
@@ -106,6 +114,9 @@ function LoginForm() {
                 onSuccess={() => {
                   router.push(redirect);
                   router.refresh();
+                }}
+                onForceChange={() => {
+                  router.push(`/change-password?redirect=${encodeURIComponent(redirect)}`);
                 }}
                 onTerminalFailure={(msg) => {
                   setError(msg);
@@ -323,12 +334,14 @@ function OtpStep({
   expiresAt,
   onBack,
   onSuccess,
+  onForceChange,
   onTerminalFailure,
 }: {
   maskedEmail: string;
   expiresAt: string;
   onBack: () => void;
   onSuccess: () => void;
+  onForceChange: () => void;
   onTerminalFailure: (msg: string) => void;
 }) {
   const [code, setCode] = useState("");
@@ -388,6 +401,12 @@ function OtpStep({
             ? ` (${data.attemptsRemaining} ${data.attemptsRemaining === 1 ? "attempt" : "attempts"} left)`
             : "";
         setError(`${data.error || "Verification failed."}${remaining}`);
+        return;
+      }
+      // OTP was fine but the user must change their password before they
+      // get a real session. Route to /change-password.
+      if (data.needsPasswordChange) {
+        onForceChange();
         return;
       }
       onSuccess();

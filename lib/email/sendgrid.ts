@@ -32,6 +32,19 @@ function ensureClient(): void {
   initialised = true;
 }
 
+/** Inline attachment for embedded images (e.g., the logo). The `cid` is
+ * referenced from the HTML as `<img src="cid:logo">`. */
+export interface InlineAttachment {
+  /** Raw bytes of the file. */
+  content: Buffer;
+  /** Filename SendGrid will report — purely cosmetic for inline images. */
+  filename: string;
+  /** MIME type, e.g., "image/png". */
+  type: string;
+  /** Content-ID without angle brackets, e.g., "logo" → cid:logo. */
+  cid: string;
+}
+
 export interface SendEmailParams {
   to: string;
   subject: string;
@@ -39,6 +52,8 @@ export interface SendEmailParams {
   text: string;
   /** Optional HTML version. If omitted, only text is sent. */
   html?: string;
+  /** Optional inline attachments (for embedded logos / images). */
+  attachments?: InlineAttachment[];
 }
 
 export async function sendTransactionalEmail(params: SendEmailParams): Promise<void> {
@@ -47,11 +62,20 @@ export async function sendTransactionalEmail(params: SendEmailParams): Promise<v
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || "no-reply@hclhealthcare.in";
   const fromName = process.env.SENDGRID_FROM_NAME || "Habit Intelligence";
 
+  const attachments = params.attachments?.map((a) => ({
+    content: a.content.toString("base64"),
+    filename: a.filename,
+    type: a.type,
+    disposition: "inline" as const,
+    content_id: a.cid,
+  }));
+
   await sgMail.send({
     to: params.to,
     from: { email: fromEmail, name: fromName },
     subject: params.subject,
     text: params.text,
     ...(params.html ? { html: params.html } : {}),
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
   });
 }

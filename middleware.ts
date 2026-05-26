@@ -17,6 +17,10 @@ const PUBLIC_ROUTES = [
   // their own pending cookie instead of the standard auth check.
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  // Force-change endpoint — same gap: user has cleared credentials (and
+  // MFA OTP, if applicable) but no session has been minted yet. Gated by
+  // the hi_pending_change cookie.
+  "/api/auth/change-password",
 ];
 // Static file extensions to skip
 const STATIC_EXTENSIONS = [".ico", ".png", ".jpg", ".svg", ".css", ".js", ".woff", ".woff2"];

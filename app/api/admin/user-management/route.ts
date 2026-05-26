@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { hashPassword } from "@/lib/auth/session";
 import { validatePassword } from "@/lib/auth/password-policy";
+import { sendWelcomeEmail } from "@/lib/email/notifications";
 
 // ── GET /api/admin/user-management?type=internal|external
 export async function GET(request: NextRequest) {
@@ -113,6 +114,9 @@ export async function POST(request: NextRequest) {
         role: role as any,
         clientId: ["CLIENT_ADMIN", "CLIENT_VIEWER"].includes(role) ? clientId : null,
         isActive: true,
+        // Admin set this password — user must choose their own on first
+        // login. Industry-standard "admin shouldn't know your password".
+        mustChangePassword: true,
       },
     });
 
@@ -127,6 +131,19 @@ export async function POST(request: NextRequest) {
         skipDuplicates: true,
       });
     }
+
+    // Fire-and-forget welcome email — failure here should NOT roll back
+    // the user creation. Surface the error in logs but tell the admin
+    // their user was made successfully; they can manually communicate
+    // credentials if email failed.
+    sendWelcomeEmail({
+      to: user.email,
+      name: user.name,
+      loginEmail: user.email,
+      tempPassword: password,
+    }).catch((err) => {
+      console.error("[user-management/create] welcome email failed", err);
+    });
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } }, { status: 201 });
   } catch (error) {

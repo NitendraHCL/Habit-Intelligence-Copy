@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db/prisma";
 import { sendTransactionalEmail } from "@/lib/email/sendgrid";
+import { renderBrandedEmail, escapeHtml } from "@/lib/email/template";
 
 /**
  * Email-OTP MFA helpers.
@@ -209,40 +210,38 @@ interface OtpEmailParams {
 async function sendOtpEmail({ to, name, otp, expiresAt }: OtpEmailParams): Promise<void> {
   const ttlMinutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60000));
   const subject = `Your Habit Intelligence sign-in code: ${otp}`;
-  const text =
-    `Hi ${name || "there"},\n\n` +
-    `Use this one-time code to finish signing in to Habit Intelligence:\n\n` +
-    `    ${otp}\n\n` +
-    `The code expires in ${ttlMinutes} minutes. If you didn't try to sign in, ` +
-    `you can safely ignore this email — no one can access your account without ` +
-    `this code.\n\n` +
-    `— Habit Intelligence`;
 
-  const html = `
-    <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;max-width:480px;margin:0 auto;padding:24px;">
-      <h2 style="margin:0 0 16px;font-size:18px;color:#111827;">Sign-in verification</h2>
-      <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:#374151;">
-        Hi ${escapeHtml(name || "there")}, use this one-time code to finish signing in to Habit Intelligence.
-      </p>
-      <div style="background:#F3F4F6;border-radius:10px;padding:18px;text-align:center;margin:18px 0;">
-        <div style="font-size:30px;letter-spacing:6px;font-weight:700;color:#111827;">${escapeHtml(otp)}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:13px;line-height:1.55;color:#6B7280;">
-        The code expires in <strong>${ttlMinutes} minutes</strong>.
-      </p>
-      <p style="margin:0;font-size:13px;line-height:1.55;color:#6B7280;">
-        If you didn't try to sign in, ignore this email — no one can access your account without this code.
-      </p>
-      <hr style="border:none;border-top:1px solid #E5E7EB;margin:24px 0;" />
-      <p style="margin:0;font-size:12px;color:#9CA3AF;">— Habit Intelligence by HCL Healthcare</p>
+  const contentHtml = `
+    <div style="background:#F3F4F6;border-radius:10px;padding:18px;text-align:center;margin:18px 0;">
+      <div style="font-size:30px;letter-spacing:6px;font-weight:700;color:#111827;">${escapeHtml(otp)}</div>
     </div>
+    <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#6B7280;">
+      The code expires in <strong>${ttlMinutes} minutes</strong>.
+    </p>
+  `;
+  const reassuranceHtml = `
+    <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#6B7280;">
+      If you didn't try to sign in, ignore this email — no one can access your account without this code.
+    </p>
   `;
 
-  await sendTransactionalEmail({ to, subject, text, html });
-}
+  const branded = renderBrandedEmail({
+    title: "Sign-in verification",
+    intro: `Hi ${name || "there"}, use this one-time code to finish signing in to Habit Intelligence.`,
+    contentHtml,
+    reassuranceHtml,
+    textBody:
+      `Use this one-time code to finish signing in:\n\n` +
+      `    ${otp}\n\n` +
+      `The code expires in ${ttlMinutes} minutes.\n\n` +
+      `If you didn't try to sign in, ignore this email — no one can access your account without this code.`,
+  });
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;"
-  );
+  await sendTransactionalEmail({
+    to,
+    subject,
+    text: branded.text,
+    html: branded.html,
+    attachments: branded.attachments,
+  });
 }

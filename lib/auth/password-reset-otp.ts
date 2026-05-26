@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db/prisma";
 import { sendTransactionalEmail } from "@/lib/email/sendgrid";
+import { renderBrandedEmail, escapeHtml } from "@/lib/email/template";
 
 /**
  * Password-reset OTP helpers.
@@ -231,41 +232,38 @@ interface ResetEmailParams {
 async function sendResetEmail({ to, name, otp, expiresAt }: ResetEmailParams): Promise<void> {
   const ttlMinutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60000));
   const subject = `Reset your Habit Intelligence password: ${otp}`;
-  const text =
-    `Hi ${name || "there"},\n\n` +
-    `Someone — hopefully you — asked to reset the password for your Habit ` +
-    `Intelligence account. Use this code to continue:\n\n` +
-    `    ${otp}\n\n` +
-    `The code expires in ${ttlMinutes} minutes. If you didn't request a ` +
-    `password reset, you can ignore this email — your account stays ` +
-    `unchanged until the code is used.\n\n` +
-    `— Habit Intelligence`;
 
-  const html = `
-    <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;max-width:480px;margin:0 auto;padding:24px;">
-      <h2 style="margin:0 0 16px;font-size:18px;color:#111827;">Password reset</h2>
-      <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:#374151;">
-        Hi ${escapeHtml(name || "there")}, someone asked to reset the password for your Habit Intelligence account. If that was you, use this code to continue.
-      </p>
-      <div style="background:#F3F4F6;border-radius:10px;padding:18px;text-align:center;margin:18px 0;">
-        <div style="font-size:30px;letter-spacing:6px;font-weight:700;color:#111827;">${escapeHtml(otp)}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:13px;line-height:1.55;color:#6B7280;">
-        The code expires in <strong>${ttlMinutes} minutes</strong>.
-      </p>
-      <p style="margin:0;font-size:13px;line-height:1.55;color:#6B7280;">
-        If you didn't request a password reset, ignore this email — your account stays unchanged until the code is used.
-      </p>
-      <hr style="border:none;border-top:1px solid #E5E7EB;margin:24px 0;" />
-      <p style="margin:0;font-size:12px;color:#9CA3AF;">— Habit Intelligence by HCL Healthcare</p>
+  const contentHtml = `
+    <div style="background:#F3F4F6;border-radius:10px;padding:18px;text-align:center;margin:18px 0;">
+      <div style="font-size:30px;letter-spacing:6px;font-weight:700;color:#111827;">${escapeHtml(otp)}</div>
     </div>
+    <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#6B7280;">
+      The code expires in <strong>${ttlMinutes} minutes</strong>.
+    </p>
+  `;
+  const reassuranceHtml = `
+    <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#6B7280;">
+      If you didn't request a password reset, ignore this email — your account stays unchanged until the code is used.
+    </p>
   `;
 
-  await sendTransactionalEmail({ to, subject, text, html });
-}
+  const branded = renderBrandedEmail({
+    title: "Password reset",
+    intro: `Hi ${name || "there"}, someone asked to reset the password for your Habit Intelligence account. If that was you, use this code to continue.`,
+    contentHtml,
+    reassuranceHtml,
+    textBody:
+      `Someone — hopefully you — asked to reset the password for your Habit Intelligence account. Use this code to continue:\n\n` +
+      `    ${otp}\n\n` +
+      `The code expires in ${ttlMinutes} minutes.\n\n` +
+      `If you didn't request a password reset, ignore this email — your account stays unchanged until the code is used.`,
+  });
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;"
-  );
+  await sendTransactionalEmail({
+    to,
+    subject,
+    text: branded.text,
+    html: branded.html,
+    attachments: branded.attachments,
+  });
 }

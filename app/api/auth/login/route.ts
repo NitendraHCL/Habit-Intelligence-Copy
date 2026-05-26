@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { verifyPassword, createSession } from "@/lib/auth/session";
 import { issueLoginOtp, PENDING_OTP_COOKIE, OTP_TTL_MINUTES } from "@/lib/auth/otp";
+import {
+  issuePendingPasswordChange,
+  PENDING_PASSWORD_CHANGE_COOKIE,
+  PENDING_PASSWORD_CHANGE_TTL_MINUTES,
+} from "@/lib/auth/pending-password-change";
 
 /**
  * Two-step login:
@@ -90,6 +95,22 @@ export async function POST(request: NextRequest) {
           { status: 503 }
         );
       }
+    }
+
+    // No-MFA path — but if an admin set this user's password (or it's the
+    // user's first login), we still must NOT mint a real session yet.
+    // Force them through /change-password first.
+    if (user.mustChangePassword) {
+      const { pendingToken } = await issuePendingPasswordChange(user.id);
+      const cookieStore = await cookies();
+      cookieStore.set(PENDING_PASSWORD_CHANGE_COOKIE, pendingToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: PENDING_PASSWORD_CHANGE_TTL_MINUTES * 60,
+      });
+      return NextResponse.json({ needsPasswordChange: true });
     }
 
     await createSession(user.id);

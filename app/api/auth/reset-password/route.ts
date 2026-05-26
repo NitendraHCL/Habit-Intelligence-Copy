@@ -11,6 +11,7 @@ import {
   checkPasswordHistory,
   archivePreviousPasswordHash,
 } from "@/lib/auth/password-policy";
+import { sendPasswordChangedEmail } from "@/lib/email/notifications";
 
 /**
  * Step 3 of the password reset flow: set a new password.
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     const oldUser = await prisma.user.findUnique({
       where: { id: result.userId },
-      select: { passwordHash: true },
+      select: { passwordHash: true, email: true, name: true },
     });
     const newHash = await hashPassword(newPassword);
 
@@ -81,7 +82,12 @@ export async function POST(request: NextRequest) {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: result.userId },
-        data: { passwordHash: newHash },
+        data: {
+          passwordHash: newHash,
+          // The user picked this password themselves via OTP — no forced
+          // change should hit them on next sign-in.
+          mustChangePassword: false,
+        },
       }),
       prisma.session.deleteMany({ where: { userId: result.userId } }),
     ]);
@@ -95,6 +101,18 @@ export async function POST(request: NextRequest) {
     // Clear the pending cookie so the next /reset-password call (replay)
     // cannot reuse it — the row is gone, but belt-and-braces.
     cookieStore.delete(PENDING_RESET_COOKIE);
+
+    // Fire-and-forget confirmation email. If sending fails the password
+    // is still updated — log and move on.
+    if (oldUser?.email) {
+      sendPasswordChangedEmail({
+        to: oldUser.email,
+        name: oldUser.name,
+        source: "self-reset",
+      }).catch((err) => {
+        console.error("[reset-password] confirmation email failed", err);
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -7,6 +7,7 @@ import {
   checkPasswordHistory,
   archivePreviousPasswordHash,
 } from "@/lib/auth/password-policy";
+import { sendPasswordChangedEmail } from "@/lib/email/notifications";
 
 // ── PUT /api/admin/user-management/:id — update user
 export async function PUT(
@@ -49,6 +50,9 @@ export async function PUT(
       });
       oldHashForArchive = existing?.passwordHash ?? null;
       updateData.passwordHash = await hashPassword(password);
+      // Admin just wrote this password — force the user to choose their
+      // own on next login. Matches the create-user behaviour above.
+      updateData.mustChangePassword = true;
     }
 
     // If switching to a non-external role, clear clientId
@@ -83,6 +87,20 @@ export async function PUT(
     // Roll the old password into history if it was changed in this PUT.
     if (oldHashForArchive) {
       await archivePreviousPasswordHash(id, oldHashForArchive);
+    }
+
+    // Fire-and-forget confirmation email when an admin changed the
+    // password. The recipient is the affected user, NOT the admin who
+    // made the change — they need to know their password was changed
+    // and react if it wasn't expected.
+    if (oldHashForArchive) {
+      sendPasswordChangedEmail({
+        to: user.email,
+        name: user.name,
+        source: "admin-update",
+      }).catch((err) => {
+        console.error("[user-management/update] confirmation email failed", err);
+      });
     }
 
     // For KAM, sync CUG assignments

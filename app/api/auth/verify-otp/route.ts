@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { createSession } from "@/lib/auth/session";
 import { verifyLoginOtp, PENDING_OTP_COOKIE } from "@/lib/auth/otp";
+import {
+  issuePendingPasswordChange,
+  PENDING_PASSWORD_CHANGE_COOKIE,
+  PENDING_PASSWORD_CHANGE_TTL_MINUTES,
+} from "@/lib/auth/pending-password-change";
 
 /**
  * Step 2 of MFA login: the user submits the 6-digit code we emailed them.
@@ -75,6 +80,21 @@ export async function POST(request: NextRequest) {
         { error: "Your account is unavailable. Please contact your administrator." },
         { status: 403 }
       );
+    }
+
+    // OTP good — but if the user is in "must change password" state, hold
+    // off on minting a session and route them through /change-password.
+    if (user.mustChangePassword) {
+      const { pendingToken } = await issuePendingPasswordChange(user.id);
+      cookieStore.set(PENDING_PASSWORD_CHANGE_COOKIE, pendingToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: PENDING_PASSWORD_CHANGE_TTL_MINUTES * 60,
+      });
+      cookieStore.delete(PENDING_OTP_COOKIE);
+      return NextResponse.json({ needsPasswordChange: true });
     }
 
     await createSession(user.id);

@@ -22,6 +22,12 @@ model User {
   /// Email-OTP MFA on/off. Defaults to false for every user (including
   /// super-admins). Admins flip this per-user from the user-management UI.
   mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
+  /// Force-change-on-next-login flag. Set true whenever an admin writes
+  /// the user's password (create or password-edit) so the user must
+  /// choose their own password before they get a full session. Cleared
+  /// when the user changes the password themselves (via /change-password
+  /// or /reset-password). Existing users default to false.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -30,9 +36,10 @@ model User {
   clientAssignments   UserClientAssignment[]
   annotations         DashboardAnnotation[]
   chartComments       ChartComment[]
-  loginOtps           LoginOtp[]
-  passwordResetOtps   PasswordResetOtp[]
-  passwordHistory     PasswordHistory[]
+  loginOtps             LoginOtp[]
+  passwordResetOtps     PasswordResetOtp[]
+  passwordHistory       PasswordHistory[]
+  pendingPasswordChanges PendingPasswordChange[]
 
   @@map("users")
 }
@@ -142,6 +149,27 @@ model PasswordHistory {
 
   @@index([userId, createdAt])
   @@map("password_history")
+}
+
+/// Transitional cookie binding for the force-change flow. After a user
+/// clears credentials (and MFA OTP, if applicable) BUT has
+/// `mustChangePassword=true`, we skip session minting and create a row
+/// here instead. The user's browser holds the `pendingToken` in a short-
+/// lived cookie; /api/auth/change-password resolves that token back to
+/// the user, applies the new password, and mints the real session in one
+/// shot. Rows are short-lived (~15 min) and deleted on success.
+model PendingPasswordChange {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  pendingToken String   @unique @map("pending_token")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("pending_password_changes")
 }
 
 // ── Client / Tenant ──

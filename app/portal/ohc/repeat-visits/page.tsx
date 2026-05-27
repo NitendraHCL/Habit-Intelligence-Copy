@@ -1375,7 +1375,14 @@ export default function RepeatVisitsPage() {
           expandable={false}>
           <div className="overflow-x-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-3" style={{ minWidth: 700 }}>
-            {(charts?.repeatUserSegments || []).map((rawSeg: any, i: number) => {
+            {(() => {
+              // Active date range in years — used to tell whether an empty
+              // tenure card is empty because the filter window is too
+              // narrow to ever populate it, or because no patients qualify.
+              const rangeYears =
+                (appliedDateRange.to.getTime() - appliedDateRange.from.getTime()) /
+                (365.25 * 24 * 60 * 60 * 1000);
+              return (charts?.repeatUserSegments || []).map((rawSeg: any, i: number) => {
               const segColors = ["#818cf8", "#0d9488", "#a78bfa"];
               const segColor = segColors[i % segColors.length];
               const tenureLabel = rawSeg?.label === "3+ years" ? "\u22653 yr" : rawSeg?.label === "2 years" ? "=2 yr" : "=1 yr";
@@ -1387,48 +1394,93 @@ export default function RepeatVisitsPage() {
                 chronic: rawChronic,
               };
               const chronicPctClamped = Math.max(0, Math.min(100, Number(seg.chronic.pct) || 0));
+              // Min date-range span (in years) needed for this tenure
+              // bucket to be reachable at all. "1 year" is always
+              // reachable; "2 years" needs ≥1yr span; "3+ years" needs
+              // ≥2yr span.
+              const minRangeYears = seg.label === "3+ years" ? 2 : seg.label === "2 years" ? 1 : 0;
+              const isEmpty = seg.patients === 0;
+              const windowTooNarrow = isEmpty && rangeYears < minRangeYears;
               return (
-                <div key={seg.label} className="rounded-2xl p-5" style={{ border: `2px solid ${segColor}30`, backgroundColor: `${segColor}08` }}>
+                <div key={seg.label} className="rounded-2xl p-5 flex flex-col" style={{ border: `2px solid ${segColor}30`, backgroundColor: `${segColor}08` }}>
                   <h4 className="text-[14px] font-bold mb-4" style={{ color: T.textPrimary }}>
                     Consistent Users since ({tenureLabel})
                   </h4>
-                  {/* 2 KPI metrics in a row */}
-                  <div className="grid grid-cols-2 gap-2 mb-5">
-                    {[
-                      { label: "Patients", value: formatNum(seg.patients) },
-                      { label: "Visits / Yr", value: seg.visitsPerYear },
-                    ].map((m) => (
-                      <div key={m.label} className="text-center">
-                        <p className="text-[24px] font-extrabold" style={{ color: segColor }}>{m.value}</p>
-                        <p className="text-[10px] font-medium mt-0.5" style={{ color: T.textMuted }}>{m.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Chronic stat — single box now that acute is gone. */}
-                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: `${segColor}12`, border: `1px solid ${segColor}30` }}>
-                    <div className="flex items-end justify-between gap-3 mb-2">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Chronic Patients</p>
-                        <p className="text-[22px] font-extrabold leading-none mt-1.5 tabular-nums" style={{ color: segColor }}>
-                          {formatNum(seg.chronic.count)}
-                        </p>
-                      </div>
-                      <p className="text-[13px] font-bold tabular-nums" style={{ color: segColor }}>
-                        {chronicPctClamped}%
-                      </p>
-                    </div>
-                    {/* Slim bar showing chronic share of this tenure segment. */}
-                    <div className="rounded-full overflow-hidden h-1.5" style={{ backgroundColor: `${segColor}25` }}>
+                  {isEmpty ? (
+                    // Hint card replaces the zero-filled stats — users
+                    // get an explanation instead of a row of "0".
+                    <div
+                      className="flex-1 flex flex-col items-center justify-center text-center rounded-xl px-4 py-6"
+                      style={{ backgroundColor: `${segColor}12`, border: `1px dashed ${segColor}40`, minHeight: 180 }}
+                    >
                       <div
-                        className="h-full transition-all"
-                        style={{ width: `${chronicPctClamped}%`, backgroundColor: segColor }}
-                      />
+                        className="flex items-center justify-center rounded-full mb-3"
+                        style={{ width: 36, height: 36, backgroundColor: `${segColor}20` }}
+                      >
+                        <Info size={18} style={{ color: segColor }} />
+                      </div>
+                      {windowTooNarrow ? (
+                        <>
+                          <p className="text-[12.5px] font-semibold" style={{ color: T.textPrimary }}>
+                            Date range too narrow
+                          </p>
+                          <p className="text-[11.5px] mt-1 leading-relaxed" style={{ color: T.textSecondary, maxWidth: 220 }}>
+                            Expand the date filter to at least {minRangeYears} year{minRangeYears === 1 ? "" : "s"} to see patients in this tenure bucket.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[12.5px] font-semibold" style={{ color: T.textPrimary }}>
+                            No patients in this tenure
+                          </p>
+                          <p className="text-[11.5px] mt-1 leading-relaxed" style={{ color: T.textSecondary, maxWidth: 220 }}>
+                            No repeat patients match this tenure bucket for the current filters.
+                          </p>
+                        </>
+                      )}
                     </div>
-                    <p className="text-[10.5px] mt-1.5" style={{ color: T.textSecondary }}>of {formatNum(seg.patients)} repeaters in this tenure</p>
-                  </div>
+                  ) : (
+                    <>
+                      {/* 2 KPI metrics in a row */}
+                      <div className="grid grid-cols-2 gap-2 mb-5">
+                        {[
+                          { label: "Patients", value: formatNum(seg.patients) },
+                          { label: "Visits / Yr", value: seg.visitsPerYear },
+                        ].map((m) => (
+                          <div key={m.label} className="text-center">
+                            <p className="text-[24px] font-extrabold" style={{ color: segColor }}>{m.value}</p>
+                            <p className="text-[10px] font-medium mt-0.5" style={{ color: T.textMuted }}>{m.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Chronic stat — single box now that acute is gone. */}
+                      <div className="rounded-xl px-4 py-3" style={{ backgroundColor: `${segColor}12`, border: `1px solid ${segColor}30` }}>
+                        <div className="flex items-end justify-between gap-3 mb-2">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Chronic Patients</p>
+                            <p className="text-[22px] font-extrabold leading-none mt-1.5 tabular-nums" style={{ color: segColor }}>
+                              {formatNum(seg.chronic.count)}
+                            </p>
+                          </div>
+                          <p className="text-[13px] font-bold tabular-nums" style={{ color: segColor }}>
+                            {chronicPctClamped}%
+                          </p>
+                        </div>
+                        {/* Slim bar showing chronic share of this tenure segment. */}
+                        <div className="rounded-full overflow-hidden h-1.5" style={{ backgroundColor: `${segColor}25` }}>
+                          <div
+                            className="h-full transition-all"
+                            style={{ width: `${chronicPctClamped}%`, backgroundColor: segColor }}
+                          />
+                        </div>
+                        <p className="text-[10.5px] mt-1.5" style={{ color: T.textSecondary }}>of {formatNum(seg.patients)} repeaters in this tenure</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
           </div>
           <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically visit more consistently per year and a larger share carry chronic conditions, signalling stronger care relationships. Use these insights to design retention and continuity-of-care programs." />

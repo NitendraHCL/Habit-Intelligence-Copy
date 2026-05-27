@@ -329,9 +329,7 @@ export default function RepeatVisitsPage() {
       .catch(() => {});
   }, [activeClientId]);
   const [minVisits, setMinVisits] = useState<number>(2);
-  const [conditionFilter, setConditionFilter] = useState<"all" | "chronic" | "acute">("all");
   const [treemapYear, setTreemapYear] = useState<string>("");
-  const [condTableType, setCondTableType] = useState<"chronic" | "acute">("chronic");
   const [cohortSelectedYears, setCohortSelectedYears] = useState<string[]>([]);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
@@ -345,10 +343,10 @@ export default function RepeatVisitsPage() {
   // (raw appointments → client-side aggregateRepeatVisits) was scanning a
   // 1.4M-row payload on every filter change; this single round-trip computes
   // everything server-side from the diagnosis fact table.
-  // Note: minVisits AND conditionFilter are intentionally NOT in the API
-  // params — both are precomputed server-side as 12 slices ("all_2",
-  // "chronic_2", "acute_5", …) and shipped in one payload. Toggling either
-  // filter just picks a different slice from the cached payload, no refetch.
+  // Note: minVisits is intentionally NOT in the API params — it's
+  // precomputed server-side as slices ("all_2", "all_5", …) and shipped in
+  // one payload. Changing minVisits just picks a different slice from the
+  // cached payload, no refetch.
   const repeatExtraParams = useMemo(() => ({
     dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
     dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
@@ -359,11 +357,13 @@ export default function RepeatVisitsPage() {
 
   const { data: repeatApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/repeat-visits", repeatExtraParams);
 
-  // Pick the precomputed slice matching (conditionFilter × minVisits). The
-  // slice carries its own kpis + chart subset; we merge it with the
-  // payload's global charts (specialtyTreemap, recurringConditions, etc.)
-  // which don't depend on these filters.
-  const sliceKey = `${conditionFilter}_${minVisits}`;
+  // Pick the precomputed slice matching minVisits. The slice carries its
+  // own kpis + chart subset; we merge it with the payload's global charts
+  // (specialtyTreemap, recurringConditions, etc.) which don't depend on
+  // these filters. We always use the "all" cohort because the page-level
+  // chronic/acute toggle was removed — two specific cards now show
+  // chronic-only data on their own.
+  const sliceKey = `all_${minVisits}`;
   const activeSlice = repeatApi?.slices?.[sliceKey] || repeatApi?.slices?.["all_2"];
   const kpis = activeSlice?.kpis || repeatApi?.kpis;
   const charts = useMemo(() => {
@@ -410,23 +410,20 @@ export default function RepeatVisitsPage() {
     setAppliedAgeGroups([...selectedAgeGroups]);
   };
 
-  // Chronic vs Acute totals — applies `conditionFilter` client-side so toggling
-  // between All / Chronic Only / Acute Only doesn't trigger an API refetch.
+  // Chronic count drives the Chronic Repeat Patients card. The companion
+  // acute count is kept so we can show "X of N repeaters are chronic" as
+  // context, but the page no longer filters by it.
   const chronicCountRaw = charts?.chronicVsAcute?.chronic || 0;
   const acuteCountRaw = charts?.chronicVsAcute?.acute || 0;
-  const chronicCount = conditionFilter === "acute" ? 0 : chronicCountRaw;
-  const acuteCount = conditionFilter === "chronic" ? 0 : acuteCountRaw;
-  const totalConditionPatients = chronicCount + acuteCount;
-  const chronicPct = totalConditionPatients > 0 ? Math.round((chronicCount / totalConditionPatients) * 100) : 0;
+  const totalRepeatersForRatio = chronicCountRaw + acuteCountRaw;
+  const chronicPctOfRepeaters =
+    totalRepeatersForRatio > 0
+      ? Math.round((chronicCountRaw / totalRepeatersForRatio) * 100)
+      : 0;
 
-  // Demographics — pick the slice matching the active condition filter from
-  // the cached payload. The API emits three parallel slices (combined,
-  // chronic, acute) so toggling the filter never triggers a refetch.
-  const demoSource = conditionFilter === "chronic"
-    ? (charts?.demographicsChronic || charts?.demographics)
-    : conditionFilter === "acute"
-      ? (charts?.demographicsAcute || charts?.demographics)
-      : charts?.demographics;
+  // Demographics — always use the combined repeat-patient slice. The page-
+  // level chronic/acute toggle that previously gated this was removed.
+  const demoSource = charts?.demographics;
   const ageData = demoSource?.ageGroups || [];
   const genderData = demoSource?.genderSplit || [];
   const locationData = demoSource?.locationDistribution || [];
@@ -570,7 +567,7 @@ export default function RepeatVisitsPage() {
             pageTitle="Repeat Visits"
             charts={[
               { id: "repeatKpis", label: "Repeat Visit KPIs" },
-              { id: "chronicVsAcute", label: "Chronic vs. Acute" },
+              { id: "chronicVsAcute", label: "Chronic Repeat Patients" },
               { id: "ageGroups", label: "Age Groups" },
               { id: "genderSplit", label: "Gender Split" },
               { id: "locationDistribution", label: "Location Distribution" },
@@ -649,73 +646,47 @@ export default function RepeatVisitsPage() {
             />
           </div>}
 
-        {/* ── Chronic vs Acute ── */}
-        {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic vs. Acute" expandable={false} chartId="chronicVsAcute"
-          tooltipText="Displays the proportion of repeat patients (employees who availed any OHC service at least twice in the selected date range) categorized as chronic (long-term, recurring conditions) versus acute (short-term, one-off conditions). Use the toggle buttons to filter the entire dashboard by condition type."
-          subtitle="Shows condition category breakdown among repeat patients. Click to filter entire dashboard by chronic or acute cases."
-          chartData={charts?.chronicVsAcute} chartTitle="Chronic vs. Acute" chartDescription="Condition category breakdown among repeat patients"
+        {/* ── Chronic Repeat Patients ── */}
+        {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic Repeat Patients" expandable={false} chartId="chronicVsAcute"
+          tooltipText="Count of repeat patients (employees who availed any OHC service at least twice in the selected date range) carrying long-term, recurring (chronic) conditions. The companion ratio shows what share of all repeat patients are chronic."
+          subtitle="Repeat patients carrying long-term, recurring (chronic) conditions"
+          chartData={charts?.chronicVsAcute} chartTitle="Chronic Repeat Patients" chartDescription="Repeat patients carrying chronic (long-term) conditions"
 >
-          <div className="mt-3 flex flex-wrap items-center gap-2 mb-5">
-            {(["all", "chronic", "acute"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setConditionFilter(v)}
-                className="px-4 py-2 rounded-full text-[13px] font-bold transition-all"
-                style={{
-                  backgroundColor: conditionFilter === v ? "#4f46e5" : T.white,
-                  color: conditionFilter === v ? "#fff" : T.textPrimary,
-                  border: `1.5px solid ${conditionFilter === v ? "#4f46e5" : T.border}`,
-                }}
+          <div className="mt-4 flex items-end gap-6 flex-wrap">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Chronic repeat patients</p>
+              <p
+                className="text-[42px] font-extrabold leading-none tracking-[-0.02em] mt-2 font-[var(--font-inter)]"
+                style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}
               >
-                {v === "all" ? "All Repeaters" : v === "chronic" ? "Chronic Only" : "Acute Only"}
-              </button>
-            ))}
-            <ResetFilter visible={conditionFilter !== "all"} onClick={() => setConditionFilter("all")} />
-            <span className="text-[11px] ml-2" style={{ color: T.textMuted }}>
-              <Info size={12} className="inline mr-1" />Click to view data for Chronic / Acute repeat patients only.
-            </span>
-          </div>
-
-          {/* Stacked Bar — hide each segment entirely when its count is 0 so
-              the label can't overflow into the neighbouring segment. */}
-          <div className="rounded-xl overflow-hidden flex h-10 mb-4" style={{ border: `1px solid ${T.border}` }}>
-            {chronicCount > 0 && (
-              <div
-                className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
-                style={{ width: `${chronicPct}%`, backgroundColor: "#4f46e5", minWidth: 80 }}
-              >
-                {formatNum(chronicCount)} Chronic
-              </div>
-            )}
-            {acuteCount > 0 && (
-              <div
-                className="flex items-center justify-center text-[13px] font-bold text-white transition-all overflow-hidden whitespace-nowrap"
-                style={{ width: `${100 - chronicPct}%`, backgroundColor: T.teal, minWidth: 80 }}
-              >
-                {formatNum(acuteCount)} Acute
+                {formatNum(chronicCountRaw)}
+              </p>
+            </div>
+            {totalRepeatersForRatio > 0 && (
+              <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#4f46e515", border: `1px solid #4f46e525` }}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Share of repeaters</p>
+                <p className="text-[20px] font-extrabold leading-none tracking-[-0.02em] mt-1.5" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>
+                  {chronicPctOfRepeaters}%
+                </p>
+                <p className="text-[10.5px] mt-1" style={{ color: T.textSecondary }}>of {formatNum(totalRepeatersForRatio)} total repeat patients</p>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-6 text-[12px]" style={{ color: T.textSecondary }}>
-            <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#4f46e5" }} /> Chronic ({chronicPct}%)
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: T.teal }} /> Acute ({100 - chronicPct}%)
-            </span>
+          {/* Single accent bar — visualises chronic share against the full
+              repeat-patient pool. The remainder is unchronic (acute or
+              non-flagged) repeaters, shown as a muted track. */}
+          <div className="rounded-full overflow-hidden flex h-2.5 mt-5" style={{ backgroundColor: T.borderLight }}>
+            <div
+              className="h-full transition-all"
+              style={{ width: `${chronicPctOfRepeaters}%`, backgroundColor: "#4f46e5" }}
+            />
           </div>
-          <p className="text-[18px] font-extrabold mt-4" style={{ color: T.textPrimary }}>
-            {formatNum(totalConditionPatients)} <span className="text-[13px] font-normal" style={{ color: T.textSecondary }}>
-              {conditionFilter === "all" ? "total patients (based on current selection)" : conditionFilter === "chronic" ? "chronic-only repeat patients" : "acute-only repeat patients"}
-            </span>
-          </p>
+
           <InsightBox text={
-            conditionFilter === "all"
-              ? `Out of ${formatNum(chronicCountRaw + acuteCountRaw)} repeat patients, ${Math.round(chronicCountRaw / Math.max(1, chronicCountRaw + acuteCountRaw) * 100)}% have chronic conditions and ${Math.round(acuteCountRaw / Math.max(1, chronicCountRaw + acuteCountRaw) * 100)}% have acute conditions. ${chronicCountRaw >= acuteCountRaw ? "Chronic cases dominate the repeat visit pool, indicating ongoing care management needs." : "Acute cases form a larger share, suggesting episodic health issues drive repeat visits."}`
-              : conditionFilter === "chronic"
-                ? `Showing the chronic cohort only — ${formatNum(chronicCountRaw)} repeat patients with long-term conditions. Toggle "All Repeaters" above to compare against the acute cohort.`
-                : `Showing the acute cohort only — ${formatNum(acuteCountRaw)} repeat patients with short-term / episodic conditions. Toggle "All Repeaters" above to compare against the chronic cohort.`
+            totalRepeatersForRatio > 0
+              ? `${formatNum(chronicCountRaw)} of ${formatNum(totalRepeatersForRatio)} repeat patients (${chronicPctOfRepeaters}%) are managing chronic conditions. ${chronicPctOfRepeaters >= 50 ? "Chronic cases dominate the repeat-visit pool — ongoing care management is the primary driver of repeat traffic." : "Chronic patients are a meaningful slice of repeaters and the strongest candidates for proactive, longitudinal care plans."}`
+              : "No chronic repeat patients in the selected window."
           } />
         </CVCard>}
 
@@ -1290,47 +1261,26 @@ export default function RepeatVisitsPage() {
           </CVCard>}
         </div>
 
-        {/* ── Recurring Conditions Table ── */}
+        {/* ── Recurring Conditions Table — Chronic only ── */}
         {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance" chartId="recurringConditions"
-          tooltipText="Ranked table of conditions that recur across repeat patients (≥2 occurrences per patient), split by Chronic and Acute. Rows are ordered by distinct patient count; the volume bar is sized relative to the top condition. The Avg / Patient column shows how many times the average affected patient comes back for the same condition."
-          subtitle="Conditions recurring across repeat patients — volume, occurrences, and recurrence intensity per patient"
-          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Ranked recurring conditions by patient volume and recurrence intensity"
+          tooltipText="Ranked table of chronic conditions that recur across repeat patients (≥2 occurrences per patient). Rows are ordered by distinct patient count; the volume bar is sized relative to the top condition. The Avg / Patient column shows how many times the average affected patient comes back for the same condition."
+          subtitle="Chronic conditions recurring across repeat patients — volume, occurrences, and recurrence intensity per patient"
+          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Ranked chronic recurring conditions by patient volume and recurrence intensity"
           expandable={false}>
-          {/* Chronic / Acute toggle */}
-          <div className="flex items-center gap-2 mt-3 mb-4">
-            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
-              {(["chronic", "acute"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setCondTableType(t)}
-                  className="px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-all"
-                  style={{
-                    backgroundColor: condTableType === t ? T.white : "transparent",
-                    color: condTableType === t ? T.textPrimary : T.textMuted,
-                    boxShadow: condTableType === t ? "0 1px 2px rgba(15,23,42,0.08)" : undefined,
-                  }}
-                >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
-            </div>
-            <ResetFilter visible={condTableType !== "chronic"} onClick={() => setCondTableType("chronic")} />
-          </div>
-
           {(() => {
             const rows: Array<{ name: string; count: number; patients: number }>
-              = (charts?.recurringConditions?.[condTableType] || []);
+              = (charts?.recurringConditions?.chronic || []);
             const maxPatients = Math.max(1, ...rows.map((r) => r.patients));
             const totalPatients = rows.reduce((s, r) => s + r.patients, 0);
             const totalOccurrences = rows.reduce((s, r) => s + r.count, 0);
-            const accent = condTableType === "chronic" ? "#4f46e5" : T.teal;
-            const accentSoft = condTableType === "chronic" ? "#4f46e515" : T.teal + "15";
+            const accent = "#4f46e5";
+            const accentSoft = "#4f46e515";
             return (
-              <div className="flex-1 flex flex-col">
+              <div className="flex-1 flex flex-col mt-3">
                 {/* Hero stat tiles — 3 separate KPIs in soft accent-tinted cards */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
-                    { label: "Conditions Tracked", value: formatNum(rows.length), sub: condTableType === "chronic" ? "long-term recurring" : "short-term recurring" },
+                    { label: "Conditions Tracked", value: formatNum(rows.length), sub: "long-term recurring" },
                     { label: "Distinct Patients", value: formatNum(totalPatients), sub: "with recurring diagnoses" },
                     { label: "Total Occurrences", value: formatNum(totalOccurrences), sub: `${rows.length > 0 ? (totalOccurrences / Math.max(1, totalPatients)).toFixed(1) : 0}× avg per patient` },
                   ].map((m) => (
@@ -1362,7 +1312,7 @@ export default function RepeatVisitsPage() {
                         {rows.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="text-center py-10 text-[12px]" style={{ color: T.textMuted }}>
-                              No recurring {condTableType} conditions found for the current selection.
+                              No recurring chronic conditions found for the current selection.
                             </td>
                           </tr>
                         ) : rows.map((cond, i) => {
@@ -1411,7 +1361,7 @@ export default function RepeatVisitsPage() {
                     </table>
                   </div>
                 </div>
-                <InsightBox text={`Viewing ${condTableType === "chronic" ? "chronic" : "acute"} recurring conditions — ${rows.length} conditions affecting ${formatNum(totalPatients)} repeat patients with ${formatNum(totalOccurrences)} total occurrences. ${rows[0] ? `${cleanIcdLabel(rows[0].name)} leads with ${formatNum(rows[0].patients)} patients (${(rows[0].count / Math.max(1, rows[0].patients)).toFixed(1)}× avg recurrence).` : ""} Higher avg-per-patient indicates conditions where individual patients return repeatedly — strong candidates for proactive care management.`} />
+                <InsightBox text={`Viewing chronic recurring conditions — ${rows.length} conditions affecting ${formatNum(totalPatients)} repeat patients with ${formatNum(totalOccurrences)} total occurrences. ${rows[0] ? `${cleanIcdLabel(rows[0].name)} leads with ${formatNum(rows[0].patients)} patients (${(rows[0].count / Math.max(1, rows[0].patients)).toFixed(1)}× avg recurrence).` : ""} Higher avg-per-patient indicates conditions where individual patients return repeatedly — strong candidates for proactive care management.`} />
               </div>
             );
           })()}
@@ -1419,7 +1369,7 @@ export default function RepeatVisitsPage() {
 
         {/* ── Key Repeat User Segments ── */}
         {isChartVisible("repeatUserSegments") && <CVCard accentColor={"#6366f1"} title="Key Repeat User Segments" chartId="repeatUserSegments"
-          tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows patient count and visits-per-year, plus the chronic vs. acute split with a mini donut for visual comparison."
+          tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows patient count, visits-per-year, and the chronic-patient share of the cohort."
           subtitle="Compare engagement patterns and visit frequencies across repeat patient cohorts grouped by tenure."
           chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns across repeat patient cohorts"
           expandable={false}>
@@ -1430,14 +1380,13 @@ export default function RepeatVisitsPage() {
               const segColor = segColors[i % segColors.length];
               const tenureLabel = rawSeg?.label === "3+ years" ? "\u22653 yr" : rawSeg?.label === "2 years" ? "=2 yr" : "=1 yr";
               const rawChronic = rawSeg?.chronic ?? { count: 0, pct: 0 };
-              const rawAcute   = rawSeg?.acute   ?? { count: 0, pct: 0 };
               const seg = {
                 label: rawSeg?.label ?? "",
                 patients: rawSeg?.patients ?? 0,
                 visitsPerYear: rawSeg?.visitsPerYear ?? 0,
                 chronic: rawChronic,
-                acute: rawAcute,
               };
+              const chronicPctClamped = Math.max(0, Math.min(100, Number(seg.chronic.pct) || 0));
               return (
                 <div key={seg.label} className="rounded-2xl p-5" style={{ border: `2px solid ${segColor}30`, backgroundColor: `${segColor}08` }}>
                   <h4 className="text-[14px] font-bold mb-4" style={{ color: T.textPrimary }}>
@@ -1455,50 +1404,34 @@ export default function RepeatVisitsPage() {
                       </div>
                     ))}
                   </div>
-                  {/* Chronic / Acute info boxes */}
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${segColor}10`, border: `1px solid ${segColor}25` }}>
-                      <p className="text-[11px] font-bold mb-1" style={{ color: T.textSecondary }}>Chronic Patients</p>
-                      <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>
-                        {formatNum(seg.chronic.count)} <span className="font-medium" style={{ color: T.textSecondary }}>({seg.chronic.pct}%)</span>
+                  {/* Chronic stat — single box now that acute is gone. */}
+                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: `${segColor}12`, border: `1px solid ${segColor}30` }}>
+                    <div className="flex items-end justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Chronic Patients</p>
+                        <p className="text-[22px] font-extrabold leading-none mt-1.5 tabular-nums" style={{ color: segColor }}>
+                          {formatNum(seg.chronic.count)}
+                        </p>
+                      </div>
+                      <p className="text-[13px] font-bold tabular-nums" style={{ color: segColor }}>
+                        {chronicPctClamped}%
                       </p>
                     </div>
-                    <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${segColor}08`, border: `1px solid ${segColor}15` }}>
-                      <p className="text-[11px] font-bold mb-1" style={{ color: T.textSecondary }}>Acute Patients</p>
-                      <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>
-                        {formatNum(seg.acute.count)} <span className="font-medium" style={{ color: T.textSecondary }}>({seg.acute.pct}%)</span>
-                      </p>
+                    {/* Slim bar showing chronic share of this tenure segment. */}
+                    <div className="rounded-full overflow-hidden h-1.5" style={{ backgroundColor: `${segColor}25` }}>
+                      <div
+                        className="h-full transition-all"
+                        style={{ width: `${chronicPctClamped}%`, backgroundColor: segColor }}
+                      />
                     </div>
-                  </div>
-                  {/* Mini donut with legend */}
-                  <div className="flex items-center justify-center gap-4" style={{ height: 100 }}>
-                    <div style={{ width: 80, height: 80 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={[{ name: "Chronic", value: seg.chronic.pct || 1 }, { name: "Acute", value: seg.acute.pct || 1 }]}
-                            dataKey="value" cx="50%" cy="50%" outerRadius={36} innerRadius={22} strokeWidth={0}>
-                            <Cell fill={segColor} />
-                            <Cell fill={segColor + "40"} />
-                          </Pie>
-                          <RechartsTooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} formatter={((v: number, name: string) => [`${v}%`, name]) as any} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex flex-col gap-1.5 text-[10px]" style={{ color: T.textSecondary }}>
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: segColor }} /> Chronic Patients
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: segColor + "40" }} /> Acute Patients
-                      </span>
-                    </div>
+                    <p className="text-[10.5px] mt-1.5" style={{ color: T.textSecondary }}>of {formatNum(seg.patients)} repeaters in this tenure</p>
                   </div>
                 </div>
               );
             })}
           </div>
           </div>
-          <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically visit more consistently per year and skew chronic, signalling stronger care relationships. Use these insights to design retention and continuity-of-care programs." />
+          <InsightBox text="Compare tenure-based segments to understand how patient engagement evolves over time. Longer-tenured patients typically visit more consistently per year and a larger share carry chronic conditions, signalling stronger care relationships. Use these insights to design retention and continuity-of-care programs." />
         </CVCard>}
 
         {/* ── Same Cohort Progression ── */}

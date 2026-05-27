@@ -284,22 +284,13 @@ function ActiveFilterChips({
 export default function RepeatVisitsPage() {
   usePageAccess("/portal/ohc/repeat-visits");
   const { activeClientId } = useAuth();
-  // Date range — default mirrors /portal/ohc/utilization (Jan 1 of last
-  // year → today). draft = what the date inputs show; applied = what the
-  // API actually sees (only commits on Apply click).
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(() => {
-    const today = new Date();
-    return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
-  });
+  // Date range + filter state — single source of truth, no selected/applied
+  // split. Every change applies immediately, mirroring the Utilization page
+  // so the refresh button + filters behave the same way on both pages.
   const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>(() => {
     const today = new Date();
     return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
   });
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
-  const [selectedAgeGroups, setSelectedAgeGroups] = useState<string[]>([]);
-
-  // "applied" state — what's actually sent to the API (only updates on Apply click)
   const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
   const [appliedGenders, setAppliedGenders] = useState<string[]>([]);
   const [appliedAgeGroups, setAppliedAgeGroups] = useState<string[]>([]);
@@ -339,37 +330,23 @@ export default function RepeatVisitsPage() {
   const isPreview = previewConfig !== null;
   const isChartVisible = useChartVisibility("/portal/ohc/repeat-visits", previewConfig);
 
-  // Sourced from /api/ohc/repeat-visits → agg_diagnosis. The previous flow
-  // (raw appointments → client-side aggregateRepeatVisits) was scanning a
-  // 1.4M-row payload on every filter change; this single round-trip computes
-  // everything server-side from the diagnosis fact table.
-  // Note: minVisits is intentionally NOT in the API params — it's
-  // precomputed server-side as slices ("all_2", "all_5", …) and shipped in
-  // one payload. Changing minVisits just picks a different slice from the
-  // cached payload, no refetch.
+  // Sourced from /api/ohc/repeat-visits. Every filter — date range,
+  // location, gender, age group, AND minVisits — flows into the API
+  // query params so the server-side cohort is recomputed and every chart
+  // reflects the active filter set. No more client-side slice picking.
   const repeatExtraParams = useMemo(() => ({
     dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
     dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
+    minVisits: String(minVisits),
     ...(appliedLocations.length ? { locations: appliedLocations.join(",") } : {}),
     ...(appliedGenders.length ? { genders: appliedGenders.join(",") } : {}),
     ...(appliedAgeGroups.length ? { ageGroups: appliedAgeGroups.join(",") } : {}),
-  }), [appliedDateRange, appliedLocations, appliedGenders, appliedAgeGroups]);
+  }), [appliedDateRange, appliedLocations, appliedGenders, appliedAgeGroups, minVisits]);
 
   const { data: repeatApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/repeat-visits", repeatExtraParams);
 
-  // Pick the precomputed slice matching minVisits. The slice carries its
-  // own kpis + chart subset; we merge it with the payload's global charts
-  // (specialtyTreemap, recurringConditions, etc.) which don't depend on
-  // these filters. We always use the "all" cohort because the page-level
-  // chronic/acute toggle was removed — two specific cards now show
-  // chronic-only data on their own.
-  const sliceKey = `all_${minVisits}`;
-  const activeSlice = repeatApi?.slices?.[sliceKey] || repeatApi?.slices?.["all_2"];
-  const kpis = activeSlice?.kpis || repeatApi?.kpis;
-  const charts = useMemo(() => {
-    if (!repeatApi?.charts) return undefined;
-    return { ...repeatApi.charts, ...(activeSlice?.charts || {}) };
-  }, [repeatApi, activeSlice]);
+  const kpis = repeatApi?.kpis;
+  const charts = repeatApi?.charts;
   const [showRefreshToast, setShowRefreshToast] = useState(false);
 
   // Set default treemap year when data loads — default to "All" (the first
@@ -393,21 +370,15 @@ export default function RepeatVisitsPage() {
   if (appliedAgeGroups.length) activeFilters.ageGroups = appliedAgeGroups;
 
   const handleRemoveFilter = (key: string, value: string) => {
-    if (key === "locations") { setAppliedLocations((p) => p.filter((v) => v !== value)); setSelectedLocations((p) => p.filter((v) => v !== value)); }
-    if (key === "genders") { setAppliedGenders((p) => p.filter((v) => v !== value)); setSelectedGenders((p) => p.filter((v) => v !== value)); }
-    if (key === "ageGroups") { setAppliedAgeGroups((p) => p.filter((v) => v !== value)); setSelectedAgeGroups((p) => p.filter((v) => v !== value)); }
+    if (key === "locations") setAppliedLocations((p) => p.filter((v) => v !== value));
+    if (key === "genders") setAppliedGenders((p) => p.filter((v) => v !== value));
+    if (key === "ageGroups") setAppliedAgeGroups((p) => p.filter((v) => v !== value));
   };
 
   const handleClearAll = () => {
-    setAppliedLocations([]); setAppliedGenders([]); setAppliedAgeGroups([]);
-    setSelectedLocations([]); setSelectedGenders([]); setSelectedAgeGroups([]);
-  };
-
-  const handleApply = () => {
-    setAppliedDateRange({ ...dateRange });
-    setAppliedLocations([...selectedLocations]);
-    setAppliedGenders([...selectedGenders]);
-    setAppliedAgeGroups([...selectedAgeGroups]);
+    setAppliedLocations([]);
+    setAppliedGenders([]);
+    setAppliedAgeGroups([]);
   };
 
   // Chronic count drives the Chronic Repeat Patients card. The companion
@@ -476,15 +447,15 @@ export default function RepeatVisitsPage() {
               <CalendarDays size={13} style={{ color: T.textMuted }} />
               <input
                 type="date"
-                value={format(dateRange.from, "yyyy-MM-dd")}
-                max={format(dateRange.to, "yyyy-MM-dd")}
+                value={format(appliedDateRange.from, "yyyy-MM-dd")}
+                max={format(appliedDateRange.to, "yyyy-MM-dd")}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) return;
                   const d = new Date(v + "T00:00:00");
                   if (isNaN(d.getTime())) return;
-                  const to = d > dateRange.to ? d : dateRange.to;
-                  setDateRange({ from: d, to });
+                  const to = d > appliedDateRange.to ? d : appliedDateRange.to;
+                  setAppliedDateRange({ from: d, to });
                 }}
                 aria-label="Start date"
                 className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
@@ -495,15 +466,15 @@ export default function RepeatVisitsPage() {
             <div className="inline-flex items-center h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
               <input
                 type="date"
-                value={format(dateRange.to, "yyyy-MM-dd")}
-                min={format(dateRange.from, "yyyy-MM-dd")}
+                value={format(appliedDateRange.to, "yyyy-MM-dd")}
+                min={format(appliedDateRange.from, "yyyy-MM-dd")}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) return;
                   const d = new Date(v + "T00:00:00");
                   if (isNaN(d.getTime())) return;
-                  const from = d < dateRange.from ? d : dateRange.from;
-                  setDateRange({ from, to: d });
+                  const from = d < appliedDateRange.from ? d : appliedDateRange.from;
+                  setAppliedDateRange({ from, to: d });
                 }}
                 aria-label="End date"
                 className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
@@ -511,9 +482,9 @@ export default function RepeatVisitsPage() {
               />
             </div>
           </div>
-          <FilterMultiSelect label="Location" options={filterOptions.locations} selected={selectedLocations} onChange={setSelectedLocations} />
-          <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={selectedGenders} onChange={setSelectedGenders} />
-          <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={selectedAgeGroups} onChange={setSelectedAgeGroups} />
+          <FilterMultiSelect label="Location" options={filterOptions.locations} selected={appliedLocations} onChange={setAppliedLocations} />
+          <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={appliedGenders} onChange={setAppliedGenders} />
+          <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={appliedAgeGroups} onChange={setAppliedAgeGroups} />
 
           {/* Repeat Visit Count Filter */}
           <div className="flex items-center gap-1 ml-2">
@@ -581,21 +552,6 @@ export default function RepeatVisitsPage() {
             onPreview={setPreviewConfig}
             isPreview={isPreview}
           />
-          <Button
-            onClick={handleApply}
-            disabled={isLoading}
-            className="h-9 px-5 rounded-lg text-[13px] font-bold min-w-[90px]"
-            style={{ background: isLoading ? "#9CA3AF" : "linear-gradient(135deg, #4f46e5, #6366f1)", color: "#fff", boxShadow: isLoading ? "none" : "0 2px 8px rgba(79,70,229,0.25)" }}
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                Loading...
-              </span>
-            ) : (
-              "Apply"
-            )}
-          </Button>
         </div>
         <ActiveFilterChips filters={activeFilters} onRemove={handleRemoveFilter} onClearAll={handleClearAll} />
 
@@ -648,40 +604,114 @@ export default function RepeatVisitsPage() {
 
         {/* ── Chronic Repeat Patients ── */}
         {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic Repeat Patients" expandable={false} chartId="chronicVsAcute"
-          tooltipText="Count of repeat patients (employees who availed any OHC service at least twice in the selected date range) carrying long-term, recurring (chronic) conditions. The companion ratio shows what share of all repeat patients are chronic."
-          subtitle="Repeat patients carrying long-term, recurring (chronic) conditions"
-          chartData={charts?.chronicVsAcute} chartTitle="Chronic Repeat Patients" chartDescription="Repeat patients carrying chronic (long-term) conditions"
+          tooltipText="Repeat patients (≥2 OHC service visits in the selected window) flagged with at least one chronic condition. The donut shows the chronic share of repeaters; the side panel lists the top chronic disease groups in this cohort."
+          subtitle="Chronic share of repeaters, plus the disease groups they're managing"
+          chartData={charts?.chronicVsAcute} chartTitle="Chronic Repeat Patients" chartDescription="Donut of chronic share + top chronic disease groups"
 >
-          <div className="mt-4 flex items-end gap-6 flex-wrap">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Chronic repeat patients</p>
-              <p
-                className="text-[42px] font-extrabold leading-none tracking-[-0.02em] mt-2 font-[var(--font-inter)]"
-                style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}
-              >
-                {formatNum(chronicCountRaw)}
-              </p>
-            </div>
-            {totalRepeatersForRatio > 0 && (
-              <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#4f46e515", border: `1px solid #4f46e525` }}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Share of repeaters</p>
-                <p className="text-[20px] font-extrabold leading-none tracking-[-0.02em] mt-1.5" style={{ color: "#4f46e5", fontVariantNumeric: "tabular-nums" }}>
-                  {chronicPctOfRepeaters}%
-                </p>
-                <p className="text-[10.5px] mt-1" style={{ color: T.textSecondary }}>of {formatNum(totalRepeatersForRatio)} total repeat patients</p>
-              </div>
-            )}
-          </div>
+          {(() => {
+            const chronic = chronicCountRaw;
+            const nonChronic = Math.max(0, totalRepeatersForRatio - chronicCountRaw);
+            const donutData = [
+              { name: "Chronic", value: chronic },
+              { name: "Non-chronic", value: nonChronic },
+            ];
+            return (
+              <div className="mt-3">
+                {/* Top row — donut sits beside the two headline KPIs so the
+                    whitespace beside the chart gets used. */}
+                <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_1fr] gap-4 items-stretch">
+                  {/* Donut */}
+                  <div className="relative" style={{ height: 220 }}>
+                    {totalRepeatersForRatio > 0 ? (
+                      <>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={donutData}
+                              dataKey="value"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={62}
+                              outerRadius={92}
+                              startAngle={90}
+                              endAngle={-270}
+                              strokeWidth={0}
+                              isAnimationActive={false}
+                            >
+                              <Cell fill="#4f46e5" />
+                              <Cell fill="#E5E7EB" />
+                            </Pie>
+                            <RechartsTooltip
+                              contentStyle={{ borderRadius: 10, fontSize: 12, border: `1px solid ${T.border}` }}
+                              formatter={((v: number, name: string) => [formatNum(v), name]) as any}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        {/* Centre label */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                          <p
+                            className="text-[30px] font-extrabold leading-none tabular-nums"
+                            style={{ color: "#4f46e5" }}
+                          >
+                            {chronicPctOfRepeaters}%
+                          </p>
+                          <p
+                            className="text-[10.5px] font-semibold mt-1 leading-tight text-center"
+                            style={{ color: T.textSecondary }}
+                          >
+                            of repeaters<br />are chronic
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-[12px]" style={{ color: T.textMuted }}>
+                        No repeat patients in window
+                      </div>
+                    )}
+                  </div>
 
-          {/* Single accent bar — visualises chronic share against the full
-              repeat-patient pool. The remainder is unchronic (acute or
-              non-flagged) repeaters, shown as a muted track. */}
-          <div className="rounded-full overflow-hidden flex h-2.5 mt-5" style={{ backgroundColor: T.borderLight }}>
-            <div
-              className="h-full transition-all"
-              style={{ width: `${chronicPctOfRepeaters}%`, backgroundColor: "#4f46e5" }}
-            />
-          </div>
+                  {/* Chronic repeaters KPI */}
+                  <div
+                    className="rounded-xl px-5 py-4 flex flex-col justify-center"
+                    style={{ backgroundColor: "#4f46e515", border: `1px solid #4f46e525` }}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>
+                      Chronic repeaters
+                    </p>
+                    <p
+                      className="text-[34px] font-extrabold leading-none tracking-[-0.02em] mt-2 tabular-nums"
+                      style={{ color: "#4f46e5" }}
+                    >
+                      {formatNum(chronic)}
+                    </p>
+                    <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>
+                      Patients managing at least one chronic condition.
+                    </p>
+                  </div>
+
+                  {/* Total repeaters KPI */}
+                  <div
+                    className="rounded-xl px-5 py-4 flex flex-col justify-center"
+                    style={{ backgroundColor: T.warmBg, border: `1px solid ${T.border}` }}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>
+                      Total repeaters
+                    </p>
+                    <p
+                      className="text-[34px] font-extrabold leading-none tracking-[-0.02em] mt-2 tabular-nums"
+                      style={{ color: T.textPrimary }}
+                    >
+                      {formatNum(totalRepeatersForRatio)}
+                    </p>
+                    <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>
+                      Employees with ≥2 OHC visits in the selected window.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
 
           <InsightBox text={
             totalRepeatersForRatio > 0
@@ -758,7 +788,7 @@ export default function RepeatVisitsPage() {
                           name="Male"
                           fill={GENDER_COLORS_MAP.Male}
                           radius={[6, 0, 0, 6]}
-                          onClick={(d: any) => { setSelectedAgeGroups([d.ageGroup]); setSelectedGenders(["Male"]); }}
+                          onClick={(d: any) => { setAppliedAgeGroups([d.ageGroup]); setAppliedGenders(["Male"]); }}
                           cursor="pointer"
                         >
                           <LabelList
@@ -773,7 +803,7 @@ export default function RepeatVisitsPage() {
                           name="Female"
                           fill={GENDER_COLORS_MAP.Female}
                           radius={[0, 6, 6, 0]}
-                          onClick={(d: any) => { setSelectedAgeGroups([d.ageGroup]); setSelectedGenders(["Female"]); }}
+                          onClick={(d: any) => { setAppliedAgeGroups([d.ageGroup]); setAppliedGenders(["Female"]); }}
                           cursor="pointer"
                         >
                           <LabelList
@@ -830,7 +860,7 @@ export default function RepeatVisitsPage() {
                     {segments.map((s: any) => (
                       <button
                         key={s.label}
-                        onClick={() => setSelectedGenders([s.label])}
+                        onClick={() => setAppliedGenders([s.label])}
                         className="flex flex-col items-center justify-center text-white transition-all hover:brightness-110"
                         style={{ width: `${s.pct}%`, backgroundColor: s.color, minWidth: s.count > 0 ? 56 : 0 }}
                         title={`${s.label}: ${formatNum(s.count)} (${s.pct}%)`}
@@ -851,7 +881,7 @@ export default function RepeatVisitsPage() {
                     {segments.map((s: any) => (
                       <button
                         key={s.label}
-                        onClick={() => setSelectedGenders([s.label])}
+                        onClick={() => setAppliedGenders([s.label])}
                         className="flex flex-col gap-1.5 rounded-xl px-4 py-3.5 text-left transition-all hover:-translate-y-px"
                         style={{ border: `1px solid ${s.color}30`, backgroundColor: `${s.color}0a` }}
                       >
@@ -955,7 +985,7 @@ export default function RepeatVisitsPage() {
                           return (
                             <button
                               key={r.label}
-                              onClick={() => setSelectedLocations([r.label])}
+                              onClick={() => setAppliedLocations([r.label])}
                               className="flex flex-col gap-1.5 rounded-xl px-4 py-3.5 text-left transition-all hover:-translate-y-px"
                               style={{ border: `1px solid ${dotColor}30`, backgroundColor: `${dotColor}0a` }}
                             >
@@ -1034,7 +1064,7 @@ export default function RepeatVisitsPage() {
                               setOthersSearch("");
                               setOthersModalOpen(true);
                             } else {
-                              setSelectedLocations([r.label]);
+                              setAppliedLocations([r.label]);
                             }
                           }}
                           className="grid items-center gap-3 text-left transition-opacity hover:opacity-90"
@@ -1725,7 +1755,7 @@ export default function RepeatVisitsPage() {
                       {filtered.map((b: any) => (
                         <button
                           key={b.location}
-                          onClick={() => { setSelectedLocations([b.location]); setOthersModalOpen(false); }}
+                          onClick={() => { setAppliedLocations([b.location]); setOthersModalOpen(false); }}
                           className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm text-left"
                         >
                           <span style={{ color: T.textSecondary }}>{b.location}</span>

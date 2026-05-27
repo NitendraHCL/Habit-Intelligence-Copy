@@ -60,23 +60,29 @@ const AGE_GROUP_CASE_KPI = `CASE
   WHEN a.age > 60 THEN '61+'
 END`;
 
-const MIN_VISITS = [2, 3, 4, 5] as const;
-
 interface FilterShape {
   dateFrom: string | null;
   dateTo: string | null;
   ageGroups: string[];
   genders: string[];
   locations: string[];
+  /** Minimum total OHC consults per uhid to qualify as a "repeat patient".
+   *  Default 2. Now a server-side filter so it cascades to every chart. */
+  minVisits: number;
 }
 
 function readFilters(searchParams: URLSearchParams): FilterShape {
+  const rawMin = Number(searchParams.get("minVisits"));
+  const minVisits = Number.isFinite(rawMin) && rawMin >= 2 && rawMin <= 50
+    ? Math.floor(rawMin)
+    : 2;
   return {
     dateFrom: searchParams.get("dateFrom"),
     dateTo: searchParams.get("dateTo"),
     ageGroups: searchParams.get("ageGroups")?.split(",").filter(Boolean) ?? [],
     genders: searchParams.get("genders")?.split(",").filter(Boolean) ?? [],
     locations: searchParams.get("locations")?.split(",").filter(Boolean) ?? [],
+    minVisits,
   };
 }
 
@@ -175,22 +181,10 @@ async function handler(request: NextRequest) {
 
     // ── ① Big consolidated per_uhid scan on agg_kpi.
     //    Joined to chronic_uhids (derived from agg_diagnosis in the same
-    //    window) for the has_chronic flag. All slice-independent aggregates
-    //    — demographics, visit-frequency, tenure, segment buckets — flow
-    //    from this single result set.
-    type StatRow = { kind: string; bucket: string } & Record<string, string>;
-    const filterCol = (template: (filter: string) => string, vc: number, extraWhere?: string) => {
-      const extra = extraWhere ? ` AND ${extraWhere}` : "";
-      const filter = `FILTER (WHERE vc >= ${vc}${extra})`;
-      return `${template(filter)}::bigint AS n${vc}`;
-    };
-    const allCols = (template: (filter: string) => string, extra?: string) =>
-      MIN_VISITS.map((vc) => filterCol(template, vc, extra)).join(",\n  ");
-
-    // NOTE on params: every query below references the same FilterShape +
-    // cugCode, so kpiWhere.params, diagWhere.params, vitalsWhere.params are
-    // all positionally identical. The SQL strings reference $1..$N
-    // literally and pg binds positionally, so we pass one copy.
+    //    window) for the has_chronic flag. minVisits is now applied
+    //    upstream in repeat_base so every downstream aggregation
+    //    automatically respects the threshold.
+    type StatRow = { kind: string; bucket: string; n: string };
     const patientStatsRows = await safeQuery(
       () =>
         dwQuery<StatRow>(
@@ -208,7 +202,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           ),
           chronic_uhids AS (
             SELECT DISTINCT d.uhid
@@ -221,23 +215,16 @@ async function handler(request: NextRequest) {
             FROM repeat_base r
             LEFT JOIN chronic_uhids c ON c.uhid = r.uhid
           )
-          SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket,
-            ${allCols((f) => `COUNT(*) ${f}`)}
-          FROM per_uhid
+          SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket, COUNT(*)::bigint AS n FROM per_uhid
           UNION ALL
-          SELECT 'kpi', 'totalConsultsByRepeat',
-            ${allCols((f) => `COALESCE(SUM(vc) ${f}, 0)`)}
-          FROM per_uhid
+          SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(vc), 0)::bigint FROM per_uhid
           UNION ALL
-          SELECT 'kpi', 'avgVisitFrequencyX10',
-            ${allCols((f) => `ROUND(COALESCE(AVG(vc) ${f}, 0) * 10)`)}
-          FROM per_uhid
+          SELECT 'kpi', 'avgVisitFrequencyX10', ROUND(COALESCE(AVG(vc), 0) * 10)::bigint FROM per_uhid
           UNION ALL
-          SELECT 'kpi', 'frequentRepeaters',
-            ${MIN_VISITS.map(
-              (vc) => `COUNT(*) FILTER (WHERE vc >= 5)::bigint AS n${vc}`
-            ).join(",\n  ")}
-          FROM per_uhid
+          -- "Frequent repeaters" is its own definition (≥5 visits) regardless
+          -- of the minVisits filter. Counts the subset of the active cohort
+          -- that also clears the ≥5 bar.
+          SELECT 'kpi', 'frequentRepeaters', COUNT(*) FILTER (WHERE vc >= 5)::bigint FROM per_uhid
           UNION ALL
             SELECT 'ageGroup', CASE
               WHEN age_years < 20 THEN '<20'
@@ -246,14 +233,14 @@ async function handler(request: NextRequest) {
               WHEN age_years BETWEEN 41 AND 60 THEN '41-60'
               WHEN age_years > 60 THEN '61+'
               ELSE 'Unknown' END,
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid WHERE age_years IS NOT NULL GROUP BY 2
           UNION ALL
             SELECT 'gender', CASE
               WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
               WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
               ELSE 'Others' END,
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'visitFreq', CASE
@@ -261,7 +248,7 @@ async function handler(request: NextRequest) {
               WHEN vc BETWEEN 5 AND 9 THEN '5-9'
               WHEN vc BETWEEN 2 AND 4 THEN '2-4'
               ELSE '1' END,
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'visitFreqSame', CASE
@@ -269,7 +256,7 @@ async function handler(request: NextRequest) {
               WHEN vc BETWEEN 5 AND 9 THEN '5-9'
               WHEN vc BETWEEN 2 AND 4 THEN '2-4'
               ELSE '1' END,
-              ${allCols((f) => `COUNT(*) ${f}`, "spec_count <= 1")}
+              COUNT(*) FILTER (WHERE spec_count <= 1)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'visitFreqDiff', CASE
@@ -277,11 +264,11 @@ async function handler(request: NextRequest) {
               WHEN vc BETWEEN 5 AND 9 THEN '5-9'
               WHEN vc BETWEEN 2 AND 4 THEN '2-4'
               ELSE '1' END,
-              ${allCols((f) => `COUNT(*) ${f}`, "spec_count >= 2")}
+              COUNT(*) FILTER (WHERE spec_count >= 2)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'location', COALESCE(NULLIF(TRIM(facility), ''), 'Unknown'),
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'segment',
@@ -297,7 +284,7 @@ async function handler(request: NextRequest) {
                 WHEN LOWER(TRIM(gender)) IN ('male','m') THEN 'Male'
                 WHEN LOWER(TRIM(gender)) IN ('female','f') THEN 'Female'
                 ELSE 'Others' END),
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'tenure',
@@ -306,7 +293,7 @@ async function handler(request: NextRequest) {
                 WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 1 THEN '2 years'
                 ELSE '1 year' END)
               || '|' || (CASE WHEN has_chronic THEN 'chronic' ELSE 'notchronic' END),
-              ${allCols((f) => `COUNT(*) ${f}`)}
+              COUNT(*)::bigint
             FROM per_uhid GROUP BY 2
           UNION ALL
             SELECT 'tenureVisits',
@@ -314,19 +301,9 @@ async function handler(request: NextRequest) {
                 WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 2 THEN '3+ years'
                 WHEN EXTRACT(EPOCH FROM (last_at - first_at)) / (365.25 * 86400.0) >= 1 THEN '2 years'
                 ELSE '1 year' END,
-              ${allCols((f) => `COALESCE(SUM(vc) ${f}, 0)`)}
+              COALESCE(SUM(vc), 0)::bigint
             FROM per_uhid GROUP BY 2
           `,
-          // patientStats query uses both kpiWhere and diagWhere placeholders.
-          // We zip params: kpiWhere.params first, then diagWhere.params, but
-          // both start with $1=cugCode. We use a different parameter binding:
-          // since both clauses reference $1, we'll concat all params from
-          // kpiWhere then renumber diagWhere placeholders to start fresh.
-          // Simpler: replicate cugCode in both branches by using two
-          // parameter slots. To keep this readable we rebuild diagWhere's
-          // WHERE inline below with fresh $N indices.
-          // ↑ Comment above is informational — the actual workaround is in
-          //    `mergedParams` below.
           mergeParams(kpiWhere, diagWhere).params,
           HEAVY_OPTS
         ),
@@ -348,7 +325,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           ),
           chronic_uhids AS (
             SELECT DISTINCT d.uhid
@@ -380,7 +357,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           )
           SELECT
             d.icd_description AS condition,
@@ -414,7 +391,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           )
           SELECT
             COALESCE(NULLIF(TRIM(a.speciality_name), ''), 'Unknown') AS speciality,
@@ -445,7 +422,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           ),
           per_uhid_year AS (
             SELECT
@@ -485,7 +462,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= 2
+            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
           ),
           bmi_series AS (
             SELECT
@@ -531,14 +508,12 @@ async function handler(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────
 
     type StatMap = Record<string, Record<string, number>>;
-    const colKey = (vc: number) => `n${vc}`;
-    function bucketByVc(rows: StatRow[], vc: number): StatMap {
-      const map: StatMap = {};
-      for (const r of rows) {
-        if (!map[r.kind]) map[r.kind] = {};
-        map[r.kind][r.bucket] = Number(r[colKey(vc)] || 0);
-      }
-      return map;
+    // minVisits is now applied upstream so the rows carry a single `n`
+    // column — no need to slice by vc threshold.
+    const stats: StatMap = {};
+    for (const r of patientStatsRows) {
+      if (!stats[r.kind]) stats[r.kind] = {};
+      stats[r.kind][r.bucket] = Number(r.n || 0);
     }
 
     const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
@@ -594,7 +569,7 @@ async function handler(request: NextRequest) {
       };
     }
 
-    function buildRepeatUserSegments(rows: StatRow[], vc: number) {
+    function buildRepeatUserSegments(s: StatMap) {
       // Tenure rows are emitted with bucket = "<tenure>|<chronic|notchronic>".
       // We sum chronic + notchronic per tenure to get the total patient
       // count, and keep `chronic.count` for the chronic-only stat shown
@@ -606,18 +581,15 @@ async function handler(request: NextRequest) {
         "3+ years": { chronic: 0, total: 0 },
       };
       const segVisits: Record<string, number> = { "1 year": 0, "2 years": 0, "3+ years": 0 };
-      const col = colKey(vc);
-      for (const r of rows) {
-        const v = Number(r[col] || 0);
-        if (r.kind === "tenure") {
-          const [label, kind] = r.bucket.split("|");
-          if (segPatients[label]) {
-            segPatients[label].total += v;
-            if (kind === "chronic") segPatients[label].chronic += v;
-          }
-        } else if (r.kind === "tenureVisits") {
-          if (segVisits[r.bucket] !== undefined) segVisits[r.bucket] = v;
+      for (const [key, v] of Object.entries(s.tenure || {})) {
+        const [label, kind] = key.split("|");
+        if (segPatients[label]) {
+          segPatients[label].total += v;
+          if (kind === "chronic") segPatients[label].chronic += v;
         }
+      }
+      for (const [k, v] of Object.entries(s.tenureVisits || {})) {
+        if (segVisits[k] !== undefined) segVisits[k] = v;
       }
       return (["1 year", "2 years", "3+ years"] as const).map((label) => {
         const total = segPatients[label].total;
@@ -638,63 +610,41 @@ async function handler(request: NextRequest) {
       });
     }
 
-    function buildSlice(vc: number) {
-      const stats = bucketByVc(patientStatsRows, vc);
+    // Compose the single-cohort payload (no slices anymore — minVisits is
+    // applied upstream).
+    const totalRepeatPatients = stats.kpi?.totalRepeatPatients || 0;
+    const totalConsultsByRepeat = stats.kpi?.totalConsultsByRepeat || 0;
+    const frequentRepeaters = stats.kpi?.frequentRepeaters || 0;
+    const avgVisitFrequencyNum = (stats.kpi?.avgVisitFrequencyX10 || 0) / 10;
 
-      const totalRepeatPatients = stats.kpi?.totalRepeatPatients || 0;
-      const totalConsultsByRepeat = stats.kpi?.totalConsultsByRepeat || 0;
-      const frequentRepeaters = stats.kpi?.frequentRepeaters || 0;
-      const avgVisitFrequencyNum = (stats.kpi?.avgVisitFrequencyX10 || 0) / 10;
+    const demo = buildDemographics(stats);
+    const loc = withLocationRollup(demo.locationDistribution);
 
-      const demo = buildDemographics(stats);
-      const loc = withLocationRollup(demo.locationDistribution);
+    const freqMap = stats.visitFreq || {};
+    const sameMap = stats.visitFreqSame || {};
+    const diffMap = stats.visitFreqDiff || {};
+    const repeatVisitFrequency = FREQ_ORDER
+      .filter((b) => freqMap[b])
+      .map((b) => ({
+        bucket: `${b} Visits`,
+        label: `${b} Visits`,
+        count: freqMap[b] || 0,
+        sameSpecialty: sameMap[b] || 0,
+        differentSpecialty: diffMap[b] || 0,
+      }));
 
-      const freqMap = stats.visitFreq || {};
-      const sameMap = stats.visitFreqSame || {};
-      const diffMap = stats.visitFreqDiff || {};
-      const repeatVisitFrequency = FREQ_ORDER
-        .filter((b) => freqMap[b])
-        .map((b) => ({
-          bucket: `${b} Visits`,
-          label: `${b} Visits`,
-          count: freqMap[b] || 0,
-          sameSpecialty: sameMap[b] || 0,
-          differentSpecialty: diffMap[b] || 0,
-        }));
+    const repeatUserSegments = buildRepeatUserSegments(stats);
 
-      const repeatUserSegments = buildRepeatUserSegments(patientStatsRows, vc);
-
-      return {
-        kpis: {
-          totalRepeatPatients,
-          avgVisitFrequency: avgVisitFrequencyNum,
-          totalConsultsByRepeat,
-          avgNps: 0,
-          frequentRepeaters,
-          avgFrequency: avgVisitFrequencyNum.toFixed(1),
-          repeatRate: 0,
-          lsmpEnrolled: 0,
-        },
-        charts: {
-          demographics: {
-            ageGroups: demo.ageGroups,
-            ageGenderPyramid: demo.ageGenderPyramid,
-            genderSplit: demo.genderSplit,
-            locationDistribution: loc.locationDistribution,
-            othersBreakdown: loc.othersBreakdown,
-          },
-          repeatVisitFrequency,
-          repeatUserSegments,
-        },
-      };
-    }
-
-    type SlicePayload = ReturnType<typeof buildSlice>;
-    const slices: Record<string, SlicePayload> = {};
-    for (const vc of MIN_VISITS) {
-      slices[`all_${vc}`] = buildSlice(vc);
-    }
-    const defaultSlice = slices["all_2"];
+    const kpis = {
+      totalRepeatPatients,
+      avgVisitFrequency: avgVisitFrequencyNum,
+      totalConsultsByRepeat,
+      avgNps: 0,
+      frequentRepeaters,
+      avgFrequency: avgVisitFrequencyNum.toFixed(1),
+      repeatRate: 0,
+      lsmpEnrolled: 0,
+    };
 
     // ── Chronic-vs-Acute headline.
     const ca = chronicAcuteRows[0];
@@ -741,6 +691,7 @@ async function handler(request: NextRequest) {
       });
     }
 
+
     // ── Cohort visit-frequency: shape it as { [year]: [{threshold, count}, ...] }.
     const cohortVisitFrequency: Record<string, Array<{ threshold: string; count: number }>> = {};
     const yearsSeen = new Set<string>();
@@ -781,9 +732,17 @@ async function handler(request: NextRequest) {
     const sankeyFlow = { nodes, links };
 
     return NextResponse.json({
-      kpis: defaultSlice.kpis,
+      kpis,
       charts: {
-        ...defaultSlice.charts,
+        demographics: {
+          ageGroups: demo.ageGroups,
+          ageGenderPyramid: demo.ageGenderPyramid,
+          genderSplit: demo.genderSplit,
+          locationDistribution: loc.locationDistribution,
+          othersBreakdown: loc.othersBreakdown,
+        },
+        repeatVisitFrequency,
+        repeatUserSegments,
         chronicVsAcute,
         specialtyTreemap,
         treemapYears,
@@ -797,7 +756,6 @@ async function handler(request: NextRequest) {
         cohortVisitFrequency,
         cohortYears,
       },
-      slices,
       lastUpdated: new Date().toISOString(),
       meta: { hadErrors: failedQueries.length > 0, failedQueries },
     });

@@ -87,15 +87,22 @@ export async function getSession(): Promise<AuthSession | null> {
     if (session) {
       await prisma.session.delete({ where: { id: session.id } });
     }
+    // Clear the orphaned cookie too. Without this the cookie persists in
+    // the browser and the middleware (which only checks cookie presence)
+    // would let the user back into /portal/* with a now-invalid token,
+    // resulting in a blank dashboard rather than a redirect to /login.
+    cookieStore.delete(SESSION_COOKIE);
     return null;
   }
 
   // Idle expiry — treat the session as logged-out if no activity has been
   // recorded inside the rolling IDLE_TIMEOUT window. Delete the session
-  // row so the cookie becomes useless on subsequent requests too.
+  // row AND clear the cookie so the next request goes through middleware
+  // without a session cookie and is redirected to /login.
   const idleMs = now.getTime() - session.lastActivity.getTime();
   if (idleMs > IDLE_TIMEOUT_MS) {
     await prisma.session.delete({ where: { id: session.id } });
+    cookieStore.delete(SESSION_COOKIE);
     return null;
   }
 

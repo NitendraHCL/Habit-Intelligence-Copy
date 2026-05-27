@@ -287,9 +287,10 @@ export default function RepeatVisitsPage() {
   // Date range + filter state — single source of truth, no selected/applied
   // split. Every change applies immediately, mirroring the Utilization page
   // so the refresh button + filters behave the same way on both pages.
+  // Default `from` is Jan 1, 2024 so the chronic cohort lines up with
+  // Health Insights, which uses the same start date.
   const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>(() => {
-    const today = new Date();
-    return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
+    return { from: new Date(2024, 0, 1), to: new Date() };
   });
   const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
   const [appliedGenders, setAppliedGenders] = useState<string[]>([]);

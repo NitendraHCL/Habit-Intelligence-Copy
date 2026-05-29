@@ -41,6 +41,23 @@ function validateColumn(table: string, column: string) {
   }
 }
 
+/**
+ * Double-quote a column identifier so Postgres preserves its exact casing.
+ * Without this, an unquoted reference like `a.serviceItemName` is folded to
+ * `a.serviceitemname` and fails on tables whose columns are camel/PascalCase
+ * (e.g. aggregated_table.agg_advice). Embedded quotes are escaped per the SQL
+ * standard. Column names are already validated against the data-source
+ * allowlist before reaching here, so this only governs rendering.
+ */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Render an alias-qualified, case-preserving column reference: a."col". */
+function qualify(alias: string, column: string): string {
+  return `${alias}.${quoteIdent(column)}`;
+}
+
 // Table alias map: primary = "a", joined tables get "j1", "j2", etc.
 type AliasMap = Map<string, string>;
 
@@ -64,7 +81,7 @@ function resolveColumn(
       const short = fullTable.split(".").pop() ?? fullTable;
       if (short === tableShort) {
         validateColumn(fullTable, rawCol);
-        return { sqlCol: `${alias}.${rawCol}`, table: fullTable, rawCol };
+        return { sqlCol: qualify(alias, rawCol), table: fullTable, rawCol };
       }
     }
     throw new QueryValidationError(`Table "${tableShort}" is not in the query`);
@@ -72,7 +89,7 @@ function resolveColumn(
 
   // Unqualified: resolve on primary table
   validateColumn(primaryTable, column);
-  return { sqlCol: `a.${column}`, table: primaryTable, rawCol: column };
+  return { sqlCol: qualify("a", column), table: primaryTable, rawCol: column };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +162,7 @@ function parseGroupByExpr(
     }
     validateColumn(table, colRef);
     return {
-      sqlExpr: fn.sql(`a.${colRef}`),
+      sqlExpr: fn.sql(qualify("a", colRef)),
       alias: fn.alias(colRef),
       rawColumn: colRef,
     };
@@ -158,7 +175,7 @@ function parseGroupByExpr(
     return { sqlExpr: resolved.sqlCol, alias: resolved.rawCol, rawColumn: resolved.rawCol };
   }
   validateColumn(table, expr);
-  return { sqlExpr: `a.${expr}`, alias: expr, rawColumn: expr };
+  return { sqlExpr: qualify("a", expr), alias: expr, rawColumn: expr };
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +225,7 @@ function parseMetric(
       sqlCol = resolved.sqlCol;
     } else {
       validateColumn(table, colRef);
-      sqlCol = `a.${colRef}`;
+      sqlCol = qualify("a", colRef);
     }
     const dateCol = findDateColumn(table);
     if (!dateCol) {
@@ -216,7 +233,7 @@ function parseMetric(
         `Time-intelligence metric "${fn}:${colRef}" requires a timestamp column on table "${table}"`
       );
     }
-    const d = `a.${dateCol}`;
+    const d = qualify("a", dateCol);
     const now = "CURRENT_DATE";
     let periodPredicate: string;
     switch (fn) {
@@ -263,7 +280,7 @@ function parseMetric(
     sqlCol = resolved.sqlCol;
   } else {
     validateColumn(table, colRef);
-    sqlCol = `a.${colRef}`;
+    sqlCol = qualify("a", colRef);
   }
 
   switch (fn) {
@@ -305,7 +322,7 @@ function compileFormula(
       sqlCol = resolved.sqlCol;
     } else {
       validateColumn(table, a);
-      sqlCol = `a.${a}`;
+      sqlCol = qualify("a", a);
     }
     switch (f) {
       case "count":
@@ -355,7 +372,7 @@ function buildWhereCondition(
   paramIndex: number
 ): { sql: string; params: unknown[]; nextIndex: number } {
   validateColumn(table, column);
-  const col = `a.${column}`;
+  const col = qualify("a", column);
 
   if ("eq" in condition) {
     return {
@@ -372,6 +389,12 @@ function buildWhereCondition(
     };
   }
   if ("in" in condition) {
+    // An empty list must NOT render as `IN ()` — that's a SQL syntax error.
+    // Treat it as "no filter" (common when a filter row was added but its
+    // value box left blank in the builder).
+    if (!condition.in || condition.in.length === 0) {
+      return { sql: "", params: [], nextIndex: paramIndex };
+    }
     const placeholders = condition.in.map((_, i) => `$${paramIndex + i}`);
     return {
       sql: `${col} IN (${placeholders.join(", ")})`,
@@ -380,6 +403,10 @@ function buildWhereCondition(
     };
   }
   if ("not_in" in condition) {
+    // Same guard: `NOT IN ()` is also invalid SQL.
+    if (!condition.not_in || condition.not_in.length === 0) {
+      return { sql: "", params: [], nextIndex: paramIndex };
+    }
     const placeholders = condition.not_in.map((_, i) => `$${paramIndex + i}`);
     return {
       sql: `${col} NOT IN (${placeholders.join(", ")})`,
@@ -416,6 +443,11 @@ function buildWhereCondition(
     };
   }
   if ("between" in condition) {
+    // Guard against a malformed tuple (missing bound) producing a bind
+    // with undefined params — treat as no filter.
+    if (!Array.isArray(condition.between) || condition.between.length < 2) {
+      return { sql: "", params: [], nextIndex: paramIndex };
+    }
     return {
       sql: `${col} BETWEEN $${paramIndex} AND $${paramIndex + 1}`,
       params: [condition.between[0], condition.between[1]],
@@ -457,7 +489,8 @@ function buildWhereClauses(
 
   for (const [column, condition] of Object.entries(where)) {
     const result = buildWhereCondition(table, column, condition, idx);
-    fragments.push(result.sql);
+    // Skip no-op fragments (e.g. an empty IN list) so we never emit "AND ".
+    if (result.sql) fragments.push(result.sql);
     allParams.push(...result.params);
     idx = result.nextIndex;
   }
@@ -490,12 +523,12 @@ function buildFilterClauses(
   // Date range
   const dateCol = filters.dateColumn ?? findDateColumn(table);
   if (dateCol && filters.dateFrom) {
-    fragments.push(`a.${dateCol} >= $${idx}::timestamp`);
+    fragments.push(`${qualify("a", dateCol)} >= $${idx}::timestamp`);
     allParams.push(filters.dateFrom);
     idx++;
   }
   if (dateCol && filters.dateTo) {
-    fragments.push(`a.${dateCol} <= $${idx}::timestamp`);
+    fragments.push(`${qualify("a", dateCol)} <= $${idx}::timestamp`);
     allParams.push(filters.dateTo + "T23:59:59");
     idx++;
   }
@@ -604,7 +637,7 @@ function buildSQL(
 
       const joinType = (join.type ?? "left").toUpperCase();
       joinClauses.push(
-        `${joinType} JOIN ${join.table} ${alias} ON a.${join.on.primary} = ${alias}.${join.on.foreign} AND ${alias}.${joinDs.cugColumn} = $1`
+        `${joinType} JOIN ${join.table} ${alias} ON ${qualify("a", join.on.primary)} = ${qualify(alias, join.on.foreign)} AND ${qualify(alias, joinDs.cugColumn)} = $1`
       );
     }
   }
@@ -627,7 +660,7 @@ function buildSQL(
       const cases = c.cases
         .map((cc) => {
           const isNumber = typeof cc.when === "number";
-          const lhs = isNumber ? `a.${c.column}` : `LOWER(TRIM(a.${c.column}::text))`;
+          const lhs = isNumber ? qualify("a", c.column) : `LOWER(TRIM(${qualify("a", c.column)}::text))`;
           const rhs = isNumber
             ? String(cc.when)
             : `'${String(cc.when).toLowerCase().replace(/'/g, "''")}'`;
@@ -703,7 +736,7 @@ function buildSQL(
   const sql = `SELECT
       ${selectParts.join(",\n      ")}
     FROM ${table} a${joinSQL}
-    WHERE a.${ds.cugColumn} = $1
+    WHERE ${qualify("a", ds.cugColumn)} = $1
       ${chartWhere.sql}
       ${filterWhere.sql}
     ${groupByParts.length ? `GROUP BY ${groupByParts.join(", ")}` : ""}

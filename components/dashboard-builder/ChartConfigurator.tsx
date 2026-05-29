@@ -1384,6 +1384,27 @@ function WhereBuilder({
     });
   }
 
+  // Swap the column a filter applies to. The column is the object KEY in
+  // `where`, so we rebuild the map preserving insertion order (a plain
+  // delete+add would move the row to the end) and carry the existing
+  // condition across. No-op if unchanged or if the target column already
+  // has its own filter (avoids clobbering it).
+  function changeConditionColumn(oldCol: string, newCol: string) {
+    if (newCol === oldCol || newCol in where) return;
+    const next: Record<string, WhereCondition> = {};
+    for (const [k, v] of Object.entries(where)) {
+      next[k === oldCol ? newCol : k] = v;
+    }
+    onChange({
+      ...chart,
+      dataSource: {
+        ...chart.dataSource,
+        table: chart.dataSource?.table ?? "",
+        where: next,
+      },
+    });
+  }
+
   return (
     <Field label="Filters (WHERE)" infoKey="data.where">
       <div className="space-y-2">
@@ -1392,7 +1413,7 @@ function WhereBuilder({
             <select
               value={col}
               className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs"
-              onChange={() => {}}
+              onChange={(e) => changeConditionColumn(col, e.target.value)}
             >
               {groupableCols.map((c) => (
                 <option key={c.key} value={c.key}>

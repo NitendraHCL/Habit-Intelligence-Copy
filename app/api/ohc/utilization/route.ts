@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────
  * OHC Utilization API — powered by aggregated_table.agg_kpi
@@ -29,7 +31,128 @@ import { withCache } from "@/lib/cache/middleware";
  * ──────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
+const RESULT_TABLE = "aggregated_table.result_entry";
 const COMPLETED = "a.stage = 'Completed'";
+
+/* ────────────────────────────────────────────────────────────────────
+ * Data-audit provenance — one entry per chart/section, keyed identically
+ * to the keys in the response below (plus `kpis`). Shipped only to
+ * SUPER_ADMIN callers and rendered by <DataAuditSection> at the bottom of
+ * the page. Edit an entry whenever you change the query that feeds the
+ * matching chart so the audit panel stays truthful.
+ *
+ * Two source tables:
+ *   • aggregated_table.agg_kpi      — consult-level KPI rows. Almost every
+ *     chart filters to stage = 'Completed' (visit trends include all
+ *     stages). Consult volume = SUM(total_consult_count); patients =
+ *     COUNT(DISTINCT uhid).
+ *   • aggregated_table.result_entry — one row per ordered service test.
+ *     Feeds the Service Category charts only, restricted to service_type
+ *     IN ('Pathology','Radiology','Cardiology').
+ * ──────────────────────────────────────────────────────────────────── */
+const PROVENANCE: DashboardProvenance = {
+  kpis: {
+    chart: "Headline KPIs (Total Consults · Unique Patients · Repeat Patients · Locations · Repeat Rate · YoY/PoP)",
+    sources: [BASE_TABLE],
+    logic:
+      "From Completed agg_kpi rows in the filter window, aggregated to one row per uhid: " +
+      "Total Consults = SUM(total_consult_count); Unique Patients = COUNT(uhid); " +
+      "Repeat Patients = COUNT(uhid with ≥2 source rows); Locations = COUNT(DISTINCT facility_mapping); " +
+      "Repeat Rate = repeatPatients / uniquePatients. YoY compares the same window one year earlier; " +
+      "if prior-year consults < 50 it falls back to the immediately preceding equal-length window (PoP), " +
+      "else flags insufficient history.",
+    sql: "WITH per_uhid AS (… GROUP BY a.uhid) SELECT SUM(consult_count), COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
+  },
+  demographicSunburst: {
+    chart: "Demographics Sunburst (Age Group → Gender)",
+    sources: [BASE_TABLE],
+    logic:
+      "Completed agg_kpi rows grouped by age_group × patient_gender (age_group pre-banded in the warehouse). " +
+      "Inner ring = age group, outer ring = normalised gender (Male/Female/Others); ring value = SUM(total_consult_count). " +
+      "Age groups ordered <20 / 20-35 / 36-40 / 41-60 / 61+.",
+    sql: "GROUP BY a.age_group, a.patient_gender → SUM(total_consult_count) per (age, gender).",
+  },
+  demographicStats: {
+    chart: "Demographics Summary (Top Gender · Top Age Group · Highest Cohort)",
+    sources: [BASE_TABLE],
+    logic:
+      "Derived in JS from the same age_group × gender aggregation as the sunburst: topGender / topAgeGroup are the " +
+      "buckets with the largest SUM(total_consult_count); highestCohort is the single (age group × gender) cell with " +
+      "the most consults, carrying its unique-patient count.",
+    sql: "argmax over SUM(total_consult_count) per gender / per age_group / per (age×gender).",
+  },
+  locationBySpecialty: {
+    chart: "Consult Distribution by Specialty & Location (stacked bar)",
+    sources: [BASE_TABLE],
+    logic:
+      "All Completed agg_kpi rows grouped by facility_mapping × speciality_name (NULL facility → 'Unknown'). " +
+      "Top 6 specialities by total consults become stack segments; remaining/unlabeled fall into 'Other'. " +
+      "Top 15 locations kept; the rest rolled into an 'Others' row. Companion keys topSpecialties / othersBreakdown / " +
+      "otherSpecialtyBreakdown carry the stack keys and the rolled-up tails.",
+    sql: "GROUP BY facility_mapping, speciality_name → SUM(total_consult_count); top-6 specialties, top-15 locations in JS.",
+  },
+  visitTrends: {
+    chart: "Visit Trends over time (Completed · Cancelled · No Show, with unique patients)",
+    sources: [BASE_TABLE],
+    logic:
+      "agg_kpi rows across ALL stages (not just Completed), bucketed by period (day if range ≤31 days, else month) × stage. " +
+      "Completed → consults = SUM(total_consult_count) and uniquePatients = COUNT(DISTINCT uhid); other stages → consults = " +
+      "COUNT(*) and uniquePatients = 0. avgConsults = mean of completed per period.",
+    sql: "GROUP BY to_char(consult_date, period), a.stage; CASE on stage for consults vs row count.",
+  },
+  specialtyTreemap: {
+    chart: "Specialty Treemap",
+    sources: [BASE_TABLE],
+    logic:
+      "Completed agg_kpi rows with a non-empty speciality_name, grouped by speciality_name. value = SUM(total_consult_count), " +
+      "ordered descending.",
+    sql: "GROUP BY a.speciality_name → SUM(total_consult_count) ORDER BY value DESC.",
+  },
+  peakHours: {
+    chart: "Peak Consultation Hours heatmap (weekday × hour)",
+    sources: [BASE_TABLE],
+    logic:
+      "Completed agg_kpi rows grouped by EXTRACT(DOW FROM consult_date) × consult_hour, value = SUM(total_consult_count). " +
+      "Rendered for hours 6 AM–10 PM only; peakDay/peakHour/peakCount mark the busiest cell.",
+    sql: "GROUP BY EXTRACT(DOW FROM a.consult_date), a.consult_hour → SUM(total_consult_count).",
+  },
+  serviceCategories: {
+    chart: "Service Categories (Booked vs Completed · Completion Rate)",
+    sources: [RESULT_TABLE],
+    logic:
+      "result_entry rows (one per ordered service test) restricted to service_type IN ('Pathology','Radiology','Cardiology'), " +
+      "grouped by service_type. Booked = COUNT(*); Completed = COUNT(*) FILTER (WHERE status = 'Completed'); " +
+      "Completion Rate = Completed / Booked. Filters applied on creation_date, gender, age (parsed from leading 'N Y'), relationship.",
+    sql: "GROUP BY a.service_type → COUNT(*) booked, COUNT(*) FILTER (WHERE status='Completed') completed.",
+  },
+  serviceCategoryLineItems: {
+    chart: "Service Category Line Items (drill-down: packages vs tests)",
+    sources: [RESULT_TABLE],
+    logic:
+      "Same result_entry filter as Service Categories, grouped by service_type × service_name. Pathology rows matching " +
+      "Health Check% / EHC% / %Care Plan% / Annual Health Check% are labelled 'package', everything else 'test'. " +
+      "Top 6 service_names per (category × kind) by booked count.",
+    sql: "ROW_NUMBER() OVER (PARTITION BY category, kind ORDER BY booked DESC) WHERE rn <= 6.",
+  },
+  bubbleBySpecialty: {
+    chart: "Consult Distribution bubbles (Specialty × Location × Age Group, gender split)",
+    sources: [BASE_TABLE],
+    logic:
+      "Completed agg_kpi rows with non-empty speciality_name, non-null facility_mapping and age_group, grouped by " +
+      "speciality_name × facility_mapping × age_group × patient_gender. total = SUM(total_consult_count) split into " +
+      "male/female; malePercent = male/total. Top 10 specialities by total (key bubbleSpecialties).",
+    sql: "GROUP BY speciality_name, facility_mapping, age_group, patient_gender → SUM(total_consult_count).",
+  },
+  repeatTrends: {
+    chart: "Repeat Visit Trends over time",
+    sources: [BASE_TABLE],
+    logic:
+      "Completed agg_kpi rows bucketed by period (day if range ≤31 days, else month) then aggregated to one row per " +
+      "(period, uhid). repeatVisits = SUM(total_consult_count) − COUNT(*) (extra visits beyond the first); " +
+      "repeatPatients = COUNT(uhid with ≥2 source rows in that period).",
+    sql: "WITH per_period_uhid AS (GROUP BY period, a.uhid) SELECT SUM(consult_count) - COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
+  },
+};
 
 function yoyChange(current: number, previous: number): number | null {
   if (previous === 0) return current > 0 ? 100 : null;
@@ -761,4 +884,7 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const GET = withCache(handler, { endpoint: "ohc/utilization" });
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "ohc/utilization" }),
+  PROVENANCE
+);

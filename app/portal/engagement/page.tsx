@@ -52,6 +52,7 @@ import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import { useConfig } from "@/lib/contexts/config-context";
 import { RotateCcw } from "lucide-react";
 import type { PageConfig } from "@/lib/types/dashboard-config";
@@ -878,6 +879,8 @@ export default function EngagementPage() {
           />
         </div>
       </CVCard>}
+
+      <DataAuditSection provenance={raw?._meta?.provenance} />
     </div>
   );
 }

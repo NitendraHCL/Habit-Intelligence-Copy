@@ -10,6 +10,8 @@ import { RotateCcw } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { PageConfig } from "@/lib/types/dashboard-config";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
+import DataAuditSection from "@/components/audit/DataAuditSection";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
 import {
   Activity,
   ArrowRight,
@@ -73,6 +75,7 @@ function fmt(n: number): string {
 interface OverviewData {
   kpis: typeof fallbackKpis;
   services: typeof fallbackServices;
+  _meta?: { provenance?: DashboardProvenance };
 }
 
 /* ════════════════════════════════════════════════════════════════════ */
@@ -548,6 +551,8 @@ export default function HomePage() {
         {fmt(kpis.totalEmployees - kpis.activeEmployees)} inactive employees to
         improve overall participation.
       </div>
+
+      <DataAuditSection provenance={data?._meta?.provenance} />
     </div>
   );
 }

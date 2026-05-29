@@ -60,6 +60,8 @@ import { ChartComments } from "@/components/ui/chart-comments";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import DataAuditSection from "@/components/audit/DataAuditSection";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -397,6 +399,7 @@ export default function EmotionalWellbeingPage() {
       depressionScale?: Array<{ label: string; count: number }>;
       selfEsteemScale?: Array<{ label: string; count: number }>;
     };
+    _meta?: { provenance?: DashboardProvenance };
   }>("ohc/emotional-wellbeing", ewbExtraParams);
 
   // Fetch filter options once (Psychologist-aware via agg_kpi). The shared
@@ -1810,6 +1813,11 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           return `Top category: ${top.category} — ${pct}% of flagged patients. Open it for the specific concerns inside.`;
         })()} />
       </CVCard>}
+
+      {/* Data Audit — superadmin-only source + extraction logic per chart.
+          Renders to null for every other role; provenance only arrives in
+          the API payload for SUPER_ADMIN callers. */}
+      <DataAuditSection provenance={ewbApi?._meta?.provenance} />
     </div>
   );
 }

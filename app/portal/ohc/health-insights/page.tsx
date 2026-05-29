@@ -5,6 +5,7 @@ import { interpolateHex } from "@/lib/dashboard/render-helpers";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import useSWR from "swr";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -1808,6 +1809,8 @@ export default function HealthInsightsPage() {
       })()}
 
       </WarmSection>}
+
+      <DataAuditSection provenance={raw?._meta?.provenance} />
 
     </div>
   );

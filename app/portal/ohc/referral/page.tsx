@@ -55,6 +55,7 @@ import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 
 const ReactEChartsBase = dynamic(() => import("echarts-for-react"), { ssr: false });
 const ReactECharts = ReactEChartsBase as any;
@@ -314,7 +315,7 @@ export default function ReferralAnalyticsPage() {
     return p;
   }, [appliedDateRange, appliedFilters]);
 
-  const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData("ohc/referral", extraParams);
+  const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/referral", extraParams);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
@@ -1461,6 +1462,12 @@ export default function ReferralAnalyticsPage() {
           })()}
           <InsightBox text="Each bar is one clinic. Coloured sections show which specialties patients were referred to from that clinic. The number above each bar is the clinic's total referrals." />
         </CVCard>}
+
+        {/* Data Audit — superadmin-only source + extraction logic per chart.
+            Renders to null for every other role; provenance only arrives in
+            the API payload for SUPER_ADMIN callers. */}
+        <DataAuditSection provenance={data?._meta?.provenance} />
+
         <Dialog open={othersModalOpen} onOpenChange={setOthersModalOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/contexts/auth-context";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -1684,6 +1685,11 @@ export default function RepeatVisitsPage() {
           </div>
           <InsightBox text={`Cohort progression tracks ${cohortSelectedYears.length > 0 ? cohortSelectedYears.join(", ") : "selected"} year(s). The visit frequency distribution reveals whether patients are increasing or decreasing their visit frequency over time, while the BMI Sankey flow shows health outcome transitions — watch for flows moving from Above Normal to In Range as a positive indicator.`} />
         </CVCard>}
+
+        {/* Data Audit — superadmin-only source + extraction logic per chart.
+            Renders to null for every other role; provenance only arrives in
+            the API payload for SUPER_ADMIN callers. */}
+        <DataAuditSection provenance={repeatApi?._meta?.provenance} />
 
         {/* Others (Specialty) breakdown modal */}
         <Dialog open={spOthersModalOpen} onOpenChange={setSpOthersModalOpen}>

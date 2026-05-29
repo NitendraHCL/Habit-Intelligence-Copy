@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import PageDownload from "@/components/shared/PageDownload";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   LineChart,
   Line,
@@ -2782,6 +2783,11 @@ export default function OHCUtilizationPage() {
           return `${peakLabel} was ${peakLabelFmt} with ${formatNum(peak.repeatVisits)} repeat visits.${ratioLine}${gapTrend}`;
         })()} />
       </CVCard>}
+
+      {/* Data Audit — superadmin-only source + extraction logic per chart.
+          Renders to null for every other role; provenance only arrives in
+          the API payload for SUPER_ADMIN callers. */}
+      <DataAuditSection provenance={utilizationData?._meta?.provenance} />
 
     </div>
 

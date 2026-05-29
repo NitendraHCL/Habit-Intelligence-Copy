@@ -6,6 +6,7 @@ import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { Button } from "@/components/ui/button";
 import {
@@ -270,6 +271,7 @@ interface LsmpData {
     columns: string[];
     data: number[][];
   };
+  _meta?: { provenance?: import("@/lib/audit/provenance").DashboardProvenance };
 }
 
 // ─── Main Page ───
@@ -803,6 +805,8 @@ export default function LSMPPage() {
           </div>
         </div>
       </CVCard>}
+
+      <DataAuditSection provenance={data?._meta?.provenance} />
     </div>
   );
 }

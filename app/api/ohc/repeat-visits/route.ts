@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────────────────────────
  * OHC Repeat Visits API — populated from THREE warehouse tables:
@@ -40,6 +42,99 @@ import { withCache } from "@/lib/cache/middleware";
 const KPI_TABLE = "aggregated_table.agg_kpi";
 const DIAG_TABLE = "aggregated_table.agg_diagnosis";
 const VITALS_TABLE = "aggregated_table.vitals";
+
+/* ────────────────────────────────────────────────────────────────────
+ * Data-audit provenance — one entry per chart, keyed identically to the
+ * `charts` keys in the response below (plus `kpis`). Shipped only to
+ * SUPER_ADMIN callers and rendered by <DataAuditSection> at the bottom
+ * of the page. Edit an entry whenever you change the query that feeds
+ * the matching chart so the audit panel stays truthful.
+ *
+ * Common cohort across every chart: the "repeat patient" set is the
+ * UHIDs from agg_kpi (stage = 'Completed', within the filter window)
+ * whose SUM(total_consult_count) >= the Min Visits filter (default 2).
+ * ──────────────────────────────────────────────────────────────────── */
+const PROVENANCE: DashboardProvenance = {
+  kpis: {
+    chart: "Headline KPIs (Repeat Patients · Total Consults · Avg Frequency · Frequent Repeaters)",
+    sources: [KPI_TABLE],
+    logic:
+      "From the repeat-patient cohort (agg_kpi, stage='Completed', SUM(total_consult_count) ≥ Min Visits, grouped by uhid): " +
+      "Total Repeat Patients = COUNT(uhid); Total Consults by Repeat = SUM(total_consult_count); " +
+      "Avg Visit Frequency = AVG(consults per uhid); Frequent Repeaters = COUNT(uhid with ≥5 consults), " +
+      "a fixed ≥5 bar independent of the Min Visits filter.",
+    sql: "GROUP BY a.uhid HAVING SUM(a.total_consult_count) >= :minVisits → COUNT / SUM / AVG; FILTER (WHERE vc >= 5) for frequent repeaters.",
+  },
+  chronicVsAcute: {
+    chart: "Chronic Repeat Patients",
+    sources: [KPI_TABLE, DIAG_TABLE],
+    logic:
+      "Repeat-patient UHIDs (agg_kpi) LEFT JOIN the chronic UHID set (agg_diagnosis where LOWER(status) IN " +
+      "('chronic','acute or chronic')). chronic = repeaters present in the chronic set; acute = repeaters absent from it " +
+      "(i.e. non-chronic). Same date/location/gender/age filters applied to both tables.",
+    sql: "COUNT(*) FILTER (WHERE c.uhid IS NOT NULL) AS chronic vs FILTER (WHERE c.uhid IS NULL) AS acute.",
+  },
+  recurringConditions: {
+    chart: "Recurring Conditions Performance (chronic)",
+    sources: [KPI_TABLE, DIAG_TABLE],
+    logic:
+      "agg_diagnosis rows for repeat-patient UHIDs, chronic only (LOWER(status) IN ('chronic','acute or chronic')), " +
+      "grouped by icd_description. patients = COUNT(DISTINCT uhid); occurrences = SUM(total_diagnosis_records). " +
+      "Keeps conditions with ≥2 total records, top 40 by patient count.",
+    sql: "GROUP BY d.icd_description HAVING SUM(d.total_diagnosis_records) >= 2 ORDER BY patients DESC LIMIT 40.",
+  },
+  demographics: {
+    chart: "Demographics (Age Groups · Gender Split · Age×Gender Pyramid · Location Distribution)",
+    sources: [KPI_TABLE],
+    logic:
+      "Per repeat-patient UHID, one row carrying MAX(age), MAX(gender), MAX(facility_mapping). Age banded into " +
+      "<20 / 20-35 / 36-40 / 41-60 / 61+; gender normalised to Male/Female/Others; counts are distinct patients. " +
+      "Location distribution keeps the top 10 facilities and rolls the remainder into 'Others'.",
+    sql: "COUNT(*) per age band / gender / age|gender / facility over the per_uhid cohort.",
+  },
+  repeatVisitFrequency: {
+    chart: "Repeat Visit Frequency (Same vs Different Specialty)",
+    sources: [KPI_TABLE],
+    logic:
+      "Repeat-patient UHIDs bucketed by total consults into 2-4 / 5-9 / 10+. Within each bucket, sameSpecialty = " +
+      "patients touching ≤1 distinct speciality_name, differentSpecialty = patients touching ≥2.",
+    sql: "COUNT(*) per visit-count bucket, split by COUNT(DISTINCT speciality_name) <= 1 vs >= 2.",
+  },
+  repeatUserSegments: {
+    chart: "Repeat User Segments by Tenure",
+    sources: [KPI_TABLE, DIAG_TABLE],
+    logic:
+      "Tenure per UHID = MAX(consult_date) − MIN(consult_date), banded into 1 year / 2 years / 3+ years. Per band: " +
+      "patients = COUNT(uhid); visitsPerYear = SUM(consults)/patients/tenure; chronic share = % of band's UHIDs in " +
+      "the chronic set (agg_diagnosis).",
+    sql: "GROUP BY tenure band || chronic flag; visits summed per band.",
+  },
+  specialtyTreemap: {
+    chart: "Specialty Treemap (by year)",
+    sources: [KPI_TABLE],
+    logic:
+      "Consults for repeat-patient UHIDs grouped by speciality_name × consult year. value = SUM(total_consult_count). " +
+      "Top 25 specialities per year plus an 'All' aggregate; blank specialities labelled 'Unknown'.",
+    sql: "GROUP BY speciality_name, EXTRACT(YEAR FROM consult_date) ORDER BY SUM DESC LIMIT 25.",
+  },
+  cohortVisitFrequency: {
+    chart: "Same Cohort Progression — Visit Frequency by Year",
+    sources: [KPI_TABLE],
+    logic:
+      "For each consult year, count repeat-patient UHIDs whose consults in that year clear each threshold (3+, 4+, 5+, 6+). " +
+      "A patient contributes to a year's '5+' bucket if they had ≥5 consults in that year.",
+    sql: "per_uhid_year (SUM consults per uhid per year) → COUNT(*) WHERE vc_year >= N for N in 3,4,5,6.",
+  },
+  sankeyFlow: {
+    chart: "Same Cohort Progression — BMI Sankey (Visit 1→2→3)",
+    sources: [KPI_TABLE, VITALS_TABLE],
+    logic:
+      "For repeat-patient UHIDs, take their first 3 BMI readings from vitals (vital_parameter_name='BMI', value 5–80), " +
+      "ordered by vitals_creation_time. Bucket each by WHO cut-offs (<18.5 Below Normal / 18.5–24.9 In Range / ≥25 " +
+      "Above Normal) and count Visit 1→2 and Visit 2→3 bucket transitions.",
+    sql: "ROW_NUMBER() OVER (PARTITION BY uhid ORDER BY vitals_creation_time); LEAD(bucket) for transitions; visit_n IN (1,2).",
+  },
+};
 
 // WHO BMI cut-offs (user-confirmed). Reference range columns on the
 // vitals row are intentionally ignored — we want one consistent
@@ -796,4 +891,7 @@ function mergeParams(
   return { params: a.params };
 }
 
-export const GET = withCache(handler, { endpoint: "ohc/repeat-visits" });
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "ohc/repeat-visits" }),
+  PROVENANCE
+);

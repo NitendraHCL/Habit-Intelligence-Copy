@@ -63,6 +63,7 @@ import { AskAIButton } from "@/components/ai/AskAIButton";
 import { T } from "@/lib/ui/theme";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 
 const ReactECharts = dynamic(
   () => import("echarts-wordcloud").then(() => import("echarts-for-react")),
@@ -1043,6 +1044,8 @@ export default function NPSPage() {
         </div>
       </CVCard>}
       </div>
+
+      <DataAuditSection provenance={d?._meta?.provenance} />
     </div>
   );
 }

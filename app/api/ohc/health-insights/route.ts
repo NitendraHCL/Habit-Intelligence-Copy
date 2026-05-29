@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────────────────────────
  * OHC Health Insights API — sourced from aggregated_table.agg_diagnosis
@@ -66,6 +68,125 @@ const GENDER_NORM = `CASE
   WHEN LOWER(TRIM(d.patient_gender)) IN ('female','f') THEN 'Female'
   ELSE 'Others'
 END`;
+
+/* ────────────────────────────────────────────────────────────────────
+ * Data-audit provenance — one entry per response key produced by this
+ * route, keyed identically to the JSON keys returned below. Shipped only
+ * to SUPER_ADMIN callers and rendered by <DataAuditSection> at the bottom
+ * of the page. Every entry traces to actual SQL in this handler.
+ *
+ * All queries read a single warehouse table, aggregated_table.agg_diagnosis
+ * (DIAG_TABLE), one row per (uhid × icd_code), filtered to the request's
+ * cug_code_mapped plus optional date / year / location / gender / age /
+ * condition / conditionType filters. "visits/count" is always
+ * SUM(total_diagnosis_records); "patients" is COUNT(DISTINCT uhid). The
+ * chronic flag is LOWER(status) IN ('chronic','acute or chronic'); the
+ * disease bucket ("category") is COALESCE(NULLIF(TRIM(disease),''),'Other').
+ * ──────────────────────────────────────────────────────────────────── */
+const PROVENANCE: DashboardProvenance = {
+  categoryTreemap: {
+    chart: "Disease Group Treemap / Categories",
+    sources: [DIAG_TABLE],
+    logic:
+      "Grouped by disease bucket (COALESCE(NULLIF(TRIM(disease),''),'Other')) over rows with a non-blank icd_description. " +
+      "count = SUM(total_diagnosis_records); patients = COUNT(DISTINCT uhid); each row's percentage is its share of the total " +
+      "count. Backs both the `categories` list and `categoryTreemap`.",
+    sql: "SELECT disease_bucket, SUM(total_diagnosis_records), COUNT(DISTINCT uhid) GROUP BY 1 ORDER BY 2 DESC.",
+  },
+  conditionBreakdown: {
+    chart: "Condition Breakdown (top conditions)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Top 20 icd_descriptions by SUM(total_diagnosis_records), with COUNT(DISTINCT uhid) as patients. When a disease " +
+      "(category) is selected it restricts to that disease bucket. Non-blank icd_description only.",
+    sql: "GROUP BY icd_description [AND disease_bucket = :category] ORDER BY SUM(total_diagnosis_records) DESC LIMIT 20.",
+  },
+  conditionsByCategory: {
+    chart: "Condition Share Distribution — expandable subcategory rows",
+    sources: [DIAG_TABLE],
+    logic:
+      "Every (disease bucket × icd_description) combo with count = SUM(total_diagnosis_records) and patients = " +
+      "COUNT(DISTINCT uhid). Keyed by disease bucket; each value is its conditions sorted by count desc.",
+    sql: "GROUP BY disease_bucket, icd_description ORDER BY disease_bucket, SUM(total_diagnosis_records) DESC.",
+  },
+  chronicAcute: {
+    chart: "Chronic vs Acute split",
+    sources: [DIAG_TABLE],
+    logic:
+      "Pre-aggregated per uhid: chronic_rows / acute_rows = SUM(total_diagnosis_records) FILTERed by the chronic predicate " +
+      "(LOWER(status) IN ('chronic','acute or chronic')) and its negation; has_chronic/has_acute = BOOL_OR of the same. " +
+      "chronicCount/acuteCount = SUM of those row sums; chronicPatients/acutePatients = COUNT of uhids with the flag.",
+    sql: "WITH per_uhid AS (... GROUP BY uhid) SELECT SUM(chronic_rows), COUNT(*) FILTER (WHERE has_chronic), ...",
+  },
+  demoMatrix: {
+    chart: "Demographic Breakdown — Age / Gender / Location (demoAge, demoGender, demoLocation)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Chronic-only (CHRONIC predicate enforced) single-pass CTE keyed by disease bucket — or by icd_description when a " +
+      "category/condition is selected. Three UNION-ALL aggregates tagged dim='age'|'gender'|'location': age banded " +
+      "(<20/20-35/36-40/41-60/61+), gender normalised (Male/Female/Others), location = facility_mapping ('Unknown' if blank). " +
+      "count = SUM(total_diagnosis_records) per (key × bucket). Split client-side into demoAge / demoGender / demoLocation.",
+    sql: "WITH base AS (... WHERE CHRONIC) SELECT 'age'|'gender'|'location' dim, key, bucket, SUM(visits) GROUP BY 1,2,3 (UNION ALL x3).",
+  },
+  coOccurrenceVenn: {
+    chart: "Chronic Disease Co-Occurrence (Venn)",
+    sources: [DIAG_TABLE],
+    logic:
+      "For up to 3 selected disease buckets (from coOccurrenceCategories): per uhid, BOOL_OR membership flags (chronic-only) " +
+      "are combined into a subset bitmask; 'subset' = COUNT(uhid) per non-empty membership combination; 'overlapAge' / " +
+      "'overlapGender' = age/gender breakdown of the all-overlap (every selected bucket) intersection. Empty when no buckets picked.",
+    sql: "WITH per_uhid AS (BOOL_OR(bucket=$ AND chronic) ... GROUP BY uhid) → bitmask COUNT(*) WHERE any; COUNT(*) WHERE all by age/gender.",
+  },
+  diseaseCombinations: {
+    chart: "Disease Combinations (condition pairs)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Self-join of distinct chronic (uhid × icd_description) rows on the same uhid where a < b. total = COUNT(uhid pairs); " +
+      "male/female = that count FILTERed by normalised patient_gender. Keeps pairs with ≥5 co-occurring patients, top 12 by total.",
+    sql: "JOIN distinct_dx d1,d2 ON same uhid AND d1.icd < d2.icd GROUP BY 1,2 HAVING COUNT(*) >= 5 ORDER BY total DESC LIMIT 12.",
+  },
+  conditionTrends: {
+    chart: "Condition Trends (monthly + derived yearly)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Chronic-only monthly series: GROUP BY date_trunc('month', last_diagnosis_date), count = SUM(total_diagnosis_records), " +
+      "uniquePatients = COUNT(DISTINCT uhid). Optionally restricted to a selected condition or disease bucket. " +
+      "conditionTrendsYearly is rolled up in JS from these monthly buckets (uniquePatients summed across months, an over-count).",
+    sql: "SELECT to_char(month) period, SUM(total_diagnosis_records), COUNT(DISTINCT uhid) WHERE CHRONIC GROUP BY 1 ORDER BY 1.",
+  },
+  seasonalData: {
+    chart: "Seasonal Split (Mar–Aug vs Sep–Feb)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Single row: seasonalCount/Patients = SUM(total_diagnosis_records) / COUNT(DISTINCT uhid) FILTERed to months 3–8; " +
+      "nonSeasonal* = the complement (months not in 3–8). Applies the standard request filters; rows need a last_diagnosis_date.",
+    sql: "SELECT SUM(...) FILTER (WHERE MONTH BETWEEN 3 AND 8), COUNT(DISTINCT uhid) FILTER (...), and NOT BETWEEN variants.",
+  },
+  seasonalTrends: {
+    chart: "Monthly Condition Patterns (calendar grid)",
+    sources: [DIAG_TABLE],
+    logic:
+      "Chronic-only per-disease-bucket monthly series: GROUP BY disease bucket, date_trunc('month', last_diagnosis_date), " +
+      "count = SUM(total_diagnosis_records). Keyed by disease bucket; the page picks the top 3 buckets per month.",
+    sql: "SELECT disease_bucket, to_char(month) period, SUM(total_diagnosis_records) WHERE CHRONIC GROUP BY 1,2 ORDER BY 1,2.",
+  },
+  years: {
+    chart: "Year filter options",
+    sources: [DIAG_TABLE],
+    logic:
+      "EXTRACT(YEAR) from MIN and MAX last_diagnosis_date for the cug; the inclusive integer range between them is generated " +
+      "client-side. Uses only the cug_code_mapped filter (ignores the other request filters).",
+    sql: "SELECT EXTRACT(YEAR FROM MIN(last_diagnosis_date)), EXTRACT(YEAR FROM MAX(last_diagnosis_date)) WHERE cug_code_mapped = $1.",
+  },
+  facilities: {
+    chart: "Facility / location filter options",
+    sources: [DIAG_TABLE],
+    logic:
+      "SELECT DISTINCT facility_mapping for the cug where facility_mapping is non-blank, ordered alphabetically. " +
+      "Uses only the cug_code_mapped filter.",
+    sql: "SELECT DISTINCT facility_mapping WHERE cug_code_mapped = $1 AND facility_mapping <> '' ORDER BY 1.",
+  },
+};
 
 function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -656,4 +777,7 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const GET = withCache(handler, { endpoint: "ohc/health-insights" });
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "ohc/health-insights" }),
+  PROVENANCE
+);

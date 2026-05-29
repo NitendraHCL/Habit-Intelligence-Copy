@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────────────────────────
  * OHC Emotional Wellbeing API — two-source fact model.
@@ -50,6 +52,164 @@ const ageGroupCase = (col: string) => `CASE
   WHEN ${col} <= 60 THEN '51-60'
   ELSE '60+'
 END`;
+
+/* ────────────────────────────────────────────────────────────────────
+ * Data-audit provenance — one entry per response key (kpis + each
+ * `charts` key). Shipped only to SUPER_ADMIN callers and rendered by
+ * <DataAuditSection> at the bottom of the page. Edit an entry whenever
+ * the matching query changes so the audit panel stays truthful.
+ *
+ * Shared scoping: the agg_kpi surface (alias `a`) is always filtered to
+ * stage='Completed' AND speciality_name='Psychologist' plus the page
+ * filters (cug_code, date range on consult_date, location, gender, raw
+ * age banded via CASE, relationship). The emotional_wellbeing surface
+ * (alias `e`) is filtered to stage IN ('Completed','Prescription Sent',
+ * 'Re Open') plus the same page filters on its own columns (date range
+ * on slotstarttime, facility_mapping, appt_patient_gender, age, relationship).
+ * Distribution charts dedupe e to one row per uhid via the LATEST
+ * session: DISTINCT ON (e.uhid) ORDER BY e.slotstarttime DESC.
+ * ──────────────────────────────────────────────────────────────────── */
+const PROVENANCE: DashboardProvenance = {
+  kpis: {
+    chart: "Headline KPIs (Total Consults · Unique Patients · Repeat Patients · Total EWB Assessed)",
+    sources: [BASE_TABLE, EWB_TABLE],
+    logic:
+      "From agg_kpi (Psychologist, Completed) grouped one row per uhid: Total Consults = SUM(total_consult_count); " +
+      "Unique Patients = COUNT(uhid); Repeat Patients = COUNT(uhid having >= 2 agg_kpi rows). " +
+      "Total EWB Assessed = COUNT(DISTINCT uhid) in emotional_wellbeing for the same filters.",
+    sql: "per_uhid (GROUP BY a.uhid) → SUM(consult_count), COUNT(*), COUNT(*) WHERE row_count >= 2; COUNT(DISTINCT e.uhid) for EWB assessed.",
+  },
+  demographics: {
+    chart: "Patient Demographics (Age Groups · Gender Split · Location · Age×Gender)",
+    sources: [BASE_TABLE],
+    logic:
+      "All from agg_kpi (Psychologist, Completed). Age = SUM(total_consult_count) per raw-age band (<20 / 21-30 / 31-40 / " +
+      "41-50 / 51-60 / 60+ via CASE on a.age, age NOT NULL). Gender = SUM(total_consult_count) per Male/Female/Others " +
+      "(LOWER(TRIM(patient_gender))). Location = SUM(total_consult_count) per facility_mapping (NOT NULL), ordered desc. " +
+      "Age×Gender = SUM(total_consult_count) cross-tabbed by age band × gender, pivoted to male/female/others/total per band.",
+    sql: "GROUP BY age band / gender / facility_mapping / (age band, gender); measure = SUM(a.total_consult_count).",
+  },
+  consultTrends: {
+    chart: "Consult Trends (monthly)",
+    sources: [BASE_TABLE],
+    logic:
+      "agg_kpi (Psychologist, Completed) grouped by month of consult_date. Per month: totalConsults = SUM(total_consult_count); " +
+      "uniquePatients = COUNT(DISTINCT uhid).",
+    sql: "GROUP BY date_trunc('month', a.consult_date) → SUM(total_consult_count), COUNT(DISTINCT a.uhid) ORDER BY month.",
+  },
+  criticalRisk: {
+    chart: "Critical Risk (Self Harm)",
+    sources: [EWB_TABLE],
+    logic:
+      "From the latest EWB session per uhid: suicidalThoughts = COUNT(suicidal_thoughts='Yes'); attemptedSelfHarm = " +
+      "COUNT(attempted_self_harm='Yes'); previousAttempts = COUNT(suicide_attempt='Yes'); totalCases = COUNT(patients " +
+      "flagged 'Yes' on ANY of the three.",
+    sql: "latest (DISTINCT ON e.uhid) → COUNT(*) FILTER(WHERE col='Yes') per column and for the OR of all three.",
+  },
+  substanceUsePct: {
+    chart: "Substance Use (%)",
+    sources: [EWB_TABLE],
+    logic:
+      "Among latest-session patients, percentage flagged 'Yes' on any of smoking / alcohol_intake / other_substance_use, " +
+      "rounded to a whole percent.",
+    sql: "latest → ROUND(100.0 * COUNT(*) FILTER(WHERE smoking='Yes' OR alcohol_intake='Yes' OR other_substance_use='Yes') / COUNT(*), 0).",
+  },
+  sleepQuality: {
+    chart: "Sleep Quality",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients counted by sleep_quality: values Good / Average / Poor kept verbatim, everything else " +
+      "labelled 'Not Reported'.",
+    sql: "latest → COUNT(*) GROUP BY CASE sleep_quality IN ('Good','Average','Poor') ELSE 'Not Reported'.",
+  },
+  sleepDuration: {
+    chart: "Sleep Duration",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients counted by sleep_duration: values '7-9 hrs' / 'Less than 7 hrs' / 'More than 9 hrs' kept " +
+      "verbatim, everything else labelled 'Not Reported'.",
+    sql: "latest → COUNT(*) GROUP BY CASE sleep_duration IN (...) ELSE 'Not Reported'.",
+  },
+  alcoholHabit: {
+    chart: "Alcohol Habit",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients counted by alcohol_intake: 'Yes' / 'No' kept, everything else labelled 'Not Reported'.",
+    sql: "latest → COUNT(*) GROUP BY CASE alcohol_intake = 'Yes'/'No' ELSE 'Not Reported'.",
+  },
+  smokingHabit: {
+    chart: "Smoking Habit",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients counted by smoking: 'Yes' / 'No' / 'Ex-Smoker' kept, everything else labelled 'Not Reported'.",
+    sql: "latest → COUNT(*) GROUP BY CASE smoking = 'Yes'/'No'/'Ex-Smoker' ELSE 'Not Reported'.",
+  },
+  smokingTrend: {
+    chart: "Smoking Trend (monthly current-smoker share)",
+    sources: [EWB_TABLE],
+    logic:
+      "Per patient per month, take the latest EWB answer (DISTINCT ON uhid, month ORDER BY slotstarttime DESC). Per month: " +
+      "pct = round(100 * COUNT(smoking='Yes') / COUNT(*)). Last 12 monthly points within the filter window.",
+    sql: "per_month (DISTINCT ON e.uhid, date_trunc('month', slotstarttime)) → COUNT(*) FILTER(WHERE smoking='Yes') / COUNT(*) per month.",
+  },
+  visitPattern: {
+    chart: "Visit Pattern (by EWB visit count)",
+    sources: [EWB_TABLE],
+    logic:
+      "Per uhid, visit_count = COUNT(DISTINCT COALESCE(visit_id, slotstarttime::text)) in EWB. Patients bucketed into " +
+      "1 / 2 / 3 / 4 / 5+ Visits; count = patients per bucket.",
+    sql: "visit_counts (GROUP BY e.uhid) → COUNT(*) GROUP BY visit-count bucket WHERE visit_count >= 1.",
+  },
+  impressions: {
+    chart: "Impressions Analysis (overall category flag counts)",
+    sources: [EWB_TABLE],
+    logic:
+      "Per uhid, flagged for each of 9 native category columns (family, career, self_improvement, health, " +
+      "session_relationship, financial, psychological_disorders, sexual_wellness, lgbtqia) when the column is non-NULL and " +
+      "TRIM NOT IN ('', 'No') (BOOL_OR across sessions). Overall = sum of flagged patients per category across visit buckets.",
+    sql: "per_patient BOOL_OR(col IS NOT NULL AND TRIM(col) NOT IN ('','No')) per category → COUNT(*) FILTER summed across buckets.",
+  },
+  impressionsByVisitBucket: {
+    chart: "Impressions Analysis by Visit Bucket",
+    sources: [EWB_TABLE],
+    logic:
+      "Same per-patient category flags as Impressions, but counted within each visit-count bucket (1 / 2 / 3 / 4 / 5+ Visits) " +
+      "using visit_count = COUNT(DISTINCT COALESCE(visit_id, slotstarttime::text)).",
+    sql: "bucketed per_patient → COUNT(*) FILTER(WHERE has_<category>) GROUP BY bucket, per category.",
+  },
+  impressionSubcategories: {
+    chart: "Impressions Analysis — subcategory drill-down",
+    sources: [EWB_TABLE],
+    logic:
+      "From the latest session per uhid, for each of the 9 category columns distribute patients across the distinct " +
+      "TRIM(value)s that are non-NULL and NOT IN ('', 'No'). count = patients per (category, subcategory value).",
+    sql: "latest → COUNT(*) GROUP BY category, TRIM(col) WHERE col IS NOT NULL AND TRIM(col) NOT IN ('','No').",
+  },
+  anxietyScale: {
+    chart: "Anxiety Scale",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients derived from psychological_disorders: ILIKE '%anxi%' → Anxious; exactly 'No' → Not Anxious; " +
+      "else Not Reported.",
+    sql: "latest → COUNT(*) GROUP BY CASE psychological_disorders ILIKE '%anxi%' / = 'No' / else.",
+  },
+  depressionScale: {
+    chart: "Depression Scale",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients derived from psychological_disorders: ILIKE '%depress%' OR '%dysthym%' → Moderate or Higher; " +
+      "exactly 'No' → Minimal; else Not Reported.",
+    sql: "latest → COUNT(*) GROUP BY CASE psychological_disorders ILIKE '%depress%'/'%dysthym%' / = 'No' / else.",
+  },
+  selfEsteemScale: {
+    chart: "Self Esteem Scale",
+    sources: [EWB_TABLE],
+    logic:
+      "Latest-session patients derived from self_improvement: ILIKE '%self esteem%' OR '%insecur%' → Low; exactly 'No' → " +
+      "Normal; else Not Reported.",
+    sql: "latest → COUNT(*) GROUP BY CASE self_improvement ILIKE '%self esteem%'/'%insecur%' / = 'No' / else.",
+  },
+};
 
 function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const dateFrom = searchParams.get("dateFrom");
@@ -805,4 +965,7 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const GET = withCache(handler, { endpoint: "ohc/emotional-wellbeing" });
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "ohc/emotional-wellbeing" }),
+  PROVENANCE
+);

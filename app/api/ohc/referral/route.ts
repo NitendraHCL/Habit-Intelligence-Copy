@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────────────────────────
  * OHC Referral API — single-table fact model.
@@ -28,6 +30,76 @@ import { withCache } from "@/lib/cache/middleware";
  * ──────────────────────────────────────────────────────────────────── */
 
 const BASE_TABLE = "aggregated_table.referral_conversion";
+
+/* ────────────────────────────────────────────────────────────────────
+ * Data-audit provenance — one entry per chart/section, keyed identically
+ * to the `charts` keys in the response below (plus `kpis`). Shipped only
+ * to SUPER_ADMIN callers and rendered by <DataAuditSection> at the bottom
+ * of the page. Edit an entry whenever you change the query that feeds the
+ * matching chart so the audit panel stays truthful.
+ *
+ * Every chart reads the single fact table aggregated_table.referral_conversion
+ * (one row = one referral). The shared filter (cug_code_mapped, optional
+ * tenant specialty whitelist on speciality_referred_to, g_creation_time date
+ * range, speciality_referred_to / facility_mapping / gender / age-band filters)
+ * is applied to every query. Counts are plain COUNT(*); "converted" is
+ * COUNT(*) FILTER (WHERE consumption = 'Consumed').
+ * ──────────────────────────────────────────────────────────────────── */
+const PROVENANCE: DashboardProvenance = {
+  kpis: {
+    chart: "Headline KPIs (Total Referrals · Converted · Conversion %)",
+    sources: [BASE_TABLE],
+    logic:
+      "Over the filtered referral rows: Total Referrals = COUNT(*); Converted = COUNT(*) of rows where " +
+      "consumption = 'Consumed'; Conversion % = converted / total × 100 (rounded).",
+    sql: "SELECT COUNT(*) AS total_referrals, COUNT(*) FILTER (WHERE r.consumption = 'Consumed') AS converted_count FROM referral_conversion WHERE <filters>.",
+  },
+  referralTrends: {
+    chart: "Referral Trends over time",
+    sources: [BASE_TABLE],
+    logic:
+      "Filtered referrals bucketed by issue date (g_creation_time) using date_trunc — by day when the selected " +
+      "window is ≤31 days, otherwise by month. Per bucket: totalReferrals = COUNT(*) and conversions = " +
+      "COUNT(*) FILTER (WHERE consumption = 'Consumed').",
+    sql: "GROUP BY to_char(date_trunc('day'|'month', r.g_creation_time), fmt) → COUNT(*), COUNT(*) FILTER (consumption='Consumed') ORDER BY period.",
+  },
+  matrixByYear: {
+    chart: "Referral Matrix — From-Specialty → To-Specialty (by year)",
+    sources: [BASE_TABLE],
+    logic:
+      "Filtered referrals with non-blank speciality_referred_from and speciality_referred_to, grouped by " +
+      "EXTRACT(YEAR FROM g_creation_time) × speciality_referred_from × speciality_referred_to; count = COUNT(*). " +
+      "Returned as a per-year map of {referredFrom, referredTo, count}.",
+    sql: "GROUP BY year, speciality_referred_from, speciality_referred_to WHERE both specialties non-empty → COUNT(*).",
+  },
+  specialtyDetails: {
+    chart: "Specialty Details (referrals · conversions · conversion rate)",
+    sources: [BASE_TABLE],
+    logic:
+      "Filtered referrals with non-blank speciality_referred_to, grouped by speciality_referred_to: referrals = " +
+      "COUNT(*); inClinicConsults = COUNT(*) FILTER (WHERE consumption = 'Consumed'); conversionRate = " +
+      "conversions / referrals × 100 (rounded). Ordered by referrals desc.",
+    sql: "GROUP BY r.speciality_referred_to WHERE speciality_referred_to non-empty ORDER BY referrals DESC.",
+  },
+  demographics: {
+    chart: "Demographics (Age Group × Gender) + summary stats",
+    sources: [BASE_TABLE],
+    logic:
+      "Filtered referrals banded into age groups (<20 / 20-35 / 36-40 / 41-60 / 61+ via CASE on age) × gender, " +
+      "count = COUNT(*). Gender normalised to Male/Female/Others. demographicStats derives the top age group, top " +
+      "gender, and the single largest age×gender combination from these counts.",
+    sql: "GROUP BY <age-band CASE>, r.gender WHERE age-band IS NOT NULL → COUNT(*).",
+  },
+  locationBySpecialty: {
+    chart: "Location × Specialty (stacked by clinic)",
+    sources: [BASE_TABLE],
+    logic:
+      "Filtered referrals with non-blank facility_mapping and speciality_referred_to, grouped by facility_mapping × " +
+      "speciality_referred_to (count = COUNT(*)). Page keeps the top 8 specialties as stack segments and the top 15 " +
+      "locations by total referrals, rolling the remaining locations into an 'Others' bucket (othersBreakdown).",
+    sql: "GROUP BY r.facility_mapping, r.speciality_referred_to WHERE both non-empty → COUNT(*); top 8 specialties / top 15 locations applied in JS.",
+  },
+};
 
 // Tenant-specific specialty whitelist. CISCO01 only wants these seven
 // referred-to specialties surfaced on the Referral dashboard; every
@@ -463,4 +535,7 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const GET = withCache(handler, { endpoint: "ohc/referral" });
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "ohc/referral" }),
+  PROVENANCE
+);

@@ -456,6 +456,10 @@ export default function OHCUtilizationPage() {
 
   const repeatTrendData = charts?.repeatTrends ?? [];
 
+  // Capacity vs Booked vs Completed — grouped bar by specialty (doctor_capacity).
+  const capacityData: Array<{ specialty: string; capacity: number; booked: number; completed: number }> =
+    charts?.capacityBookedCompleted ?? [];
+
   const repeatYearlyTrends = useMemo(() => {
     const rows = repeatTrendData as Array<{ label: string; repeatVisits?: number; repeatPatients?: number }>;
     if (rows.length === 0) return [] as Array<{ period: string; repeatVisits: number; repeatPatients: number; yoy: number | null; isYtd: boolean }>;
@@ -2782,6 +2786,57 @@ export default function OHCUtilizationPage() {
           })();
           return `${peakLabel} was ${peakLabelFmt} with ${formatNum(peak.repeatVisits)} repeat visits.${ratioLine}${gapTrend}`;
         })()} />
+      </CVCard>}
+
+      {/* Capacity vs Booked vs Completed — grouped bar by specialty. */}
+      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Grouped bar by specialty" dataPoints={capacityData.map((d) => d.specialty)}>
+        {capacityData.length === 0 ? (
+          <div className="flex items-center justify-center h-48 text-[13px]" style={{ color: T.textMuted }}>
+            No capacity data available for the selected filters.
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <div style={{ height: 340, minWidth: Math.max(600, capacityData.length * 90) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={capacityData} margin={{ top: 24, right: 16, left: 0, bottom: 70 }} barGap={4} barCategoryGap="22%">
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
+                    <XAxis dataKey="specialty" tick={{ fontSize: 11, fill: T.textSecondary }} interval={0} angle={-30} textAnchor="end" height={80} />
+                    <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
+                    <RechartsTooltip content={({ active, payload, label }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const dd = payload[0]?.payload;
+                      const cap = dd?.capacity || 0;
+                      const util = cap > 0 ? Math.round(((dd?.booked || 0) / cap) * 100) : null;
+                      return (
+                        <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                          <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
+                          <p style={{ color: "#a5b4fc" }}>Capacity: <strong>{formatNum(cap)}</strong></p>
+                          <p style={{ color: "#6366f1" }}>Booked: <strong>{formatNum(dd?.booked)}</strong></p>
+                          <p style={{ color: "#0d9488" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>
+                          {util != null && <p className="mt-1 pt-1 border-t" style={{ borderColor: T.borderLight, color: T.textSecondary }}>Booked utilization: <strong>{util}%</strong></p>}
+                        </div>
+                      );
+                    }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                    <Bar dataKey="capacity" name="Capacity" fill="#a5b4fc" radius={[4, 4, 0, 0]} minPointSize={2} />
+                    <Bar dataKey="booked" name="Booked" fill="#6366f1" radius={[4, 4, 0, 0]} minPointSize={2} />
+                    <Bar dataKey="completed" name="Completed" fill="#0d9488" radius={[4, 4, 0, 0]} minPointSize={2} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <InsightBox text={(() => {
+              const totals = capacityData.reduce((s, d) => ({ cap: s.cap + d.capacity, booked: s.booked + d.booked, completed: s.completed + d.completed }), { cap: 0, booked: 0, completed: 0 });
+              if (totals.booked === 0 && totals.completed === 0) {
+                return `Capacity is loaded across ${capacityData.length} ${capacityData.length === 1 ? "specialty" : "specialties"} (${formatNum(totals.cap)} consult slots), but booked and completed consults are not yet populated in doctor_capacity — bars for those will appear once that data lands.`;
+              }
+              const util = totals.cap > 0 ? Math.round((totals.booked / totals.cap) * 100) : 0;
+              const top = [...capacityData].sort((a, b) => b.capacity - a.capacity)[0];
+              return `Across ${capacityData.length} specialties, ${formatNum(totals.booked)} of ${formatNum(totals.cap)} capacity slots were booked (${util}% utilization) and ${formatNum(totals.completed)} completed.${top ? ` ${top.specialty} carries the most capacity.` : ""}`;
+            })()} />
+          </>
+        )}
       </CVCard>}
 
       {/* Data Audit — superadmin-only source + extraction logic per chart.

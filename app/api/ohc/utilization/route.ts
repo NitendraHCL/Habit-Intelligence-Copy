@@ -32,6 +32,7 @@ import { withProvenance } from "@/lib/audit/with-provenance";
 
 const BASE_TABLE = "aggregated_table.agg_kpi";
 const RESULT_TABLE = "aggregated_table.result_entry";
+const CAPACITY_TABLE = "aggregated_table.doctor_capacity";
 const COMPLETED = "a.stage = 'Completed'";
 
 /* ────────────────────────────────────────────────────────────────────
@@ -151,6 +152,17 @@ const PROVENANCE: DashboardProvenance = {
       "(period, uhid). repeatVisits = SUM(total_consult_count) − COUNT(*) (extra visits beyond the first); " +
       "repeatPatients = COUNT(uhid with ≥2 source rows in that period).",
     sql: "WITH per_period_uhid AS (GROUP BY period, a.uhid) SELECT SUM(consult_count) - COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
+  },
+  capacityBookedCompleted: {
+    chart: "Capacity vs Booked vs Completed (by specialty)",
+    sources: [CAPACITY_TABLE],
+    logic:
+      "doctor_capacity rows (one per month × doctor × specialty) grouped by speciality. " +
+      "Capacity = SUM(capacity); Booked = SUM(booked_consult_count); Completed = SUM(consult_successful_count). " +
+      "Only the date range (on period_date) and the specialty filter apply — this table has no facility / gender / " +
+      "age / relationship columns, so those page filters do not affect this chart. Specialties with all-zero measures " +
+      "are dropped; sorted by capacity, top 15.",
+    sql: "GROUP BY speciality → SUM(capacity), SUM(booked_consult_count), SUM(consult_successful_count) ORDER BY capacity DESC LIMIT 15.",
   },
 };
 
@@ -531,14 +543,52 @@ async function handler(request: NextRequest) {
       { statementTimeoutMs: 60000 }
     ), "serviceCategoryLineItems");
 
+    // ── Capacity vs Booked vs Completed (by specialty) ──
+    // Sourced from doctor_capacity (month × doctor × specialty). This table
+    // only carries cug / period_date / speciality dimensions, so we honour
+    // just the date range + specialty filter here; facility / gender / age /
+    // relationship filters have no matching column and are intentionally
+    // not applied.
+    const capConds: string[] = ["dc.cug_code_mapped = $1"];
+    const capParams: unknown[] = [cugCode];
+    let capIdx = 2;
+    if (dateFromParam) { capConds.push(`dc.period_date >= $${capIdx}::date`); capParams.push(dateFromParam); capIdx++; }
+    if (dateToParam) { capConds.push(`dc.period_date <= $${capIdx}::date`); capParams.push(dateToParam); capIdx++; }
+    const capSpecialties = searchParams.get("specialties")?.split(",").filter(Boolean);
+    if (capSpecialties?.length) { capConds.push(`dc.speciality = ANY($${capIdx})`); capParams.push(capSpecialties); capIdx++; }
+
+    const capacityPromise = safeQuery(() => dwQuery<{
+      specialty: string; capacity: string; booked: string; completed: string;
+    }>(
+      `SELECT
+         COALESCE(NULLIF(TRIM(dc.speciality), ''), 'Unknown') AS specialty,
+         COALESCE(SUM(dc.capacity), 0)::numeric AS capacity,
+         COALESCE(SUM(dc.booked_consult_count), 0)::bigint AS booked,
+         COALESCE(SUM(dc.consult_successful_count), 0)::bigint AS completed
+       FROM ${CAPACITY_TABLE} dc
+       WHERE ${capConds.join(" AND ")}
+       GROUP BY 1
+       HAVING SUM(dc.capacity) > 0 OR SUM(dc.booked_consult_count) > 0 OR SUM(dc.consult_successful_count) > 0
+       ORDER BY capacity DESC`,
+      capParams
+    ), "capacityBookedCompleted");
+
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows,
+      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
     ] = await Promise.all([
       filterPromise, kpiPromise, specPromise, locSpecPromise,
-      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise,
+      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
     ]);
+
+    // Shape into the grouped-bar payload (top 15 specialties by capacity).
+    const capacityBookedCompleted = capacityRows.slice(0, 15).map((r) => ({
+      specialty: r.specialty,
+      capacity: Math.round(Number(r.capacity) || 0),
+      booked: Number(r.booked) || 0,
+      completed: Number(r.completed) || 0,
+    }));
 
     // ── Filter options ──
     const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
@@ -868,6 +918,7 @@ async function handler(request: NextRequest) {
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
         serviceCategories, serviceCategoryLineItems, bubbleBySpecialty, bubbleSpecialties,
         repeatTrends,
+        capacityBookedCompleted,
       },
       lastUpdated: new Date().toISOString(),
       meta: {

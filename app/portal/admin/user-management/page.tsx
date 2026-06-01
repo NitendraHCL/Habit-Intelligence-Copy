@@ -431,6 +431,16 @@ function UserForm({
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={row ? "••••••••" : "Type a strong password"}
                 className="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg text-sm"
+                // Admin is setting SOMEONE ELSE's (or a fresh) password — never
+                // let the browser autofill the admin's own saved site password
+                // here. Without this guard the field silently fills with the
+                // current password on saved-credential domains (remote), which
+                // then trips the no-reuse check. autoComplete="new-password" +
+                // a non-login name keep password managers out.
+                name="new-user-password"
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
               />
               <button
                 type="button"

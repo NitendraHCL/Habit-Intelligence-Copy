@@ -29,6 +29,13 @@ export interface NavItem {
   walkthroughId?: string;
   /** If set, only users with this role see the item. */
   requiredRole?: string;
+  /**
+   * Slug used for the CUG-level enabled-pages / config-visibility checks,
+   * when it differs from `href`. Needed for external links (whose href is
+   * an absolute URL that will never appear in a client's enabledPages) so
+   * their visibility can be driven by an internal page slug instead.
+   */
+  accessSlug?: string;
   children?: NavItem[];
 }
 
@@ -56,10 +63,14 @@ export const navigation: NavItem[] = [
     href: "/portal/ahc",
     icon: ClipboardCheck,
     walkthroughId: "nav-ahc",
+    // All three AHC links are external (hosted on facility.habithealth.com),
+    // so their visibility is gated by the single internal AHC slug
+    // (/portal/ahc/utilization) that CUG Management toggles — making the
+    // whole group show/hide as one "AHC" switch.
     children: [
-      { label: "Utilisation", href: "https://facility.habithealth.com/health-dashboard", icon: BarChart3, external: true },
-      { label: "Comparison Insights", href: "https://facility.habithealth.com/health-dashboard/comparison", icon: BarChart3, external: true },
-      { label: "Action Plan", href: "https://facility.habithealth.com/health-dashboard/action-plan", icon: ListChecks, external: true },
+      { label: "Utilisation", href: "https://facility.habithealth.com/health-dashboard", icon: BarChart3, external: true, accessSlug: "/portal/ahc/utilization" },
+      { label: "Comparison Insights", href: "https://facility.habithealth.com/health-dashboard/comparison", icon: BarChart3, external: true, accessSlug: "/portal/ahc/utilization" },
+      { label: "Action Plan", href: "https://facility.habithealth.com/health-dashboard/action-plan", icon: ListChecks, external: true, accessSlug: "/portal/ahc/utilization" },
     ],
   },
   {

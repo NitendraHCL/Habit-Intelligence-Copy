@@ -339,7 +339,7 @@ export function Sidebar() {
       : [];
 
     // Group dashboards by navGroup label (case-insensitive match)
-    const byGroup = new Map<string, { label: string; href: string; icon: typeof BarChart3 }[]>();
+    const byGroup = new Map<string, NavItem[]>();
     for (const d of published) {
       const group = ((d as Record<string, unknown>).navGroup as string ?? "Custom").toLowerCase();
       if (!byGroup.has(group)) byGroup.set(group, []);
@@ -495,16 +495,21 @@ export function Sidebar() {
             // disabled. Defer their visibility to the children filter +
             // the "hide parent if all children empty" rule below.
             if (!item.children || item.children.length === 0) {
-              if (!isPageEnabledForClient(item.href)) return false;
-              if (!isPageVisible(item.href)) return false;
+              const accessSlug = item.accessSlug ?? item.href;
+              if (!isPageEnabledForClient(accessSlug)) return false;
+              if (!isPageVisible(accessSlug)) return false;
             }
             return true;
           }).map((item, index) => {
             // Filter children visibility — both CUG-level + per-page config
             const filteredItem = item.children
-              ? { ...item, children: item.children.filter((child) =>
-                  isPageEnabledForClient(child.href) && isPageVisible(child.href)
-                ) }
+              ? { ...item, children: item.children.filter((child) => {
+                  // External links carry an explicit accessSlug (their href is
+                  // an absolute URL never present in enabledPages); fall back
+                  // to href for normal internal pages.
+                  const accessSlug = child.accessSlug ?? child.href;
+                  return isPageEnabledForClient(accessSlug) && isPageVisible(accessSlug);
+                }) }
               : item;
             // Hide parent if all children are hidden
             if (filteredItem.children && filteredItem.children.length === 0) return null;

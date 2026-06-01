@@ -97,7 +97,9 @@ export type PasswordChangeSource =
   /** User chose their own password on first sign-in (force-change). */
   | "force-change"
   /** Admin updated the password from the user-management page. */
-  | "admin-update";
+  | "admin-update"
+  /** Signed-in user changed their own password from Settings. */
+  | "self-service";
 
 export interface PasswordChangedEmailParams {
   to: string;
@@ -122,7 +124,9 @@ export async function sendPasswordChangedEmail(
       ? `Hi ${params.name || "there"}, we just updated the password on your Habit Intelligence account after a password-reset request.`
       : params.source === "force-change"
         ? `Hi ${params.name || "there"}, we just set the new password you chose during sign-in.`
-        : `Hi ${params.name || "there"}, an administrator just updated the password on your Habit Intelligence account.`;
+        : params.source === "self-service"
+          ? `Hi ${params.name || "there"}, your Habit Intelligence password was just changed from your account settings.`
+          : `Hi ${params.name || "there"}, an administrator just updated the password on your Habit Intelligence account.`;
 
   const formattedWhen = formatTimestamp(when);
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   ChevronDown,
@@ -321,6 +321,7 @@ export function Sidebar() {
   const { shouldExpandSidebar } = useWalkthrough();
   const { user, assignedClients, activeClientId, setActiveClientId, isPageEnabledForClient, isCustomDashboardsEnabled } = useAuth();
   const { isPageVisible } = useConfig();
+  const router = useRouter();
   const activeClient = assignedClients.find((c) => c.id === activeClientId);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
 
@@ -566,8 +567,8 @@ export function Sidebar() {
             <DropdownMenuContent align={effectiveCollapsed ? "center" : "end"} side="top" className="w-48">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Settings</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/portal/profile")}>Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/portal/settings")}>Settings</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => { fetch("/api/auth/logout", { method: "POST" }).then(() => { window.location.href = "/login"; }); }}>Sign out</DropdownMenuItem>
             </DropdownMenuContent>

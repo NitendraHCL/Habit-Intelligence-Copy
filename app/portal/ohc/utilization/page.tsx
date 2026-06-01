@@ -970,6 +970,7 @@ export default function OHCUtilizationPage() {
             { id: "serviceCategoryMatrix", label: "Service Category Matrix" },
             { id: "peakHours", label: "Peak Consultation Hours" },
             { id: "repeatTrends", label: "Repeat Visit Trends" },
+            { id: "capacityBookedCompleted", label: "Capacity vs Booked vs Completed" },
           ]}
           filters={["location", "gender", "ageGroup", "specialty", "relationship"]}
           onPreview={setPreviewConfig}

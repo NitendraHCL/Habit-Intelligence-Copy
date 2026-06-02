@@ -105,21 +105,15 @@ const PROVENANCE: DashboardProvenance = {
   },
 };
 
-// Tenant-specific specialty whitelist. CISCO01 only wants these seven
-// referred-to specialties surfaced on the Referral dashboard; every
-// other client sees the full set. Applies to KPIs, charts, and the
-// filter-options dropdown.
-const TENANT_SPECIALTY_WHITELIST: Record<string, string[]> = {
-  CISCO01: [
-    "Obstetrics And Gynecology",
-    "General Physician",
-    "Family Medicine",
-    "Internal Medicine",
-    "Physiotherapy",
-    "Psychologist",
-    "Dietetics",
-  ],
-};
+// Tenant-specific specialty whitelist (cug → allowed speciality_referred_to).
+// When a cug is listed here, KPIs, charts, and the filter-options dropdown
+// are restricted to those specialties; every other client sees the full set.
+//
+// CISCO01's 7-specialty restriction was removed on request so it now shows
+// ALL referred-to specialties (e.g. Jan total = 430 rather than the
+// whitelisted 282). The mechanism is kept for future tenants — re-add an
+// entry here to restrict a cug again.
+const TENANT_SPECIALTY_WHITELIST: Record<string, string[]> = {};
 
 // Volume / converted expressions — used wherever we need a count.
 const REFERRALS_SUM = `COUNT(*)::bigint`;

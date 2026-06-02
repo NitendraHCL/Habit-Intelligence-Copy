@@ -8,28 +8,32 @@ import { withProvenance } from "@/lib/audit/with-provenance";
 /* ────────────────────────────────────────────────────────────────────
  * OHC Referral API — single-table fact model.
  *
- * Source: aggregated_table.referral_conversion (alias `r`).
- *   Freshly prepared in 2026-05; 15 columns, ~1.96M rows, 58 cugs.
+ * Source: aggregated_table.referral_conversion_updated (alias `r`).
+ *   Freshly prepared table that backs every chart on this dashboard.
  *
- *   Columns of interest:
+ *   Columns used here:
  *     uhid, g_creation_time, slotstarttime,
  *     age (int), gender,
  *     speciality_referred_from, doctor_referred_from,
  *     speciality_referred_to,   doctor_referred_to,
- *     referral_facility, facility_mapping,
- *     cug_code_mapped, relationship, speciality_name,
+ *     referral_facility (referral LOCATION — drives the location filter,
+ *       the filter-options dropdown, and the Location × Specialty chart),
+ *     cug_code_mapped, relationship,
  *     consumption ("Consumed" | "Not Consumed").
  *
  * Canonical metrics (each row = one referral; no count multiplier):
- *   referrals  = COUNT(*)
+ *   referrals  = COUNT(*)                                   (Consumed + Not Consumed)
  *   converted  = COUNT(*) FILTER (consumption = 'Consumed')
  *   conversion = converted / referrals × 100
+ *
+ * Location = referral_facility (replaced the old facility_mapping column
+ * when this page moved to referral_conversion_updated).
  *
  * Date filtering uses `g_creation_time` (when the referral was issued)
  * — this is the trend axis the warehouse team intends.
  * ──────────────────────────────────────────────────────────────────── */
 
-const BASE_TABLE = "aggregated_table.referral_conversion";
+const BASE_TABLE = "aggregated_table.referral_conversion_updated";
 
 /* ────────────────────────────────────────────────────────────────────
  * Data-audit provenance — one entry per chart/section, keyed identically
@@ -41,7 +45,7 @@ const BASE_TABLE = "aggregated_table.referral_conversion";
  * Every chart reads the single fact table aggregated_table.referral_conversion
  * (one row = one referral). The shared filter (cug_code_mapped, optional
  * tenant specialty whitelist on speciality_referred_to, g_creation_time date
- * range, speciality_referred_to / facility_mapping / gender / age-band filters)
+ * range, speciality_referred_to / referral_facility / gender / age-band filters)
  * is applied to every query. Counts are plain COUNT(*); "converted" is
  * COUNT(*) FILTER (WHERE consumption = 'Consumed').
  * ──────────────────────────────────────────────────────────────────── */
@@ -94,10 +98,10 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Location × Specialty (stacked by clinic)",
     sources: [BASE_TABLE],
     logic:
-      "Filtered referrals with non-blank facility_mapping and speciality_referred_to, grouped by facility_mapping × " +
+      "Filtered referrals with non-blank referral_facility and speciality_referred_to, grouped by referral_facility × " +
       "speciality_referred_to (count = COUNT(*)). Page keeps the top 8 specialties as stack segments and the top 15 " +
       "locations by total referrals, rolling the remaining locations into an 'Others' bucket (othersBreakdown).",
-    sql: "GROUP BY r.facility_mapping, r.speciality_referred_to WHERE both non-empty → COUNT(*); top 8 specialties / top 15 locations applied in JS.",
+    sql: "GROUP BY r.referral_facility, r.speciality_referred_to WHERE both non-empty → COUNT(*); top 8 specialties / top 15 locations applied in JS.",
   },
 };
 
@@ -176,7 +180,7 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     idx++;
   }
   if (locations?.length) {
-    conditions.push(`r.facility_mapping = ANY($${idx})`);
+    conditions.push(`r.referral_facility = ANY($${idx})`);
     params.push(locations);
     idx++;
   }
@@ -238,10 +242,10 @@ async function handler(request: NextRequest) {
     const filterPromise = Promise.all([
       safeQuery(
         () => dwQuery<{ v: string }>(
-          `SELECT DISTINCT r.facility_mapping AS v
+          `SELECT DISTINCT r.referral_facility AS v
            FROM ${BASE_TABLE} r
            WHERE r.cug_code_mapped = $1
-             AND r.facility_mapping IS NOT NULL AND TRIM(r.facility_mapping) <> ''
+             AND r.referral_facility IS NOT NULL AND TRIM(r.referral_facility) <> ''
              ${filterWhitelist ? "AND r.speciality_referred_to = ANY($2)" : ""}
            ORDER BY 1`,
           filterWhitelist ? [cugCode, filterWhitelist] : [cugCode]
@@ -353,16 +357,16 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ location: string; specialty: string; cnt: string }>(
           `SELECT
-             r.facility_mapping        AS location,
+             r.referral_facility        AS location,
              r.speciality_referred_to  AS specialty,
              ${REFERRALS_SUM}          AS cnt
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
-             AND r.facility_mapping IS NOT NULL
-             AND TRIM(r.facility_mapping) <> ''
+             AND r.referral_facility IS NOT NULL
+             AND TRIM(r.referral_facility) <> ''
              AND r.speciality_referred_to IS NOT NULL
              AND TRIM(r.speciality_referred_to) <> ''
-           GROUP BY r.facility_mapping, r.speciality_referred_to`,
+           GROUP BY r.referral_facility, r.speciality_referred_to`,
           q.params
         ),
         "locSpec"

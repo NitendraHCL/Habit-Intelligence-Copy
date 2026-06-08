@@ -1309,6 +1309,19 @@ export default function OHCUtilizationPage() {
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Appointments booked in the selected range — Completed, No Show and Pending. Cancelled appointments are excluded. Counts appointment rows (not consult volume).</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalBooked || 0)}</p>
+            {kpis?.yoyBooked != null ? (
+              <div className="flex items-center gap-1 mt-1.5">
+                {kpis.yoyBooked >= 0 ? <TrendingUp size={12} style={{ color: "#059669" }} /> : <TrendingDown size={12} style={{ color: "#e11d48" }} />}
+                <span className="text-xs font-semibold" style={{ color: kpis.yoyBooked >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyBooked >= 0 ? "+" : ""}{kpis.yoyBooked}% {kpis.yoyLabel || "vs Last Year"}</span>
+              </div>
+            ) : kpis?.hasInsufficientHistory ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-help" style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>First Reporting Year</span>
+                </TooltipTrigger>
+                <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
+              </Tooltip>
+            ) : null}
             <p className="text-xs mt-2" style={{ color: T.textSecondary }}>All booked appointments</p>
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {

@@ -263,6 +263,7 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     currentWhere: conditions.join(" AND "),
     prevWhere: prevConditions.join(" AND "),
     allStageWhere: allStageConditions.join(" AND "),
+    allStagePrevWhere: allStagePrevConditions.join(" AND "),
   };
 }
 
@@ -633,6 +634,7 @@ async function handler(request: NextRequest) {
     // "New this year" pill via hasInsufficientHistory.
     const YOY_MIN_PRIOR_CONSULTS = 50;
     let yoyConsults: number | null = null;
+    let yoyBooked: number | null = null;
     let yoyUnique: number | null = null;
     let yoyRepeat: number | null = null;
     let yoyBasis: "yoy" | "pop" | null = null;
@@ -641,7 +643,7 @@ async function handler(request: NextRequest) {
 
     if (q.hasDateRange) {
       const yoyPrev = await safeQuery(() => dwQuery<{
-        total_consults: string; unique_patients: string; repeat_patients: string;
+        total_consults: string; unique_patients: string; repeat_patients: string; total_booked: string;
       }>(
         `WITH per_uhid AS (
           SELECT a.uhid, COUNT(*) AS row_count, SUM(a.total_consult_count) AS consult_count
@@ -651,7 +653,8 @@ async function handler(request: NextRequest) {
         SELECT
           COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
           (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
-          (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
+          (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients,
+          (SELECT COUNT(*) FROM ${BASE_TABLE} a WHERE ${q.allStagePrevWhere} AND a.stage <> 'Cancelled')::bigint AS total_booked`,
         q.params
       ), "kpiYoY");
       const yoyPrevConsults = Number(yoyPrev[0]?.total_consults || 0);
@@ -660,6 +663,7 @@ async function handler(request: NextRequest) {
         yoyBasis = "yoy";
         yoyLabel = "vs Last Year";
         yoyConsults = yoyChange(totalConsults, yoyPrevConsults);
+        yoyBooked = yoyChange(totalBooked, Number(yoyPrev[0]!.total_booked || 0));
         yoyUnique = yoyChange(uniquePatients, Number(yoyPrev[0]!.unique_patients || 0));
         yoyRepeat = yoyChange(repeatPatients, Number(yoyPrev[0]!.repeat_patients || 0));
       } else {
@@ -682,7 +686,7 @@ async function handler(request: NextRequest) {
         popParams[2] = popToStr;
 
         const popPrev = await safeQuery(() => dwQuery<{
-          total_consults: string; unique_patients: string; repeat_patients: string;
+          total_consults: string; unique_patients: string; repeat_patients: string; total_booked: string;
         }>(
           `WITH per_uhid AS (
             SELECT a.uhid, COUNT(*) AS row_count, SUM(a.total_consult_count) AS consult_count
@@ -692,7 +696,8 @@ async function handler(request: NextRequest) {
           SELECT
             COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
             (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
-            (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients`,
+            (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients,
+            (SELECT COUNT(*) FROM ${BASE_TABLE} a WHERE ${q.allStageWhere} AND a.stage <> 'Cancelled')::bigint AS total_booked`,
           popParams
         ), "kpiPoP");
         const popPrevConsults = Number(popPrev[0]?.total_consults || 0);
@@ -707,6 +712,7 @@ async function handler(request: NextRequest) {
               : `${(days / 30).toFixed(days < 120 ? 1 : 0)} months`;
           yoyLabel = `vs previous ${humanRange}`;
           yoyConsults = yoyChange(totalConsults, popPrevConsults);
+          yoyBooked = yoyChange(totalBooked, Number(popPrev[0]!.total_booked || 0));
           yoyUnique = yoyChange(uniquePatients, Number(popPrev[0]!.unique_patients || 0));
           yoyRepeat = yoyChange(repeatPatients, Number(popPrev[0]!.repeat_patients || 0));
         } else {
@@ -920,7 +926,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       filterOptions,
-      kpis: { totalBooked, totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
+      kpis: { totalBooked, totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyBooked, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
       charts: {
         demographicSunburst,
         demographicStats: {

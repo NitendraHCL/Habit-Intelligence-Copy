@@ -459,6 +459,8 @@ export default function OHCUtilizationPage() {
   // Capacity vs Booked vs Completed — grouped bar by specialty (doctor_capacity).
   const capacityData: Array<{ specialty: string; capacity: number; booked: number; completed: number }> =
     charts?.capacityBookedCompleted ?? [];
+  // Sort state for the Capacity vs Booked vs Completed table.
+  const [capacitySort, setCapacitySort] = useState<{ key: "specialty" | "capacity" | "booked" | "completed" | "util"; dir: "asc" | "desc" }>({ key: "capacity", dir: "desc" });
 
   const repeatYearlyTrends = useMemo(() => {
     const rows = repeatTrendData as Array<{ label: string; repeatVisits?: number; repeatPatients?: number }>;
@@ -2790,43 +2792,69 @@ export default function OHCUtilizationPage() {
       </CVCard>}
 
       {/* Capacity vs Booked vs Completed — grouped bar by specialty. */}
-      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Grouped bar by specialty" dataPoints={capacityData.map((d) => d.specialty)}>
+      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)}>
         {capacityData.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-[13px]" style={{ color: T.textMuted }}>
             No capacity data available for the selected filters.
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <div style={{ height: 340, minWidth: Math.max(600, capacityData.length * 90) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={capacityData} margin={{ top: 24, right: 16, left: 0, bottom: 70 }} barGap={4} barCategoryGap="22%">
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} vertical={false} />
-                    <XAxis dataKey="specialty" tick={{ fontSize: 11, fill: T.textSecondary }} interval={0} angle={-30} textAnchor="end" height={80} />
-                    <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
-                    <RechartsTooltip content={({ active, payload, label }: any) => {
-                      if (!active || !payload?.length) return null;
-                      const dd = payload[0]?.payload;
-                      const cap = dd?.capacity || 0;
-                      const util = cap > 0 ? Math.round(((dd?.booked || 0) / cap) * 100) : null;
-                      return (
-                        <div className="rounded-xl border p-3 text-xs" style={{ backgroundColor: "#fff", borderColor: T.border, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-                          <p className="font-bold mb-1" style={{ color: T.textPrimary }}>{label}</p>
-                          <p style={{ color: "#a5b4fc" }}>Capacity: <strong>{formatNum(cap)}</strong></p>
-                          <p style={{ color: "#6366f1" }}>Booked: <strong>{formatNum(dd?.booked)}</strong></p>
-                          <p style={{ color: "#0d9488" }}>Completed: <strong>{formatNum(dd?.completed)}</strong></p>
-                          {util != null && <p className="mt-1 pt-1 border-t" style={{ borderColor: T.borderLight, color: T.textSecondary }}>Booked utilization: <strong>{util}%</strong></p>}
-                        </div>
-                      );
-                    }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                    <Bar dataKey="capacity" name="Capacity" fill="#a5b4fc" radius={[4, 4, 0, 0]} minPointSize={2} />
-                    <Bar dataKey="booked" name="Booked" fill="#6366f1" radius={[4, 4, 0, 0]} minPointSize={2} />
-                    <Bar dataKey="completed" name="Completed" fill="#0d9488" radius={[4, 4, 0, 0]} minPointSize={2} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+            {/* Sortable table: Capacity / Booked / Completed / Utilization%
+                with an inline utilization mini-bar. Click a header to sort. */}
+            {(() => {
+              const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
+              const rows = capacityData.map((d) => ({ ...d, util: pct(d.booked, d.capacity) }));
+              const { key, dir } = capacitySort;
+              const sorted = [...rows].sort((a, b) => {
+                const cmp = key === "specialty"
+                  ? a.specialty.localeCompare(b.specialty)
+                  : Number((a as Record<string, number>)[key]) - Number((b as Record<string, number>)[key]);
+                return dir === "asc" ? cmp : -cmp;
+              });
+              const toggleSort = (k: typeof key) =>
+                setCapacitySort((p) => p.key === k
+                  ? { key: k, dir: p.dir === "asc" ? "desc" : "asc" }
+                  : { key: k, dir: k === "specialty" ? "asc" : "desc" });
+              const arrow = (k: typeof key) => (key === k ? (dir === "asc" ? " ▲" : " ▼") : "");
+              const numCols: { k: typeof key; label: string; color?: string }[] = [
+                { k: "capacity", label: "Capacity" },
+                { k: "booked", label: "Booked", color: "#6366f1" },
+                { k: "completed", label: "Completed", color: "#0d9488" },
+              ];
+              return (
+                <div className="overflow-y-auto" style={{ maxHeight: 380 }}>
+                  <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                        <th className="text-left font-semibold py-2 pr-3 cursor-pointer select-none" style={{ color: T.textSecondary }} onClick={() => toggleSort("specialty")}>Specialty{arrow("specialty")}</th>
+                        {numCols.map((c) => (
+                          <th key={c.k} className="text-right font-semibold py-2 px-3 cursor-pointer select-none whitespace-nowrap" style={{ color: T.textSecondary }} onClick={() => toggleSort(c.k)}>{c.label}{arrow(c.k)}</th>
+                        ))}
+                        <th className="text-left font-semibold py-2 pl-3 cursor-pointer select-none whitespace-nowrap" style={{ color: T.textSecondary, minWidth: 130 }} onClick={() => toggleSort("util")}>Utilization{arrow("util")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map((d) => (
+                        <tr key={d.specialty} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                          <td className="py-2 pr-3" style={{ color: T.textPrimary }}>{d.specialty}</td>
+                          <td className="py-2 px-3 text-right tabular-nums" style={{ color: T.textSecondary }}>{formatNum(d.capacity)}</td>
+                          <td className="py-2 px-3 text-right tabular-nums font-semibold" style={{ color: "#6366f1" }}>{formatNum(d.booked)}</td>
+                          <td className="py-2 px-3 text-right tabular-nums font-semibold" style={{ color: "#0d9488" }}>{formatNum(d.completed)}</td>
+                          <td className="py-2 pl-3">
+                            <div className="flex items-center gap-2">
+                              <div className="relative h-[8px] rounded flex-1" style={{ backgroundColor: "#F1F3F9", minWidth: 56 }}>
+                                <div className="absolute top-0 left-0 h-[8px] rounded" style={{ width: `${Math.min(d.util, 100)}%`, backgroundColor: "#6366f1" }} />
+                              </div>
+                              <span className="tabular-nums w-9 text-right" style={{ color: T.textSecondary }}>{d.util}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
             <InsightBox text={(() => {
               const totals = capacityData.reduce((s, d) => ({ cap: s.cap + d.capacity, booked: s.booked + d.booked, completed: s.completed + d.completed }), { cap: 0, booked: 0, completed: 0 });
               if (totals.booked === 0 && totals.completed === 0) {

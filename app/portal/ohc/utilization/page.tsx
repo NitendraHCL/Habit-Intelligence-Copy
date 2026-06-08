@@ -960,7 +960,8 @@ export default function OHCUtilizationPage() {
           pageSlug="/portal/ohc/utilization"
           pageTitle="OHC Utilisation"
           charts={[
-            { id: "totalConsults", label: "Total Consults KPI" },
+            { id: "totalBooked", label: "Total Booked KPI" },
+            { id: "totalConsults", label: "Total Completed Consults KPI" },
             { id: "uniquePatients", label: "Unique Patients KPI" },
             { id: "repeatPatients", label: "Repeat Patients KPI" },
             { id: "demographicBreakdown", label: "Demographic Consult Breakdown" },
@@ -1065,7 +1066,7 @@ export default function OHCUtilizationPage() {
         kpis={kpis || {}}
         fallbackSummary={`OHC saw ${formatNum(kpis?.totalConsults || 0)} consultations from ${formatNum(kpis?.uniquePatients || 0)} unique employees across ${kpis?.locationCount || 0} clinics. ${kpis?.repeatRate || 0}% of them came back for at least one repeat visit.`}
         fallbackChips={[
-          { label: "Total Consults", value: formatNum(kpis?.totalConsults || 0) },
+          { label: "Total Completed Consults", value: formatNum(kpis?.totalConsults || 0) },
           { label: "Unique Patients", value: formatNum(kpis?.uniquePatients || 0) },
           { label: "Repeat Rate", value: `${kpis?.repeatRate || 0}%` },
         ]}
@@ -1083,7 +1084,7 @@ export default function OHCUtilizationPage() {
         const chartRegistry: Record<string, React.ReactNode> = {
           totalConsults: (
             <div className="bg-white rounded-2xl p-6 border h-full" style={{ borderColor: T.border, boxShadow: T.cardShadow }}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Consults</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Completed Consults</p>
               <p className="text-[36px] font-extrabold mt-2 leading-none tracking-[-0.02em]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalConsults || 0)}</p>
               {kpis?.yoyConsults != null && <p className="text-xs mt-1.5 font-semibold" style={{ color: kpis.yoyConsults >= 0 ? "#059669" : "#e11d48" }}>{kpis.yoyConsults >= 0 ? "+" : ""}{kpis.yoyConsults}% vs Last Year</p>}
             </div>
@@ -1300,11 +1301,30 @@ export default function OHCUtilizationPage() {
       })()}
 
       {/* ── KPI Cards (auto-adjust columns) ── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("totalConsults"), isChartVisible("uniquePatients"), isChartVisible("repeatPatients")].filter(Boolean).length || 1}, 1fr)` }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("totalBooked"), isChartVisible("totalConsults"), isChartVisible("uniquePatients"), isChartVisible("repeatPatients")].filter(Boolean).length || 1}, 1fr)` }}>
+        {isChartVisible("totalBooked") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
+          <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Booked</p>
+              <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Appointments booked in the selected range — Completed, No Show and Pending. Cancelled appointments are excluded. Counts appointment rows (not consult volume).</TooltipContent></Tooltip>
+            </div>
+            <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalBooked || 0)}</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>All booked appointments</p>
+            <div className="mt-auto pt-4">
+              <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
+                const tb = Number(kpis?.totalBooked || 0);
+                const tc = Number(kpis?.totalConsults || 0);
+                if (tb === 0) return "No appointments booked in this range yet.";
+                return `Includes completed, no-show & pending (excludes cancelled) · ${formatNum(tc)} consults completed`;
+              })()}</p>
+            </div>
+          </div>
+        </div>}
+
         {isChartVisible("totalConsults") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
           <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Consults</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Completed Consults</p>
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Completed OHC consultations in the selected range. Cancellations and no-shows are excluded.</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalConsults || 0)}</p>
@@ -1339,7 +1359,7 @@ export default function OHCUtilizationPage() {
           <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Unique Patients</p>
-              <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Distinct patients (by UHID) with at least one completed consultation in the range. Total Consults ÷ Unique Patients gives the average visits per patient.</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Distinct patients (by UHID) with at least one completed consultation in the range. Total Completed Consults ÷ Unique Patients gives the average visits per patient.</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.uniquePatients || 0)}</p>
             {kpis?.yoyUnique != null ? (

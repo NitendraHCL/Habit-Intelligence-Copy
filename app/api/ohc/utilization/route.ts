@@ -53,16 +53,20 @@ const COMPLETED = "a.stage = 'Completed'";
  * ──────────────────────────────────────────────────────────────────── */
 const PROVENANCE: DashboardProvenance = {
   kpis: {
-    chart: "Headline KPIs (Total Consults · Unique Patients · Repeat Patients · Locations · Repeat Rate · YoY/PoP)",
+    chart: "Headline KPIs (Total Booked · Total Consults · Unique Patients · Repeat Patients · Locations · Repeat Rate · YoY/PoP)",
     sources: [BASE_TABLE],
     logic:
-      "From Completed agg_kpi rows in the filter window, aggregated to one row per uhid: " +
+      "Total Booked = COUNT(*) of agg_kpi rows across stages Completed + No Show + Pending (Cancelled excluded) " +
+      "in the filter window — booked appointments that were not cancelled; uses the same cug/date/location/" +
+      "specialty/gender/age filters but drops the stage = 'Completed' restriction and adds stage <> 'Cancelled' " +
+      "(counts appointment rows, since total_consult_count is 0 for non-Completed stages). " +
+      "The remaining KPIs use Completed rows only, aggregated to one row per uhid: " +
       "Total Consults = SUM(total_consult_count); Unique Patients = COUNT(uhid); " +
       "Repeat Patients = COUNT(uhid with ≥2 source rows); Locations = COUNT(DISTINCT facility_mapping); " +
       "Repeat Rate = repeatPatients / uniquePatients. YoY compares the same window one year earlier; " +
       "if prior-year consults < 50 it falls back to the immediately preceding equal-length window (PoP), " +
       "else flags insufficient history.",
-    sql: "WITH per_uhid AS (… GROUP BY a.uhid) SELECT SUM(consult_count), COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
+    sql: "Total Booked: SELECT COUNT(*) FROM agg_kpi WHERE <all-stage filters> AND stage <> 'Cancelled'. Others: WITH per_uhid AS (… GROUP BY a.uhid) SELECT SUM(consult_count), COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
   },
   demographicSunburst: {
     chart: "Demographics Sunburst (Age Group → Gender)",
@@ -327,6 +331,18 @@ async function handler(request: NextRequest) {
       q.params
     ), "kpi");
 
+    // ── Total Booked KPI ──
+    // Booked appointments excluding cancellations = COUNT(*) over stages
+    // Completed + No Show + Pending (Cancelled excluded). Uses allStageWhere
+    // (same cug / date / location / specialty / gender / age filters, but
+    // without the stage = 'Completed' restriction) plus an explicit
+    // stage <> 'Cancelled'. Counts appointment rows, not total_consult_count,
+    // which is 0 for every non-Completed stage.
+    const bookedPromise = safeQuery(() => dwQuery<{ total_booked: string }>(
+      `SELECT COUNT(*)::bigint AS total_booked FROM ${BASE_TABLE} a WHERE ${q.allStageWhere} AND a.stage <> 'Cancelled'`,
+      q.params
+    ), "totalBooked");
+
     // ── BATCH 2: Specialty treemap + Location × Specialty ──
     const specPromise = safeQuery(() => dwQuery<{ name: string; value: string }>(
       `SELECT a.speciality_name AS name, COALESCE(SUM(a.total_consult_count), 0)::bigint AS value
@@ -576,9 +592,9 @@ async function handler(request: NextRequest) {
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
+      kpiRows, bookedRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
     ] = await Promise.all([
-      filterPromise, kpiPromise, specPromise, locSpecPromise,
+      filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise,
       demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
     ]);
 
@@ -603,6 +619,7 @@ async function handler(request: NextRequest) {
     // ── KPIs ──
     const kpi = kpiRows[0];
     const totalConsults = Number(kpi?.total_consults || 0);
+    const totalBooked = Number(bookedRows[0]?.total_booked || 0);
     const uniquePatients = Number(kpi?.unique_patients || 0);
     const repeatPatients = Number(kpi?.repeat_patients || 0);
     const locationCount = Number(kpi?.location_count || 0);
@@ -903,7 +920,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       filterOptions,
-      kpis: { totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
+      kpis: { totalBooked, totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
       charts: {
         demographicSunburst,
         demographicStats: {

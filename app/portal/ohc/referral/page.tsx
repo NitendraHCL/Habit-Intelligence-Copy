@@ -444,7 +444,14 @@ export default function ReferralAnalyticsPage() {
     const details: any[] = charts?.specialtyDetails || [];
     return details
       .filter((s: any) => s.isAvailableInClinic)
-      .sort((a: any, b: any) => (b.referrals || 0) - (a.referrals || 0));
+      // Rank by actual in-clinic conversions first, then referral volume as a
+      // tiebreaker — so high-converting specialties surface at the top and
+      // 0%-conversion specialties sink to the bottom (no longer above better
+      // converters just because they had more referrals).
+      .sort((a: any, b: any) =>
+        (b.inClinicConsults || 0) - (a.inClinicConsults || 0) ||
+        (b.referrals || 0) - (a.referrals || 0)
+      );
   }, [charts?.specialtyDetails]);
 
   // Max referrals — drives the relative-volume mini bar in the table

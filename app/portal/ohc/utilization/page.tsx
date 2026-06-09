@@ -31,7 +31,8 @@ import {
   ChevronDown,
   TrendingUp,
   TrendingDown,
-
+  Table2,
+  BarChart3,
   RotateCcw,
   SlidersHorizontal,
 } from "lucide-react";
@@ -140,14 +141,25 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 }
 
 // ─── Card (Critical Values style) ───
+/** Optional tabular view of a chart's data. When passed to CVCard, a
+ *  Chart/Table toggle appears in the card header and the table renders in
+ *  place of the chart. Numbers are pre-formatted strings/nodes. */
+type CVTableData = {
+  columns: { key: string; label: string; align?: "left" | "right" }[];
+  rows: Record<string, React.ReactNode>[];
+};
+
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription, dataPoints,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription, dataPoints, tableData,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string; dataPoints?: string[];
+  tableData?: CVTableData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const showTable = !!tableData && view === "table";
   return (
     <div
       data-chart-card
@@ -172,6 +184,16 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {tableData && (
+                  <div className="inline-flex rounded-lg p-0.5 mr-0.5" style={{ backgroundColor: T.borderLight }}>
+                    <button onClick={() => setView("chart")} title="Chart view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "chart" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "chart" ? T.textPrimary : T.textMuted }}>
+                      <BarChart3 size={13} />
+                    </button>
+                    <button onClick={() => setView("table")} title="Table view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "table" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "table" ? T.textPrimary : T.textMuted }}>
+                      <Table2 size={13} />
+                    </button>
+                  </div>
+                )}
                 {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/utilization" dataPoints={dataPoints} />}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {expandable && (
@@ -184,7 +206,38 @@ function CVCard({
           )}
         </div>
       )}
-      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
+      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">
+        {showTable ? (
+          <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+            <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {tableData!.columns.map((c) => (
+                    <th key={c.key} className={`py-2 px-3 font-semibold whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`} style={{ color: T.textSecondary }}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableData!.rows.map((row, i) => {
+                  // Rows flagged with __group render as a bold subtotal band
+                  // (used for hierarchical tables, e.g. age-group totals).
+                  const isGroup = !!(row as Record<string, unknown>).__group;
+                  return (
+                    <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}`, backgroundColor: isGroup ? "#F5F6FA" : undefined }}>
+                      {tableData!.columns.map((c) => (
+                        <td key={c.key} className={`py-2 px-3 tabular-nums ${c.align === "right" ? "text-right" : "text-left"} ${isGroup ? "font-bold" : ""}`} style={{ color: isGroup ? T.textPrimary : T.textSecondary }}>{row[c.key]}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
+                {tableData!.rows.length === 0 && (
+                  <tr><td colSpan={tableData!.columns.length} className="py-6 text-center text-[13px]" style={{ color: T.textMuted }}>No data for the selected filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : children}
+      </div>
     </div>
   );
 }
@@ -461,6 +514,52 @@ export default function OHCUtilizationPage() {
     charts?.capacityBookedCompleted ?? [];
   // Sort state for the Capacity vs Booked vs Completed table.
   const [capacitySort, setCapacitySort] = useState<{ key: "specialty" | "capacity" | "booked" | "completed" | "util"; dir: "asc" | "desc" }>({ key: "capacity", dir: "desc" });
+
+  // Table view for the Demographic Consult Breakdown sunburst. Pivoted as a
+  // crosstab: one row per age group with gender as columns (Male / Female /
+  // Others / Total), plus a bold grand-total row. The Others column is only
+  // shown when there are any non-binary/unknown-gender consults.
+  const demographicTableData = useMemo(() => {
+    const tree: any[] = (charts?.demographicSunburst as any[]) || [];
+    const GKEY: Record<string, "male" | "female" | "others"> = { M: "male", F: "female", O: "others" };
+    const totals = { male: 0, female: 0, others: 0, total: 0 };
+    const groups = tree.map((ag) => {
+      const cell = { male: 0, female: 0, others: 0 };
+      for (const ch of (ag.children || [])) {
+        const k = GKEY[ch.name as string];
+        if (k) cell[k] += Number(ch.value) || 0;
+      }
+      const total = cell.male + cell.female + cell.others;
+      totals.male += cell.male; totals.female += cell.female; totals.others += cell.others; totals.total += total;
+      return { ageGroup: ag.name as string, ...cell, total };
+    });
+    const hasOthers = totals.others > 0;
+
+    const columns = [
+      { key: "ageGroup", label: "Age Group", align: "left" as const },
+      { key: "male", label: "Male", align: "right" as const },
+      { key: "female", label: "Female", align: "right" as const },
+      ...(hasOthers ? [{ key: "others", label: "Others", align: "right" as const }] : []),
+      { key: "total", label: "Total", align: "right" as const },
+    ];
+    const rows: Record<string, React.ReactNode>[] = groups.map((g) => ({
+      ageGroup: g.ageGroup,
+      male: formatNum(g.male),
+      female: formatNum(g.female),
+      others: formatNum(g.others),
+      total: formatNum(g.total),
+    }));
+    // Grand-total row (bold band).
+    rows.push({
+      __group: true,
+      ageGroup: "Total",
+      male: formatNum(totals.male),
+      female: formatNum(totals.female),
+      others: formatNum(totals.others),
+      total: formatNum(totals.total),
+    });
+    return { columns, rows };
+  }, [charts?.demographicSunburst]);
 
   const repeatYearlyTrends = useMemo(() => {
     const rows = repeatTrendData as Array<{ label: string; repeatVisits?: number; repeatPatients?: number }>;
@@ -1444,7 +1543,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Consultation breakdown by age, gender, and location</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("demographicBreakdown"), isChartVisible("locationBySpecialty")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultations are split by age group on the inner ring and gender on the outer ring." tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender">
+          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultations are split by age group on the inner ring and gender on the outer ring." tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender" tableData={demographicTableData}>
             <div ref={sunburstContainerRef} style={{ height: 360, position: "relative" }}>
               <ReactECharts
                 ref={sunburstRef}

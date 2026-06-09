@@ -521,6 +521,8 @@ export default function OHCUtilizationPage() {
   const [capacitySort, setCapacitySort] = useState<{ key: "specialty" | "capacity" | "booked" | "completed" | "util"; dir: "asc" | "desc" }>({ key: "capacity", dir: "desc" });
   // Location filter for the Consult Distribution table view ("all" = every location).
   const [bubbleTableLoc, setBubbleTableLoc] = useState<string>("all");
+  // Expanded years in the Visit Trends table view (year → period drill-down).
+  const [expandedVTYears, setExpandedVTYears] = useState<Set<string>>(new Set());
 
   // Table view for the Demographic Consult Breakdown sunburst. Pivoted as a
   // crosstab: one row per age group with gender as columns (Male / Female /
@@ -952,21 +954,71 @@ export default function OHCUtilizationPage() {
   // page's early loading-return, so they must NOT be useMemo — calling a hook
   // after a conditional return breaks the Rules of Hooks. They're cheap.
 
-  // Visit Trends: one row per period with stage counts + unique patients.
-  const visitTrendsTable = {
-    columns: [
-      { key: "period", label: "Period", align: "left" as const },
-      { key: "completed", label: "Completed", align: "right" as const },
-      { key: "cancelled", label: "Cancelled", align: "right" as const },
-      { key: "noShow", label: "No-Show", align: "right" as const },
-      { key: "unique", label: "Unique Patients", align: "right" as const },
-    ],
-    rows: (visitTrends as any[]).map((v) => ({
-      period: v.period,
-      completed: formatNum(v.completed), cancelled: formatNum(v.cancelled),
-      noShow: formatNum(v.noShow), unique: formatNum(v.uniquePatients),
-    })),
+  // Visit Trends: clubbed by year (bold, clickable band); click a year to
+  // drill into its periods — months normally, or per-date when the range is
+  // small enough that the data is bucketed daily. Counts (Completed/Cancelled/
+  // No-Show) are summed; Unique Patients shows only on leaf rows since summing
+  // distinct patients across periods would double-count.
+  const VT_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const toggleVTYear = (y: string) => setExpandedVTYears((prev) => {
+    const next = new Set(prev);
+    if (next.has(y)) next.delete(y); else next.add(y);
+    return next;
+  });
+  const vtPeriodLabel = (period: string, year: string) => {
+    if (period.length === 10) { const [, m, dd] = period.split("-"); return `${VT_MONTH_ABBR[Number(m) - 1] || m} ${Number(dd)}, ${year}`; }
+    if (period.length === 7) { const m = period.slice(5, 7); return `${VT_MONTH_ABBR[Number(m) - 1] || m} ${year}`; }
+    return period;
   };
+  const visitTrendsTable = (() => {
+    const items = visitTrends as any[];
+    const byYear: Record<string, { completed: number; cancelled: number; noShow: number; items: any[] }> = {};
+    for (const v of items) {
+      const period = String(v.period || "");
+      const year = period.slice(0, 4);
+      if (!year) continue;
+      if (!byYear[year]) byYear[year] = { completed: 0, cancelled: 0, noShow: 0, items: [] };
+      byYear[year].completed += Number(v.completed || 0);
+      byYear[year].cancelled += Number(v.cancelled || 0);
+      byYear[year].noShow += Number(v.noShow || 0);
+      byYear[year].items.push(v);
+    }
+    const rows: Record<string, React.ReactNode>[] = [];
+    for (const y of Object.keys(byYear).sort()) {
+      const yd = byYear[y];
+      const isOpen = expandedVTYears.has(y);
+      rows.push({
+        __group: true,
+        period: (
+          <button onClick={() => toggleVTYear(y)} className="flex items-center gap-1.5 font-bold" style={{ color: T.textPrimary }}>
+            <ChevronDown size={12} style={{ transform: isOpen ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
+            {y}
+          </button>
+        ),
+        completed: formatNum(yd.completed), cancelled: formatNum(yd.cancelled), noShow: formatNum(yd.noShow),
+        unique: "—",
+      });
+      if (isOpen) {
+        const sorted = [...yd.items].sort((a, b) => String(a.period).localeCompare(String(b.period)));
+        for (const v of sorted) {
+          rows.push({
+            period: <span style={{ paddingLeft: 22 }}>{vtPeriodLabel(String(v.period), y)}</span>,
+            completed: formatNum(v.completed), cancelled: formatNum(v.cancelled),
+            noShow: formatNum(v.noShow), unique: formatNum(v.uniquePatients),
+          });
+        }
+      }
+    }
+    return {
+      columns: [
+        { key: "period", label: "Year", align: "left" as const },
+        { key: "completed", label: "Completed", align: "right" as const },
+        { key: "cancelled", label: "Cancelled", align: "right" as const },
+        { key: "noShow", label: "No-Show", align: "right" as const },
+        { key: "unique", label: "Unique Patients", align: "right" as const },
+      ], rows,
+    };
+  })();
 
   // Visits by Specialty (donut): specialty, consults, % of total + total row.
   const specialtyTable = (() => {

@@ -25,7 +25,8 @@ import {
   TrendingUp,
   Users,
   Repeat,
-
+  Table2,
+  BarChart3,
   RotateCcw,
 } from "lucide-react";
 import {
@@ -124,14 +125,23 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 }
 
 // ─── Card ───
+type CVTableData = {
+  columns: { key: string; label: string; align?: "left" | "right" }[];
+  rows: Record<string, React.ReactNode>[];
+  controls?: React.ReactNode;
+};
+
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription, tableData,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; rightHeader?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  tableData?: CVTableData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const showTable = !!tableData && view === "table";
   return (
     <div
       className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
@@ -155,6 +165,16 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {tableData && (
+                  <div className="inline-flex rounded-lg p-0.5 mr-0.5" style={{ backgroundColor: T.borderLight }}>
+                    <button onClick={() => setView("chart")} title="Chart view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "chart" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "chart" ? T.textPrimary : T.textMuted }}>
+                      <BarChart3 size={13} />
+                    </button>
+                    <button onClick={() => setView("table")} title="Table view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "table" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "table" ? T.textPrimary : T.textMuted }}>
+                      <Table2 size={13} />
+                    </button>
+                  </div>
+                )}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {rightHeader}
                 {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/emotional-wellbeing" />}
@@ -168,7 +188,39 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
+      <div className="px-6 pb-5 flex-1 flex flex-col">
+        {showTable ? (
+          <div>
+            {tableData!.controls}
+            <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+              <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                    {tableData!.columns.map((c) => (
+                      <th key={c.key} className={`py-2 px-3 font-semibold whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`} style={{ color: T.textSecondary }}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData!.rows.map((row, i) => {
+                    const isGroup = !!(row as Record<string, unknown>).__group;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}`, backgroundColor: isGroup ? "#F5F6FA" : undefined }}>
+                        {tableData!.columns.map((c) => (
+                          <td key={c.key} className={`py-2 px-3 tabular-nums ${c.align === "right" ? "text-right" : "text-left"} ${isGroup ? "font-bold" : ""}`} style={{ color: isGroup ? T.textPrimary : T.textSecondary }}>{row[c.key]}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {tableData!.rows.length === 0 && (
+                    <tr><td colSpan={tableData!.columns.length} className="py-6 text-center text-[13px]" style={{ color: T.textMuted }}>No data for the selected filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : children}
+      </div>
     </div>
   );
 }
@@ -340,6 +392,8 @@ export default function EmotionalWellbeingPage() {
 
   const [demoTab, setDemoTab] = useState<"age" | "gender" | "location" | "shift" | "ageGender">("age");
   const [trendView, setTrendView] = useState<"year" | "month">("month");
+  // Expanded years in the Consult Trends table view (year → month drill-down).
+  const [expandedEwbYears, setExpandedEwbYears] = useState<Set<string>>(new Set());
   const [activeImpression, setActiveImpression] = useState<string>("");
   const [selectedVisitBucket, setSelectedVisitBucket] = useState<string>("");
   const [indiaMapReady, setIndiaMapReady] = useState(false);
@@ -575,6 +629,90 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
     );
   }
 
+  // ── Table-view data for each chart (Chart ⇄ Table toggle) — PLAIN CONSTS
+  // (not hooks) since they sit after the loading early-return above. ───────
+  const pctOf = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "0%");
+  // Generic label/count table with % of total + total row.
+  const lcTable = (items: { label: string; count: number }[], labelHeader: string, valueHeader = "Patients"): CVTableData => {
+    const arr = items || [];
+    const total = arr.reduce((s, i) => s + Number(i.count || 0), 0);
+    const rows: Record<string, React.ReactNode>[] = arr.map((i) => ({ label: i.label, count: formatNum(i.count), pct: pctOf(Number(i.count || 0), total) }));
+    rows.push({ __group: true, label: "Total", count: formatNum(total), pct: "100%" });
+    return {
+      columns: [
+        { key: "label", label: labelHeader, align: "left" },
+        { key: "count", label: valueHeader, align: "right" },
+        { key: "pct", label: "% of Total", align: "right" },
+      ], rows,
+    };
+  };
+
+  // Consult Trends — clubbed by year (clickable band); click to drill into months.
+  const EWB_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const toggleEwbYear = (y: string) => setExpandedEwbYears((prev) => { const n = new Set(prev); if (n.has(y)) n.delete(y); else n.add(y); return n; });
+  const consultTrendsTable: CVTableData = (() => {
+    const raw = (charts?.consultTrends || []) as { period: string; totalConsults: number; uniquePatients: number }[];
+    const byYear: Record<string, { tc: number; items: any[] }> = {};
+    for (const r of raw) { const y = String(r.period || "").slice(0, 4); if (!y) continue; if (!byYear[y]) byYear[y] = { tc: 0, items: [] }; byYear[y].tc += Number(r.totalConsults || 0); byYear[y].items.push(r); }
+    const rows: Record<string, React.ReactNode>[] = [];
+    for (const y of Object.keys(byYear).sort()) {
+      const yd = byYear[y]; const open = expandedEwbYears.has(y);
+      rows.push({
+        __group: true,
+        period: (<button onClick={() => toggleEwbYear(y)} className="flex items-center gap-1.5 font-bold" style={{ color: T.textPrimary }}><ChevronDown size={12} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />{y}</button>),
+        totalConsults: formatNum(yd.tc), unique: "—",
+      });
+      if (open) for (const r of [...yd.items].sort((a, b) => String(a.period).localeCompare(String(b.period)))) { const m = String(r.period).slice(5, 7); rows.push({ period: <span style={{ paddingLeft: 22 }}>{`${EWB_MONTH_ABBR[Number(m) - 1] || m} ${y}`}</span>, totalConsults: formatNum(r.totalConsults), unique: formatNum(r.uniquePatients) }); }
+    }
+    return { columns: [{ key: "period", label: "Year", align: "left" }, { key: "totalConsults", label: "Total Consults", align: "right" }, { key: "unique", label: "Unique Patients", align: "right" }], rows };
+  })();
+
+  // Demographics — age × gender crosstab (richest view).
+  const demoTable: CVTableData = (() => {
+    const data = (ageGenderData || []) as { ageGroup: string; male: number; female: number; total: number }[];
+    let tm = 0, tf = 0, tt = 0;
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => { const m = Number(r.male || 0), f = Number(r.female || 0), t = Number(r.total || (m + f)); tm += m; tf += f; tt += t; return { ageGroup: r.ageGroup, male: formatNum(m), female: formatNum(f), total: formatNum(t) }; });
+    rows.push({ __group: true, ageGroup: "Total", male: formatNum(tm), female: formatNum(tf), total: formatNum(tt) });
+    return { columns: [{ key: "ageGroup", label: "Age Group", align: "left" }, { key: "male", label: "Male", align: "right" }, { key: "female", label: "Female", align: "right" }, { key: "total", label: "Total", align: "right" }], rows };
+  })();
+
+  // Critical Risk — indicators with case counts.
+  const criticalRiskTable: CVTableData = {
+    columns: [{ key: "indicator", label: "Indicator", align: "left" }, { key: "cases", label: "Cases", align: "right" }],
+    rows: [
+      { indicator: "Suicidal Thoughts", cases: formatNum(criticalRisk.suicidalThoughts) },
+      { indicator: "Attempted Self Harm", cases: formatNum(criticalRisk.attemptedSelfHarm) },
+      { indicator: "Previous Attempts", cases: formatNum(criticalRisk.previousAttempts) },
+      { __group: true, indicator: "Total Cases", cases: formatNum(criticalRisk.totalCases) },
+    ],
+  };
+
+  // Substance Use — reported vs not, derived from the % and assessed total.
+  const substanceUseTable: CVTableData = (() => {
+    const reported = Math.round((substanceUsePct / 100) * totalEwbAssessed);
+    const notReported = Math.max(0, totalEwbAssessed - reported);
+    return {
+      columns: [{ key: "status", label: "Status", align: "left" }, { key: "patients", label: "Patients", align: "right" }, { key: "pct", label: "% of Assessed", align: "right" }],
+      rows: [
+        { status: "Reported substance use", patients: formatNum(reported), pct: `${substanceUsePct}%` },
+        { status: "No / not reported", patients: formatNum(notReported), pct: `${Math.max(0, 100 - substanceUsePct)}%` },
+        { __group: true, status: "Total assessed", patients: formatNum(totalEwbAssessed), pct: "100%" },
+      ],
+    };
+  })();
+
+  // Simple label/count tables.
+  const sleepQualityTable = lcTable(sleepQuality, "Sleep Quality");
+  const sleepDurationTable = lcTable(sleepDuration, "Sleep Duration");
+  const alcoholHabitTable = lcTable(alcoholHabit, "Alcohol Habit");
+  const smokingHabitTable = lcTable(smokingHabit, "Smoking Status");
+  const visitPatternTable = lcTable(visitPattern, "Visits");
+  const anxietyTable = lcTable(anxietyScale, "Anxiety Level");
+  const depressionTable = lcTable(depressionScale, "Depression Level");
+  const selfEsteemTable = lcTable(selfEsteemScale, "Self-Esteem Level");
+  const impressionsTable = lcTable(impressions.map((i) => ({ label: i.category, count: i.count })), "Impression");
+  const detailImpressionsTable = lcTable(detailImpressions.map((i) => ({ label: i.category, count: i.count })), "Category");
+
   return (
     <div className="animate-fade-in animate-stagger space-y-6" style={{ opacity: isValidating ? 0.6 : 1, transition: "opacity 0.2s ease" }}>
       {/* ── Filters ── */}
@@ -777,7 +915,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient Demographics */}
-        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution by age, gender, or the two combined." tooltipText="Three tabs. Age shows a bar chart of patients per age band; Gender shows two proportional circles; Age × Gender shows a stacked horizontal bar with the gender mix inside each age band." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients">
+        {isChartVisible("ewbDemographics") && <CVCard accentColor={T.teal} title="Patient Demographics" subtitle="Each tab shows the patient distribution by age, gender, or the two combined." tooltipText="Three tabs. Age shows a bar chart of patients per age band; Gender shows two proportional circles; Age × Gender shows a stacked horizontal bar with the gender mix inside each age band." chartId="ewbDemographics" chartData={demoData} chartTitle="Patient Demographics" chartDescription="Demographic distribution of patients" tableData={demoTable}>
           <div className="flex gap-0 border-b mb-4" style={{ borderColor: T.border }}>
             {([
               { id: "age" as const, label: "Age" },
@@ -1023,7 +1161,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
         {/* Consult Trends */}
         {isChartVisible("ewbTrends") && <CVCard accentColor={T.teal} title="Consult Trends" subtitle="Each point shows the total consults and the unique patients for that period." tooltipText="Line chart tracking total consults and unique patients over time. Toggle between yearly and monthly views. The gap between total and unique lines reveals repeat visit frequency (employees who availed the service at least twice in the selected date range) — a wider gap means more patients are returning for multiple sessions, which may indicate ongoing mental health needs."
-          chartId="ewbTrends" chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults"
+          chartId="ewbTrends" chartData={trendData} chartTitle="Consult Trends" chartDescription="View of total and unique consults" tableData={consultTrendsTable}
 
           rightHeader={
             <div className="inline-flex items-center gap-1">
@@ -1156,7 +1294,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isChartVisible("criticalRisk") && <CVCard accentColor={"#4f46e5"} title="Critical Risk (Self Harm)" subtitle="Each row shows the patients flagged on one critical risk indicator." tooltipText="Three indicators — Suicidal Thoughts, Attempted Self Harm, and Other Critical Cases — shown as red bars with the patient count and percentage of those assessed. The Total Critical Cases row sums all flags."
-          chartId="criticalRisk" chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm"
+          chartId="criticalRisk" chartData={criticalRisk} chartTitle="Critical Risk (Self Harm)" chartDescription="Critical risk indicators for self harm" tableData={criticalRiskTable}
 >
           {totalEwbAssessed > 0 && (
             <p className="text-[11.5px] mb-4 mt-1" style={{ color: T.textSecondary }}>
@@ -1203,7 +1341,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           })()} />
         </CVCard>}
 
-        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the share of assessed employees who reported any substance use. The denominator is the total emotional-wellbeing assessments in the selected range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use">
+        {isChartVisible("substanceUse") && <CVCard accentColor={T.amber} title="Substance Use" subtitle={`${substanceUsePct}% of the ${formatNum(totalEwbAssessed)} employees assessed reported substance use`} tooltipText="Gauge showing the share of assessed employees who reported any substance use. The denominator is the total emotional-wellbeing assessments in the selected range." chartId="substanceUse" chartData={{ substanceUsePct }} chartTitle="Substance Use" chartDescription="Percentage of assessed employees reporting substance use" tableData={substanceUseTable}>
           <div className="flex items-center justify-center" style={{ height: 260 }}>
             <ReactECharts style={{ height: "100%", width: "100%" }} option={{
               series: [{
@@ -1242,7 +1380,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sleep Quality */}
-        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Each bar shows the number of patients in one sleep-quality bucket." tooltipText="Bar chart of sleep-quality buckets (Good, Average, Poor). Taller bars mean more patients in that bucket." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis">
+        {isChartVisible("sleepQuality") && <CVCard accentColor={"#6366f1"} title="Sleep Quality" subtitle="Each bar shows the number of patients in one sleep-quality bucket." tooltipText="Bar chart of sleep-quality buckets (Good, Average, Poor). Taller bars mean more patients in that bucket." chartId="sleepQuality" chartData={sleepQuality} chartTitle="Sleep Quality" chartDescription="Sleep Quality Analysis" tableData={sleepQualityTable}>
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(sleepQualitySorted.length * 70, 300), height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -1278,7 +1416,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
         </CVCard>}
 
         {/* Sleep Duration — hero stat tile */}
-        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="The share of assessed employees who sleep under seven hours a night." tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours">
+        {isChartVisible("sleepDuration") && <CVCard accentColor={"#6366f1"} title="Sleep Duration" subtitle="The share of assessed employees who sleep under seven hours a night." tooltipText="Hero metric showing the share of assessed employees sleeping <7 hours nightly, with a 'X in Y' framing for quick communication. Bottom row breaks down well-rested, sleep-deprived, and unreported buckets with patient counts." chartId="sleepDuration" chartData={sleepDuration} chartTitle="Sleep Duration" chartDescription="Hero stat: share of employees sleeping <7 hours" tableData={sleepDurationTable}>
           {(() => {
             // API returns the warehouse's native sleep_duration buckets:
             // "7-9 hrs" / "Less than 7 hrs" / "More than 9 hrs". Fold the
@@ -1352,7 +1490,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Alcohol Habit */}
-        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Each dot is 1% of assessed employees, coloured by alcohol-consumption status." tooltipText="100-cell waffle on responders only — each cell is 1% of those who reported. Amber cells are drinkers, teal are non-drinkers. Headline shows the '1 in X' framing; Not Reported is shown separately in the legend." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees">
+        {isChartVisible("alcoholHabit") && <CVCard accentColor={"#6366f1"} title="Alcohol Habit" subtitle="Each dot is 1% of assessed employees, coloured by alcohol-consumption status." tooltipText="100-cell waffle on responders only — each cell is 1% of those who reported. Amber cells are drinkers, teal are non-drinkers. Headline shows the '1 in X' framing; Not Reported is shown separately in the legend." chartId="alcoholHabit" chartData={alcoholHabit} chartTitle="Alcohol Habit" chartDescription="Pictograph of alcohol consumption among assessed employees" tableData={alcoholHabitTable}>
           {(() => {
             const yes = alcoholHabit.find((d) => d.label === "Yes")?.count || 0;
             const no = alcoholHabit.find((d) => d.label === "No")?.count || 0;
@@ -1433,7 +1571,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
         </CVCard>}
 
         {/* Smoking Habit */}
-        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Assessed employees are split into current smokers, ex-smokers, and non-smokers." tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown">
+        {isChartVisible("smokingHabit") && <CVCard accentColor={"#6366f1"} title="Smoking Habit" subtitle="Assessed employees are split into current smokers, ex-smokers, and non-smokers." tooltipText="Hero figure shows the share of assessed employees who currently smoke. The three tiles below break the population into Current, Ex-Smoker (a positive program signal — they quit), and Never. Useful for prioritising cessation programs and celebrating quit successes." chartId="smokingHabit" chartData={smokingHabit} chartTitle="Smoking Habit" chartDescription="Current vs. ex-smoker vs. never breakdown" tableData={smokingHabitTable}>
           {(() => {
             const current = smokingHabit.find((d) => d.label === "Yes")?.count || 0;
             const never = smokingHabit.find((d) => d.label === "No")?.count || 0;
@@ -1569,7 +1707,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Visit Pattern */}
-          <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Bar chart of visit-frequency buckets (1 Visit, 2, 3, 4, 5+ Visits). Click a bar to filter the adjacent Impressions chart by that bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution">
+          <CVCard accentColor={T.amber} title="Visit Pattern" subtitle="Each bar shows the number of patients in one visit-frequency bucket." expandable={false} tooltipText="Bar chart of visit-frequency buckets (1 Visit, 2, 3, 4, 5+ Visits). Click a bar to filter the adjacent Impressions chart by that bucket." chartId="visitPattern" chartData={visitPattern} chartTitle="Visit Pattern" chartDescription="Patient visit frequency distribution" tableData={visitPatternTable}>
             <p className="text-[11px] mb-2" style={{ color: T.textMuted }}>Click a bar to filter Impressions chart</p>
             <div className="overflow-x-auto flex-1 flex">
               <div className="flex-1 flex items-end justify-center gap-3 mt-1" style={{ minHeight: 280, minWidth: Math.max(visitPattern.length * 85, 250) }}>
@@ -1610,7 +1748,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           </CVCard>
 
           {/* Impressions Analysis — horizontal ranked bars */}
-          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} subtitle="Each bar shows how many patients reported one chronic condition." expandable={false} tooltipText="Ranked bar list of the most-flagged impressions from emotional-wellbeing assessments. Sorted by patient count — the most prevalent is at the top." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count">
+          <CVCard accentColor={T.amber} title={selectedVisitBucket ? `Impressions Analysis — ${selectedVisitBucket}` : "Impressions Analysis"} subtitle="Each bar shows how many patients reported one chronic condition." expandable={false} tooltipText="Ranked bar list of the most-flagged impressions from emotional-wellbeing assessments. Sorted by patient count — the most prevalent is at the top." chartId="impressionsPie" chartData={impressions} chartTitle="Impressions Analysis" chartDescription="Chronic-condition prevalence ranked by patient count" tableData={impressionsTable}>
             {(() => {
               const sorted = [...impressions].sort((a, b) => b.count - a.count);
               const total = sorted.reduce((s, i) => s + i.count, 0);
@@ -1701,7 +1839,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* SECTION 5: Scales                         */}
       {/* ══════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar of anxiety-screening results — Anxious vs Not Anxious, with Not Reported shown as a separate segment. Wider Anxious segment means a higher share of those screened were flagged." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments">
+        {isChartVisible("anxietyScale") && <CVCard accentColor={"#6366f1"} title="Anxiety Scale" subtitle="Each segment is the share of patients at one anxiety severity level." expandable={false} tooltipText="Stacked percentage bar of anxiety-screening results — Anxious vs Not Anxious, with Not Reported shown as a separate segment. Wider Anxious segment means a higher share of those screened were flagged." chartId="anxietyScale" chartData={anxietyScale} chartTitle="Anxiety Scale" chartDescription="Severity distribution of anxiety assessments" tableData={anxietyTable}>
           <StackedPercentBar data={anxietyScale} colors={["#d97706", "#0d9488", "#94a3b8"]} />
           <InsightBox text={(() => {
             if (anxietyScale.length === 0) return "No anxiety-scale data yet for this range.";
@@ -1713,7 +1851,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
             return `${pct}% of those screened flagged as Anxious — ${formatNum(anxious)} patients who may need expanded anxiety support.`;
           })()} />
         </CVCard>}
-        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" subtitle="Each segment is the share of patients at one self-esteem level." expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results">
+        {isChartVisible("selfEsteemScale") && <CVCard accentColor={"#6366f1"} title="Self Esteem Scale" subtitle="Each segment is the share of patients at one self-esteem level." expandable={false} tooltipText="Stacked percentage bar showing self-esteem assessment results (e.g., Low, Normal). A larger Low segment suggests more employees may benefit from confidence-building and self-esteem support initiatives." chartId="selfEsteemScale" chartData={selfEsteemScale} chartTitle="Self Esteem Scale" chartDescription="Self-esteem assessment results" tableData={selfEsteemTable}>
           <StackedPercentBar data={selfEsteemScale} colors={["#0d9488", "#d97706", "#94a3b8"]} />
           <InsightBox text={(() => {
             if (selfEsteemScale.length === 0) return "No self-esteem data yet for this range.";
@@ -1724,7 +1862,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           })()} />
         </CVCard>}
       </div>
-      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar of depression-screening results — Minimal vs Moderate or Higher, with Not Reported shown as a separate segment. A wider Moderate-or-Higher segment means a higher share of those screened were flagged." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments">
+      {isChartVisible("depressionScale") && <CVCard accentColor={"#6366f1"} title="Depression Scale" subtitle="Each segment is the share of patients at one depression severity level." expandable={false} tooltipText="Stacked percentage bar of depression-screening results — Minimal vs Moderate or Higher, with Not Reported shown as a separate segment. A wider Moderate-or-Higher segment means a higher share of those screened were flagged." chartId="depressionScale" chartData={depressionScale} chartTitle="Depression Scale" chartDescription="Severity distribution of depression assessments" tableData={depressionTable}>
         <StackedPercentBar data={depressionScale} colors={["#0d9488", "#d97706", "#94a3b8"]} />
         <InsightBox text={(() => {
           if (depressionScale.length === 0) return "No depression-scale data yet for this range.";
@@ -1740,7 +1878,7 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
       {/* ══════════════════════════════════════════ */}
       {/* SECTION 6: Impressions Detail (clickable) */}
       {/* ══════════════════════════════════════════ */}
-      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Each category can be opened to see the specific concerns inside it." tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={detailImpressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories">
+      {isChartVisible("impressionsDetail") && <CVCard accentColor={"#4f46e5"} title="Impressions Analysis" subtitle="Each category can be opened to see the specific concerns inside it." tooltipText="Interactive breakdown of problem categories. The stacked bar at top shows overall proportions. Click any category tab to drill into its subcategories displayed as horizontal bars." chartId="impressionsDetail" chartData={detailImpressions} chartTitle="Impressions Analysis" chartDescription="Problem category breakdown with subcategories" tableData={detailImpressionsTable}>
         {/* Stacked bar at top */}
         <div className="mb-4">
           <div className="flex h-8 rounded-lg overflow-hidden" style={{ backgroundColor: T.borderLight }}>

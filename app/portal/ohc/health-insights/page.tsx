@@ -23,7 +23,8 @@ import {
   ChevronDown,
   ChevronRight,
   CalendarDays,
-
+  Table2,
+  BarChart3,
   RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -180,16 +181,25 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 }
 
 // ─── Card ───
+type CVTableData = {
+  columns: { key: string; label: string; align?: "left" | "right" }[];
+  rows: Record<string, React.ReactNode>[];
+  controls?: React.ReactNode;
+};
+
 function CVCard({
   children, className = "", accentColor, title, subtitle, tooltipText, expandable = true,
-  headerRight, chartId, chartData, chartTitle, chartDescription,
+  headerRight, chartId, chartData, chartTitle, chartDescription, tableData,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
   headerRight?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  tableData?: CVTableData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const showTable = !!tableData && view === "table";
   return (
     <div
       data-chart-card
@@ -214,6 +224,16 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {tableData && (
+                  <div className="inline-flex rounded-lg p-0.5 mr-0.5" style={{ backgroundColor: T.borderLight }}>
+                    <button onClick={() => setView("chart")} title="Chart view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "chart" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "chart" ? T.textPrimary : T.textMuted }}>
+                      <BarChart3 size={13} />
+                    </button>
+                    <button onClick={() => setView("table")} title="Table view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "table" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "table" ? T.textPrimary : T.textMuted }}>
+                      <Table2 size={13} />
+                    </button>
+                  </div>
+                )}
                 {headerRight}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/health-insights" />}
@@ -227,7 +247,39 @@ function CVCard({
           )}
         </div>
       )}
-      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
+      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">
+        {showTable ? (
+          <div>
+            {tableData!.controls}
+            <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+              <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                    {tableData!.columns.map((c) => (
+                      <th key={c.key} className={`py-2 px-3 font-semibold whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`} style={{ color: T.textSecondary }}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData!.rows.map((row, i) => {
+                    const isGroup = !!(row as Record<string, unknown>).__group;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}`, backgroundColor: isGroup ? "#F5F6FA" : undefined }}>
+                        {tableData!.columns.map((c) => (
+                          <td key={c.key} className={`py-2 px-3 tabular-nums ${c.align === "right" ? "text-right" : "text-left"} ${isGroup ? "font-bold" : ""}`} style={{ color: isGroup ? T.textPrimary : T.textSecondary }}>{row[c.key]}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {tableData!.rows.length === 0 && (
+                    <tr><td colSpan={tableData!.columns.length} className="py-6 text-center text-[13px]" style={{ color: T.textMuted }}>No data for the selected filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : children}
+      </div>
     </div>
   );
 }
@@ -434,6 +486,8 @@ export default function HealthInsightsPage() {
   // commits to the API on every change (no Apply button needed for this
   // chart-scoped picker).
   const [coOccCats, setCoOccCats] = useState<string[]>([]);
+  // Expanded years in the Condition Trends table view (year → month drill-down).
+  const [expandedHIYears, setExpandedHIYears] = useState<Set<string>>(new Set());
   const [coOccPickerOpen, setCoOccPickerOpen] = useState(false);
 
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
@@ -682,6 +736,87 @@ export default function HealthInsightsPage() {
     );
   }
 
+  // ── Table-view data for each chart (Chart ⇄ Table toggle) — plain consts ──
+  const hiPctOf = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "0%");
+
+  // ICD Category Distribution / Condition Share: category × visits × %.
+  const categoryTable: CVTableData = (() => {
+    const items = [...(categoryTreemap as any[])].sort((a, b) => b.value - a.value);
+    const total = items.reduce((s, c) => s + Number(c.value || 0), 0);
+    const rows: Record<string, React.ReactNode>[] = items.map((c) => ({ name: displayCat(c.name), value: formatNum(c.value), pct: hiPctOf(Number(c.value || 0), total) }));
+    rows.push({ __group: true, name: "Total", value: formatNum(total), pct: "100%" });
+    return { columns: [{ key: "name", label: "Disease Category", align: "left" }, { key: "value", label: "Visits", align: "right" }, { key: "pct", label: "% of Total", align: "right" }], rows };
+  })();
+
+  // Condition Trends — year → month drill-down (conditionTrends: {period 'YYYY-MM', count, uniquePatients}).
+  const HI_MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const toggleHIYear = (y: string) => setExpandedHIYears((prev) => { const n = new Set(prev); if (n.has(y)) n.delete(y); else n.add(y); return n; });
+  const trendsTable: CVTableData = (() => {
+    const raw = (trendsApi?.conditionTrends || []) as { period: string; count: number; uniquePatients: number }[];
+    const byYear: Record<string, { c: number; items: any[] }> = {};
+    for (const r of raw) { const y = String(r.period || "").slice(0, 4); if (!y) continue; if (!byYear[y]) byYear[y] = { c: 0, items: [] }; byYear[y].c += Number(r.count || 0); byYear[y].items.push(r); }
+    const rows: Record<string, React.ReactNode>[] = [];
+    for (const y of Object.keys(byYear).sort()) {
+      const yd = byYear[y]; const open = expandedHIYears.has(y);
+      rows.push({ __group: true, period: (<button onClick={() => toggleHIYear(y)} className="flex items-center gap-1.5 font-bold" style={{ color: T.textPrimary }}><ChevronDown size={12} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />{y}</button>), count: formatNum(yd.c), unique: "—" });
+      if (open) for (const r of [...yd.items].sort((a, b) => String(a.period).localeCompare(String(b.period)))) { const m = String(r.period).slice(5, 7); rows.push({ period: <span style={{ paddingLeft: 22 }}>{`${HI_MONTH[Number(m) - 1] || m} ${y}`}</span>, count: formatNum(r.count), unique: formatNum(r.uniquePatients) }); }
+    }
+    return { columns: [{ key: "period", label: "Year", align: "left" }, { key: "count", label: "Diagnoses", align: "right" }, { key: "unique", label: "Unique Patients", align: "right" }], rows };
+  })();
+
+  // Demographic Analysis — condition × segment crosstab (current tab).
+  const demoTable: CVTableData = (() => {
+    const segs = (demoSegments || []) as string[];
+    const rows: Record<string, React.ReactNode>[] = (demoMatrix.rows as any[]).map((r) => {
+      const row: Record<string, React.ReactNode> = { condition: displayCat(r.condition) };
+      r.cells.forEach((v: number, i: number) => { row[`s${i}`] = formatNum(v); });
+      row.__rowtotal = formatNum(r.total);
+      return row;
+    });
+    return { columns: [{ key: "condition", label: "Condition", align: "left" }, ...segs.map((s, i) => ({ key: `s${i}`, label: s, align: "right" as const })), { key: "__rowtotal", label: "Total", align: "right" }], rows };
+  })();
+
+  // Co-occurrence — decode venn subsets (bitmask → category combination) into rows.
+  const coOccTable: CVTableData = (() => {
+    const venn = coOccApi?.coOccurrenceVenn || { subsets: {} };
+    const subsets: Record<string, number> = venn.subsets || {};
+    const cats = coOccCats;
+    const rows = Object.entries(subsets)
+      .filter(([, v]) => Number(v) > 0)
+      .map(([mask, v]) => { const m = Number(mask); const names = cats.filter((_, i) => m & (1 << i)); return { combo: names.map(displayCat).join(" + ") || "—", patients: Number(v) }; })
+      .sort((a, b) => b.patients - a.patients);
+    const total = rows.reduce((s, r) => s + r.patients, 0);
+    const out: Record<string, React.ReactNode>[] = rows.map((r) => ({ combo: r.combo, patients: formatNum(r.patients) }));
+    out.push({ __group: true, combo: "Total (any of the selected)", patients: formatNum(total) });
+    return { columns: [{ key: "combo", label: "Condition Combination", align: "left" }, { key: "patients", label: "Patients", align: "right" }], rows: out };
+  })();
+
+  // Seasonal — Month × condition crosstab for the selected year.
+  const seasonalTable: CVTableData = (() => {
+    const condNames = Array.from(new Set(seasonalConditions.map(displayCat)));
+    const monthAgg: Record<number, Record<string, number>> = {};
+    for (const rawName of seasonalConditions) {
+      const sn = displayCat(rawName);
+      for (const pt of (seasonalTrends[rawName] || [])) { const [yr, mo] = pt.period.split("-").map(Number); if (yr !== seasonalYear) continue; if (!monthAgg[mo]) monthAgg[mo] = {}; monthAgg[mo][sn] = (monthAgg[mo][sn] || 0) + pt.count; }
+    }
+    const colTotals: Record<string, number> = {};
+    const rows: Record<string, React.ReactNode>[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const c = monthAgg[m] || {}; const total = Object.values(c).reduce((s, v) => s + v, 0);
+      if (total === 0) continue;
+      const row: Record<string, React.ReactNode> = { month: HI_MONTH[m - 1] };
+      for (const cn of condNames) { const v = c[cn] || 0; row[cn] = formatNum(v); colTotals[cn] = (colTotals[cn] || 0) + v; }
+      row.__rowtotal = formatNum(total);
+      rows.push(row);
+    }
+    const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
+    const totalRow: Record<string, React.ReactNode> = { __group: true, month: "Total" };
+    for (const cn of condNames) totalRow[cn] = formatNum(colTotals[cn] || 0);
+    totalRow.__rowtotal = formatNum(grand);
+    rows.push(totalRow);
+    return { columns: [{ key: "month", label: `Month (${seasonalYear})`, align: "left" }, ...condNames.map((cn) => ({ key: cn, label: cn, align: "right" as const })), { key: "__rowtotal", label: "Total", align: "right" }], rows };
+  })();
+
   return (
     <div className="animate-stagger space-y-6" style={{ opacity: isValidating ? 0.6 : 1, transition: "opacity 0.2s ease" }}>
       {/* ── Filters ── */}
@@ -927,7 +1062,7 @@ export default function HealthInsightsPage() {
             tooltipText="Horizontal grouped bar chart of all chronic diseases. Indigo bar = diagnosis count, teal bar = unique UHIDs. Sorted by diagnosis volume; scroll vertically for the full list. Click a disease to drill it into the right panel."
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
-            chartDescription="Grouped horizontal bars: diagnosis count vs. unique UHIDs per chronic disease"
+            chartDescription="Grouped horizontal bars: diagnosis count vs. unique UHIDs per chronic disease" tableData={categoryTable}
           >
             {(() => {
               const sorted = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
@@ -1086,7 +1221,7 @@ export default function HealthInsightsPage() {
             tooltipText="Table of all chronic diseases with diagnosis count and unique UHIDs per row. Click the chevron on any row to expand and see every specific ICD condition inside it with the same two metrics."
             chartId="conditionShareDistribution"
             chartData={categoryTreemap}
-            chartDescription="Expandable table of chronic diseases and their ICD conditions"
+            chartDescription="Expandable table of chronic diseases and their ICD conditions" tableData={categoryTable}
           >
             {categoryTreemap.length > 0 ? (() => {
               const sortedCats = [...categoryTreemap].sort((a: any, b: any) => b.value - a.value);
@@ -1213,7 +1348,7 @@ export default function HealthInsightsPage() {
         tooltipText="Heatmap matrix showing chronic-condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination. Acute diagnoses are excluded."
         chartId="demographicAnalysis"
         chartData={demoMatrix}
-        chartDescription="Condition frequency across demographic segments (heatmap)"
+        chartDescription="Condition frequency across demographic segments (heatmap)" tableData={demoTable}
         headerRight={
           <div className="flex items-center gap-2">
             <YearSelector years={years} value={demoYear} onChange={setDemoYear} />
@@ -1319,7 +1454,7 @@ export default function HealthInsightsPage() {
         tooltipText="Line chart tracking how the selected chronic condition's consultation volume changes over time. Toggle between yearly and monthly views. Acute diagnoses are excluded."
         chartId="trendsOverTime"
         chartData={trendData}
-        chartDescription="Condition consultation volume trends over time"
+        chartDescription="Condition consultation volume trends over time" tableData={trendsTable}
         headerRight={
           <div className="flex items-center gap-2">
             <div className="inline-flex items-center gap-1 rounded-lg px-1 py-0.5" style={{ backgroundColor: T.borderLight }}>
@@ -1491,7 +1626,7 @@ export default function HealthInsightsPage() {
           tooltipText="Multi-select chronic diseases (cap 3). Circles in the venn diagram are sized by the unique UHID count of each disease; overlap regions show how many patients carry the intersecting set. The panel beside it breaks down the all-overlap intersection by age group and gender."
           chartId="coOccurrence"
           chartData={coOccApi?.coOccurrenceVenn}
-          chartDescription="Venn diagram of unique UHID overlap across selected chronic diseases with age + gender breakdown of the intersection"
+          chartDescription="Venn diagram of unique UHID overlap across selected chronic diseases with age + gender breakdown of the intersection" tableData={coOccTable}
           headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={coOccYear} onChange={setCoOccYear} includeAll /><ResetFilter visible={coOccYear !== 2025} onClick={() => setCoOccYear(2025)} /></div>}
         >
           {(() => {
@@ -1758,7 +1893,7 @@ export default function HealthInsightsPage() {
             tooltipText="12-month calendar grid showing the top 3 chronic ICD parent categories per month with season-colored backgrounds. Useful for spotting cyclical demand on specific care areas."
             chartId="seasonalPatterns"
             chartData={monthData}
-            chartDescription="Top chronic diseases per month with diagnosis counts"
+            chartDescription="Top chronic diseases per month with diagnosis counts" tableData={seasonalTable}
             headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
           >
             <div className="overflow-x-auto">

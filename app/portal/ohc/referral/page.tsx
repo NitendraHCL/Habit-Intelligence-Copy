@@ -26,7 +26,8 @@ import {
   CalendarDays,
   X,
   ChevronDown,
-
+  Table2,
+  BarChart3,
   RotateCcw,
 } from "lucide-react";
 import {
@@ -100,14 +101,27 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 }
 
 // ─── Card ───
+/** Optional tabular view of a chart's data. When passed to CVCard a
+ *  Chart/Table toggle appears in the header and the table renders in place
+ *  of the chart. `controls` renders above the table (e.g. a filter dropdown);
+ *  rows flagged `__group` render as a bold total band. */
+type CVTableData = {
+  columns: { key: string; label: string; align?: "left" | "right" }[];
+  rows: Record<string, React.ReactNode>[];
+  controls?: React.ReactNode;
+};
+
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, chartId, chartData, chartTitle, chartDescription, tableData,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  tableData?: CVTableData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const showTable = !!tableData && view === "table";
   return (
     <div
       className={`bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col ${expanded ? "col-span-full" : ""} ${className}`}
@@ -131,6 +145,16 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {tableData && (
+                  <div className="inline-flex rounded-lg p-0.5 mr-0.5" style={{ backgroundColor: T.borderLight }}>
+                    <button onClick={() => setView("chart")} title="Chart view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "chart" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "chart" ? T.textPrimary : T.textMuted }}>
+                      <BarChart3 size={13} />
+                    </button>
+                    <button onClick={() => setView("table")} title="Table view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "table" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "table" ? T.textPrimary : T.textMuted }}>
+                      <Table2 size={13} />
+                    </button>
+                  </div>
+                )}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/referral" />}
                 {expandable && (
@@ -143,7 +167,39 @@ function CVCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
+      <div className="px-6 pb-5 flex-1 flex flex-col">
+        {showTable ? (
+          <div>
+            {tableData!.controls}
+            <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+              <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                    {tableData!.columns.map((c) => (
+                      <th key={c.key} className={`py-2 px-3 font-semibold whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`} style={{ color: T.textSecondary }}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData!.rows.map((row, i) => {
+                    const isGroup = !!(row as Record<string, unknown>).__group;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}`, backgroundColor: isGroup ? "#F5F6FA" : undefined }}>
+                        {tableData!.columns.map((c) => (
+                          <td key={c.key} className={`py-2 px-3 tabular-nums ${c.align === "right" ? "text-right" : "text-left"} ${isGroup ? "font-bold" : ""}`} style={{ color: isGroup ? T.textPrimary : T.textSecondary }}>{row[c.key]}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {tableData!.rows.length === 0 && (
+                    <tr><td colSpan={tableData!.columns.length} className="py-6 text-center text-[13px]" style={{ color: T.textMuted }}>No data for the selected filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : children}
+      </div>
     </div>
   );
 }
@@ -320,6 +376,8 @@ export default function ReferralAnalyticsPage() {
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
   const [trendView, setTrendView] = useState<"monthly" | "yearly">("monthly");
+  // Expanded years in the Referral Trends table view (year → months drill-down).
+  const [expandedTrendYears, setExpandedTrendYears] = useState<Set<string>>(new Set());
 
   // Referral Demographics sunburst — drill+reset (mirrors the OHC
   // Utilization Demographic Consult Breakdown chart).
@@ -484,6 +542,150 @@ export default function ReferralAnalyticsPage() {
       </div>
     );
   }
+
+  // ── Table-view data for each chart (Chart ⇄ Table toggle) — PLAIN CONSTS
+  // (not hooks) since they sit after the loading early-return above. ───────
+  const pctOf = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "0%");
+
+  // Referral Trends: clubbed by year (bold, clickable band); click a year to
+  // drill into its months. period is "YYYY-MM" (or "YYYY-MM-DD" for short
+  // ranges) — both group cleanly into year → month.
+  const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const toggleTrendYear = (y: string) => setExpandedTrendYears((prev) => {
+    const next = new Set(prev);
+    if (next.has(y)) next.delete(y); else next.add(y);
+    return next;
+  });
+  const referralTrendsTable: CVTableData = (() => {
+    const items = (charts?.referralTrends || []) as any[];
+    const byYear: Record<string, { ref: number; conv: number; months: Record<string, { ref: number; conv: number }> }> = {};
+    for (const t of items) {
+      const period = String(t.period || "");
+      const year = period.slice(0, 4);
+      const monthKey = period.slice(0, 7); // YYYY-MM
+      if (!year) continue;
+      if (!byYear[year]) byYear[year] = { ref: 0, conv: 0, months: {} };
+      const ref = Number(t.totalReferrals || 0), conv = Number(t.inClinicConversions || 0);
+      byYear[year].ref += ref; byYear[year].conv += conv;
+      if (!byYear[year].months[monthKey]) byYear[year].months[monthKey] = { ref: 0, conv: 0 };
+      byYear[year].months[monthKey].ref += ref; byYear[year].months[monthKey].conv += conv;
+    }
+    const rows: Record<string, React.ReactNode>[] = [];
+    for (const y of Object.keys(byYear).sort()) {
+      const yd = byYear[y];
+      const isOpen = expandedTrendYears.has(y);
+      rows.push({
+        __group: true,
+        period: (
+          <button onClick={() => toggleTrendYear(y)} className="flex items-center gap-1.5 font-bold" style={{ color: T.textPrimary }}>
+            <ChevronDown size={12} style={{ transform: isOpen ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
+            {y}
+          </button>
+        ),
+        referrals: formatNum(yd.ref), converted: formatNum(yd.conv), rate: pctOf(yd.conv, yd.ref),
+      });
+      if (isOpen) {
+        for (const mk of Object.keys(yd.months).sort()) {
+          const md = yd.months[mk];
+          const label = `${MONTH_ABBR[Number(mk.slice(5, 7)) - 1] || mk} ${y}`;
+          rows.push({
+            period: <span style={{ paddingLeft: 22 }}>{label}</span>,
+            referrals: formatNum(md.ref), converted: formatNum(md.conv), rate: pctOf(md.conv, md.ref),
+          });
+        }
+      }
+    }
+    return {
+      columns: [
+        { key: "period", label: "Year", align: "left" },
+        { key: "referrals", label: "Referrals", align: "right" },
+        { key: "converted", label: "Converted", align: "right" },
+        { key: "rate", label: "Conversion %", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // In-Clinic Specialty Conversion: specialty referrals / conversions / rate.
+  const specialtyConversionTable: CVTableData = (() => {
+    const items = filteredSpecDetails as any[];
+    const rows: Record<string, React.ReactNode>[] = items.map((s) => ({
+      specialty: s.specialty, referrals: formatNum(s.referrals),
+      conversions: formatNum(s.inClinicConsults), rate: `${s.conversionRate}%`,
+    }));
+    const tr = items.reduce((a, s) => a + Number(s.referrals || 0), 0);
+    const tc = items.reduce((a, s) => a + Number(s.inClinicConsults || 0), 0);
+    rows.push({ __group: true, specialty: "Total", referrals: formatNum(tr), conversions: formatNum(tc), rate: pctOf(tc, tr) });
+    return {
+      columns: [
+        { key: "specialty", label: "Specialty", align: "left" },
+        { key: "referrals", label: "Referrals", align: "right" },
+        { key: "conversions", label: "Conversions", align: "right" },
+        { key: "rate", label: "Conversion %", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Referral Matrix (active year): From → To pathways, ranked by volume.
+  const matrixTable: CVTableData = (() => {
+    const items = [...matrixData].sort((a, b) => b.count - a.count);
+    const rows: Record<string, React.ReactNode>[] = items.map((m) => ({
+      from: m.referredFrom, to: m.referredTo, count: formatNum(m.count),
+    }));
+    const total = items.reduce((a, m) => a + Number(m.count || 0), 0);
+    rows.push({ __group: true, from: "Total", to: "", count: formatNum(total) });
+    return {
+      columns: [
+        { key: "from", label: "Referred From", align: "left" },
+        { key: "to", label: "Referred To", align: "left" },
+        { key: "count", label: "Referrals", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Referral Demographics: crosstab age group × gender (+ totals).
+  const demoTable: CVTableData = (() => {
+    let tm = 0, tf = 0;
+    const rows: Record<string, React.ReactNode>[] = (demoData || []).map((dd) => {
+      const male = Number(dd.male || 0), female = Number(dd.female || 0);
+      tm += male; tf += female;
+      return { ageGroup: dd.ageGroup, male: formatNum(male), female: formatNum(female), total: formatNum(male + female) };
+    });
+    rows.push({ __group: true, ageGroup: "Total", male: formatNum(tm), female: formatNum(tf), total: formatNum(tm + tf) });
+    return {
+      columns: [
+        { key: "ageGroup", label: "Age Group", align: "left" },
+        { key: "male", label: "Male", align: "right" },
+        { key: "female", label: "Female", align: "right" },
+        { key: "total", label: "Total", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Location × Specialty: crosstab (+ per-row & grand totals).
+  const locationTable: CVTableData = (() => {
+    const specs = topBarSpecs;
+    const data = locationBySpecialtyData as any[];
+    const colTotals: Record<string, number> = {};
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => {
+      const row: Record<string, React.ReactNode> = { location: r.location };
+      let rowTotal = 0;
+      for (const s of specs) { const v = Number(r[s]) || 0; row[s] = formatNum(v); colTotals[s] = (colTotals[s] || 0) + v; rowTotal += v; }
+      row.__rowtotal = formatNum(rowTotal);
+      return row;
+    });
+    const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
+    const totalRow: Record<string, React.ReactNode> = { __group: true, location: "Total" };
+    for (const s of specs) totalRow[s] = formatNum(colTotals[s] || 0);
+    totalRow.__rowtotal = formatNum(grand);
+    rows.push(totalRow);
+    return {
+      columns: [
+        { key: "location", label: "Location", align: "left" },
+        ...specs.map((s) => ({ key: s, label: s, align: "right" as const })),
+        { key: "__rowtotal", label: "Total", align: "right" },
+      ], rows,
+    };
+  })();
 
   return (
     <div className="animate-fade-in animate-stagger space-y-6" style={{ opacity: isValidating ? 0.6 : 1, transition: "opacity 0.2s ease" }}>
@@ -677,7 +879,8 @@ export default function ReferralAnalyticsPage() {
           chartId="referralTrends"
           chartData={trendView === "yearly" ? referralYearlyTrends : charts?.referralTrends}
           chartTitle="Referral Trends"
-          chartDescription={`${trendView} view of referral volume vs. conversion`}>
+          chartDescription={`${trendView} view of referral volume vs. conversion`}
+          tableData={referralTrendsTable}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (
@@ -834,7 +1037,7 @@ export default function ReferralAnalyticsPage() {
       {isChartVisible("specialtyConversion") && <CVCard accentColor={"#4f46e5"} title="In-Clinic Specialty Conversion" subtitle="Which specialties draw the most referrals — and which actually convert them into a consult"
         tooltipText="Each row is a specialty patients were referred to. Volume bar shows relative referral demand; the colored conversion bar shows the share that became a real consult. Green ≥ 70%, amber 1-69%, red 0%."
         chartId="specialtyConversion"
-        chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Specialty referral volume vs. real conversion rate">
+        chartData={filteredSpecDetails} chartTitle="In-Clinic Specialty Conversion" chartDescription="Specialty referral volume vs. real conversion rate" tableData={specialtyConversionTable}>
         {/* Summary strip */}
         {filteredSpecDetails.length > 0 && (() => {
           const totalRefs = filteredSpecDetails.reduce((s: number, r: any) => s + (r.referrals || 0), 0);
@@ -950,7 +1153,7 @@ export default function ReferralAnalyticsPage() {
       </CVCard>}
 
       {/* ── Who Refers to Whom (Heatmap Matrix) ── */}
-      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — rows are the source, columns the destination" tooltipText="Heatmap of cross-specialty referral flow. Rows are the originating specialty, columns are the destination — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap">
+      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — rows are the source, columns the destination" tooltipText="Heatmap of cross-specialty referral flow. Rows are the originating specialty, columns are the destination — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap" tableData={matrixTable}>
         <div className="flex items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>Year:</span>
@@ -1032,7 +1235,7 @@ export default function ReferralAnalyticsPage() {
       {/* ── Demographics + Location Bar ── */}
       {(isChartVisible("referralDemographics") || isChartVisible("locationBySpecialty")) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Referral Demographics (Sunburst) */}
-        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Which age and gender cohorts are drawing the most specialist care" tooltipText="Sunburst showing the referred population. Inner ring is gender, outer ring is the age-group split within each gender. Surfaces which segments of the workforce drive the most onward referrals." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Age and gender split of the referred population">
+        {isChartVisible("referralDemographics") && <CVCard accentColor={T.amber} title="Referral Demographics" subtitle="Which age and gender cohorts are drawing the most specialist care" tooltipText="Sunburst showing the referred population. Inner ring is gender, outer ring is the age-group split within each gender. Surfaces which segments of the workforce drive the most onward referrals." chartId="referralDemographics" chartData={demoData} chartTitle="Referral Demographics" chartDescription="Age and gender split of the referred population" tableData={demoTable}>
           <div style={{ height: 340, position: "relative" }}>
             <ReactECharts
               ref={referralSunburstRef}
@@ -1185,6 +1388,7 @@ export default function ReferralAnalyticsPage() {
           chartData={charts?.locationBySpecialty}
           chartTitle="Referral Volume by Specialty & Location"
           chartDescription="Adaptive view of per-clinic referral volume by destination specialty"
+          tableData={locationTable}
 
         >
           {clinicChartMode !== "specialtyOnly" && (

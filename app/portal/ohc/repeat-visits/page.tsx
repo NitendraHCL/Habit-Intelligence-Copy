@@ -32,7 +32,8 @@ import {
   TrendingUp,
   Repeat,
   Star,
-
+  Table2,
+  BarChart3,
   RotateCcw,
 } from "lucide-react";
 import {
@@ -104,15 +105,24 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 }
 
 // ─── CVCard ───
+type CVTableData = {
+  columns: { key: string; label: string; align?: "left" | "right" }[];
+  rows: Record<string, React.ReactNode>[];
+  controls?: React.ReactNode;
+};
+
 function CVCard({
-  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription,
+  children, className = "", accentColor, title, subtitle, tooltipText, expandable = true, rightHeader, chartId, chartData, chartTitle, chartDescription, tableData,
 }: {
   children: React.ReactNode; className?: string; accentColor?: string;
   title?: string; subtitle?: string; tooltipText?: string; expandable?: boolean;
   rightHeader?: React.ReactNode; chartId?: string;
   chartData?: unknown; chartTitle?: string; chartDescription?: string;
+  tableData?: CVTableData | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const showTable = !!tableData && view === "table";
   return (
     <div
       data-chart-card
@@ -137,6 +147,16 @@ function CVCard({
                 {subtitle && <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{subtitle}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
+                {tableData && (
+                  <div className="inline-flex rounded-lg p-0.5 mr-0.5" style={{ backgroundColor: T.borderLight }}>
+                    <button onClick={() => setView("chart")} title="Chart view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "chart" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "chart" ? T.textPrimary : T.textMuted }}>
+                      <BarChart3 size={13} />
+                    </button>
+                    <button onClick={() => setView("table")} title="Table view" className={`flex items-center justify-center h-6 w-6 rounded-md transition-all ${view === "table" ? "bg-white shadow-sm" : ""}`} style={{ color: view === "table" ? T.textPrimary : T.textMuted }}>
+                      <Table2 size={13} />
+                    </button>
+                  </div>
+                )}
                 {!!chartData && <AskAIButton title={chartTitle || title || ""} description={chartDescription} data={chartData} />}
                 {rightHeader}
                 {chartId && <ChartComments chartId={chartId} pageSlug="/portal/ohc/repeat-visits" />}
@@ -150,7 +170,39 @@ function CVCard({
           )}
         </div>
       )}
-      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">{children}</div>
+      <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">
+        {showTable ? (
+          <div>
+            {tableData!.controls}
+            <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+              <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                    {tableData!.columns.map((c) => (
+                      <th key={c.key} className={`py-2 px-3 font-semibold whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`} style={{ color: T.textSecondary }}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData!.rows.map((row, i) => {
+                    const isGroup = !!(row as Record<string, unknown>).__group;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}`, backgroundColor: isGroup ? "#F5F6FA" : undefined }}>
+                        {tableData!.columns.map((c) => (
+                          <td key={c.key} className={`py-2 px-3 tabular-nums ${c.align === "right" ? "text-right" : "text-left"} ${isGroup ? "font-bold" : ""}`} style={{ color: isGroup ? T.textPrimary : T.textSecondary }}>{row[c.key]}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {tableData!.rows.length === 0 && (
+                    <tr><td colSpan={tableData!.columns.length} className="py-6 text-center text-[13px]" style={{ color: T.textMuted }}>No data for the selected filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : children}
+      </div>
     </div>
   );
 }
@@ -437,6 +489,130 @@ export default function RepeatVisitsPage() {
   };
   const LOCATION_COLORS = ["#4f46e5", "#0d9488", "#6366f1", "#14b8a6", "#7c3aed", "#8b5cf6", "#818cf8", "#06b6d4"];
 
+  // ── Table-view data for each chart (Chart ⇄ Table toggle) — plain consts ──
+  const pctOf = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "0%");
+  const lcTable = (items: { label: string; count: number }[], labelHeader: string, valueHeader = "Patients"): CVTableData => {
+    const arr = items || [];
+    const total = arr.reduce((s, i) => s + Number(i.count || 0), 0);
+    const rows: Record<string, React.ReactNode>[] = arr.map((i) => ({ label: i.label, count: formatNum(i.count), pct: pctOf(Number(i.count || 0), total) }));
+    rows.push({ __group: true, label: "Total", count: formatNum(total), pct: "100%" });
+    return { columns: [{ key: "label", label: labelHeader, align: "left" }, { key: "count", label: valueHeader, align: "right" }, { key: "pct", label: "% of Total", align: "right" }], rows };
+  };
+
+  // Chronic Repeat Patients: chronic vs non-chronic among repeat patients.
+  const chronicTable: CVTableData = (() => {
+    const chronic = Number(chronicCountRaw || 0), nonChronic = Number(acuteCountRaw || 0);
+    const total = chronic + nonChronic;
+    return {
+      columns: [{ key: "k", label: "Cohort", align: "left" }, { key: "n", label: "Patients", align: "right" }, { key: "pct", label: "% of Repeat", align: "right" }],
+      rows: [
+        { k: "Chronic", n: formatNum(chronic), pct: pctOf(chronic, total) },
+        { k: "Non-chronic", n: formatNum(nonChronic), pct: pctOf(nonChronic, total) },
+        { __group: true, k: "Total repeat patients", n: formatNum(total), pct: "100%" },
+      ],
+    };
+  })();
+
+  // Age × Gender Pyramid → crosstab.
+  const ageGenderTable: CVTableData = (() => {
+    const data = (demoSource?.ageGenderPyramid || []) as any[];
+    let tm = 0, tf = 0, to = 0, tt = 0;
+    const hasOthers = data.some((r) => Number(r.others || 0) > 0);
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => {
+      const m = Number(r.male || 0), f = Number(r.female || 0), o = Number(r.others || 0), t = Number(r.total || (m + f + o));
+      tm += m; tf += f; to += o; tt += t;
+      return { ageGroup: r.ageGroup, male: formatNum(m), female: formatNum(f), others: formatNum(o), total: formatNum(t) };
+    });
+    rows.push({ __group: true, ageGroup: "Total", male: formatNum(tm), female: formatNum(tf), others: formatNum(to), total: formatNum(tt) });
+    return {
+      columns: [
+        { key: "ageGroup", label: "Age Group", align: "left" },
+        { key: "male", label: "Male", align: "right" },
+        { key: "female", label: "Female", align: "right" },
+        ...(hasOthers ? [{ key: "others", label: "Others", align: "right" as const }] : []),
+        { key: "total", label: "Total", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Repeat Visit Frequency: same vs different specialty per visit bucket.
+  const visitFreqTable: CVTableData = (() => {
+    const data = (charts?.repeatVisitFrequency || []) as any[];
+    let tt = 0, ts = 0, td = 0;
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => {
+      const c = Number(r.count || 0), s = Number(r.sameSpecialty || 0), d = Number(r.differentSpecialty || 0);
+      tt += c; ts += s; td += d;
+      return { bucket: r.bucket || r.label, count: formatNum(c), same: formatNum(s), diff: formatNum(d) };
+    });
+    rows.push({ __group: true, bucket: "Total", count: formatNum(tt), same: formatNum(ts), diff: formatNum(td) });
+    return {
+      columns: [
+        { key: "bucket", label: "Visits", align: "left" },
+        { key: "count", label: "Patients", align: "right" },
+        { key: "same", label: "Same Specialty", align: "right" },
+        { key: "diff", label: "Different Specialty", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Recurring Conditions (chronic): condition × patients × occurrences.
+  const recurringTable: CVTableData = (() => {
+    const data = (charts?.recurringConditions?.chronic || []) as any[];
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => ({
+      name: r.name, patients: formatNum(r.patients), count: formatNum(r.count),
+    }));
+    return {
+      columns: [
+        { key: "name", label: "Condition", align: "left" },
+        { key: "patients", label: "Patients", align: "right" },
+        { key: "count", label: "Occurrences", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Key Repeat User Segments: tenure cohorts.
+  const segmentsTable: CVTableData = (() => {
+    const data = (charts?.repeatUserSegments || []) as any[];
+    const rows: Record<string, React.ReactNode>[] = data.map((s) => ({
+      label: s.label,
+      patients: formatNum(s.patients || 0),
+      vpy: (s.visitsPerYear ?? 0),
+      chronic: formatNum(s.chronic?.count || 0),
+      chronicPct: `${Math.round(Number(s.chronic?.pct || 0))}%`,
+    }));
+    return {
+      columns: [
+        { key: "label", label: "Segment", align: "left" },
+        { key: "patients", label: "Patients", align: "right" },
+        { key: "vpy", label: "Visits / Year", align: "right" },
+        { key: "chronic", label: "Chronic", align: "right" },
+        { key: "chronicPct", label: "Chronic %", align: "right" },
+      ], rows,
+    };
+  })();
+
+  // Repeat Patients by Specialty (active treemap year): specialty × consults.
+  const specialtyTable = lcTable(((charts?.specialtyTreemap?.[treemapYear] || []) as { name: string; value: number }[]).map((x) => ({ label: x.name, count: x.value })), "Specialty", "Consults");
+
+  // Same Cohort Progression: visit-frequency crosstab (threshold × selected years).
+  const cohortTable: CVTableData = (() => {
+    const years = cohortSelectedYears;
+    const rows: Record<string, React.ReactNode>[] = (cohortData.combined as any[]).map((r) => {
+      const row: Record<string, React.ReactNode> = { threshold: r.threshold };
+      for (const y of years) row[y] = formatNum(Number(r[y] || 0));
+      return row;
+    });
+    return {
+      columns: [
+        { key: "threshold", label: "Visit Frequency", align: "left" },
+        ...years.map((y) => ({ key: y, label: y, align: "right" as const })),
+      ], rows,
+    };
+  })();
+
+  const genderTable = lcTable(genderData as { label: string; count: number }[], "Gender");
+  const locationTable = lcTable(locationData as { label: string; count: number }[], "Location");
+
   return (
     <div className="animate-stagger space-y-6" style={{ opacity: isValidating ? 0.6 : 1, transition: "opacity 0.2s ease" }}>
         {/* ── Filters ── */}
@@ -608,7 +784,7 @@ export default function RepeatVisitsPage() {
         {isChartVisible("chronicVsAcute") && <CVCard accentColor={"#4f46e5"} title="Chronic Repeat Patients" expandable={false} chartId="chronicVsAcute"
           tooltipText="Repeat patients (≥2 OHC service visits in the selected window) flagged with at least one chronic condition. The donut shows the chronic share of repeaters; the side panel lists the top chronic disease groups in this cohort."
           subtitle="Chronic share of repeaters, plus the disease groups they're managing"
-          chartData={charts?.chronicVsAcute} chartTitle="Chronic Repeat Patients" chartDescription="Donut of chronic share + top chronic disease groups"
+          chartData={charts?.chronicVsAcute} chartTitle="Chronic Repeat Patients" chartDescription="Donut of chronic share + top chronic disease groups" tableData={chronicTable}
 >
           {(() => {
             const chronic = chronicCountRaw;
@@ -725,7 +901,7 @@ export default function RepeatVisitsPage() {
         {/* ── Demographics Row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Age × Gender — Population Pyramid */}
-          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age × Gender Pyramid" tooltipText="Population pyramid showing repeat-patient distribution across age bands, split by gender. Male counts extend left, female counts extend right; bar length is proportional to the patient count in each age × gender cell. Click any bar to filter the dashboard." subtitle="Repeat patients by age band, split by gender (male ← → female)" chartId="ageGroups" chartData={demoSource?.ageGenderPyramid || []} chartTitle="Age × Gender Pyramid" chartDescription="Repeat-patient distribution by age band split by gender">
+          {isChartVisible("ageGroups") && <CVCard accentColor={"#4f46e5"} title="Age × Gender Pyramid" tooltipText="Population pyramid showing repeat-patient distribution across age bands, split by gender. Male counts extend left, female counts extend right; bar length is proportional to the patient count in each age × gender cell. Click any bar to filter the dashboard." subtitle="Repeat patients by age band, split by gender (male ← → female)" chartId="ageGroups" chartData={demoSource?.ageGenderPyramid || []} chartTitle="Age × Gender Pyramid" chartDescription="Repeat-patient distribution by age band split by gender" tableData={ageGenderTable}>
             {(() => {
               const pyramid: Array<{ ageGroup: string; male: number; female: number; others: number; total: number }>
                 = demoSource?.ageGenderPyramid || [];
@@ -826,7 +1002,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Gender Split - Horizontal 100% stacked bar */}
-          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Single horizontal 100% stacked bar — each colored segment is a gender, sized by share of repeat patients. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartId="genderSplit" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity">
+          {isChartVisible("genderSplit") && <CVCard accentColor="#6366f1" title="Gender Split" tooltipText="Single horizontal 100% stacked bar — each colored segment is a gender, sized by share of repeat patients. Click a segment to filter the entire page by that gender." subtitle="Patient distribution by gender identity" chartId="genderSplit" chartData={genderData} chartTitle="Gender Split" chartDescription="Patient distribution by gender identity" tableData={genderTable}>
             {(() => {
               const total = genderTotal || 1;
               const segments = genderData
@@ -942,7 +1118,7 @@ export default function RepeatVisitsPage() {
           </CVCard>}
 
           {/* Location Distribution - Lollipop chart with Others rollup */}
-          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Lollipop chart of the top 10 locations by repeat-patient volume. Each row's stem length is proportional to patient count; the dot at the end carries the exact number. Smaller sites are rolled into an 'Others' bucket — click the pill below the chart to see the full breakdown." subtitle="Top 10 locations by repeat-patient volume" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Top 10 locations as a lollipop chart, with smaller sites rolled into 'Others'">
+          {isChartVisible("locationDistribution") && <CVCard accentColor={"#4f46e5"} title="Location Distribution" tooltipText="Lollipop chart of the top 10 locations by repeat-patient volume. Each row's stem length is proportional to patient count; the dot at the end carries the exact number. Smaller sites are rolled into an 'Others' bucket — click the pill below the chart to see the full breakdown." subtitle="Top 10 locations by repeat-patient volume" chartId="locationDistribution" chartData={locationData} chartTitle="Location Distribution" chartDescription="Top 10 locations as a lollipop chart, with smaller sites rolled into 'Others'" tableData={locationTable}>
             {(() => {
               const rawRows: Array<{ label: string; count: number }> = locationData;
               const othersBreakdown: Array<{ location: string; total: number }> = demoSource?.othersBreakdown || [];
@@ -1130,7 +1306,7 @@ export default function RepeatVisitsPage() {
           {isChartVisible("repeatVisitFrequency") && <CVCard accentColor={"#4f46e5"} title="Repeat Visit Frequency" chartId="repeatVisitFrequency"
             tooltipText="Stacked bar chart showing the number of repeat patients grouped by visit count buckets. Bars are split into same-specialty and different-specialty visits to reveal whether patients return for the same condition or seek care across specialties."
             subtitle="Shows how often repeat patients return for care for different or same specialty"
-            chartData={charts?.repeatVisitFrequency} chartTitle="Repeat Visit Frequency" chartDescription="How often repeat patients return for care">
+            chartData={charts?.repeatVisitFrequency} chartTitle="Repeat Visit Frequency" chartDescription="How often repeat patients return for care" tableData={visitFreqTable}>
             <div className="overflow-x-auto">
               <div style={{ height: 300, minWidth: 400 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1157,7 +1333,7 @@ export default function RepeatVisitsPage() {
           {isChartVisible("specialtyTreemap") && <CVCard accentColor={"#6366f1"} title="Repeat Patients by Specialty" chartId="specialtyTreemap"
             tooltipText="Horizontal ranked bar chart of specialties by repeat-patient consult volume. Bar length is proportional to the largest specialty; the count and % share render at the end of each bar. Smaller specialties roll into an 'Others' row — click it (or the pill below) to see the breakdown."
             subtitle="Top specialties ranked by consult volume; bar length scales to the leader"
-            chartData={charts?.specialtyTreemap?.[treemapYear]} chartTitle="Repeat Patients by Specialty" chartDescription="Horizontal ranked bar of specialties by repeat-patient consult volume with Others rollup"
+            chartData={charts?.specialtyTreemap?.[treemapYear]} chartTitle="Repeat Patients by Specialty" chartDescription="Horizontal ranked bar of specialties by repeat-patient consult volume with Others rollup" tableData={specialtyTable}
             rightHeader={
               charts?.treemapYears?.length > 0 ? (
                 <select
@@ -1297,7 +1473,7 @@ export default function RepeatVisitsPage() {
         {isChartVisible("recurringConditions") && <CVCard accentColor={T.coral} title="Recurring Conditions Performance" chartId="recurringConditions"
           tooltipText="Ranked table of chronic conditions that recur across repeat patients (≥2 occurrences per patient). Rows are ordered by distinct patient count; the volume bar is sized relative to the top condition. The Avg / Patient column shows how many times the average affected patient comes back for the same condition."
           subtitle="Chronic conditions recurring across repeat patients — volume, occurrences, and recurrence intensity per patient"
-          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Ranked chronic recurring conditions by patient volume and recurrence intensity"
+          chartData={charts?.recurringConditions} chartTitle="Recurring Conditions Performance" chartDescription="Ranked chronic recurring conditions by patient volume and recurrence intensity" tableData={recurringTable}
           expandable={false}>
           {(() => {
             const rows: Array<{ name: string; count: number; patients: number }>
@@ -1403,7 +1579,7 @@ export default function RepeatVisitsPage() {
         {isChartVisible("repeatUserSegments") && <CVCard accentColor={"#6366f1"} title="Key Repeat User Segments" chartId="repeatUserSegments"
           tooltipText="Segment cards comparing repeat patient cohorts by tenure (1 year, 2 years, 3+ years). Each card shows patient count, visits-per-year, and the chronic-patient share of the cohort."
           subtitle="Compare engagement patterns and visit frequencies across repeat patient cohorts grouped by tenure."
-          chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns across repeat patient cohorts"
+          chartData={charts?.repeatUserSegments} chartTitle="Key Repeat User Segments" chartDescription="Engagement patterns across repeat patient cohorts" tableData={segmentsTable}
           expandable={false}>
           <div className="overflow-x-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-3" style={{ minWidth: 700 }}>
@@ -1522,7 +1698,7 @@ export default function RepeatVisitsPage() {
         {isChartVisible("cohortProgression") && <CVCard accentColor="#6366f1" title="Same Cohort Progression" chartId="cohortProgression"
           tooltipText="Two-panel view tracking the same patient cohort over time. Left panel: grouped bar chart showing how many patients reach different visit thresholds (3+, 4+, 5+, 6+) per year — use checkboxes to compare years. Right panel: Sankey flow diagram showing BMI category transitions across visits (Above Normal, In Range, Below Normal)."
           subtitle="Track how the same cohort of repeat patients progress over time — visit frequency distribution and vital trends."
-          chartData={{ cohortFrequency: cohortData.combined, sankeyFlow: charts?.sankeyFlow }} chartTitle="Same Cohort Progression" chartDescription="Cohort progression over time — visit frequency and vital trends"
+          chartData={{ cohortFrequency: cohortData.combined, sankeyFlow: charts?.sankeyFlow }} chartTitle="Same Cohort Progression" chartDescription="Cohort progression over time — visit frequency and vital trends" tableData={cohortTable}
           expandable={false}>
           <div className="overflow-x-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3" style={{ minWidth: 700 }}>

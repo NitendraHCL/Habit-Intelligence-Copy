@@ -147,6 +147,8 @@ function AccentBar({ color = "#4f46e5", colorEnd }: { color?: string; colorEnd?:
 type CVTableData = {
   columns: { key: string; label: string; align?: "left" | "right" }[];
   rows: Record<string, React.ReactNode>[];
+  /** Optional control(s) rendered above the table (e.g. a filter dropdown). */
+  controls?: React.ReactNode;
 };
 
 function CVCard({
@@ -208,7 +210,9 @@ function CVCard({
       )}
       <div data-chart-body className="px-6 pb-5 flex-1 flex flex-col">
         {showTable ? (
-          <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
+          <div>
+            {tableData!.controls}
+            <div className="overflow-auto" style={{ maxHeight: expanded ? undefined : 420 }}>
             <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -235,6 +239,7 @@ function CVCard({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         ) : children}
       </div>
@@ -514,6 +519,8 @@ export default function OHCUtilizationPage() {
     charts?.capacityBookedCompleted ?? [];
   // Sort state for the Capacity vs Booked vs Completed table.
   const [capacitySort, setCapacitySort] = useState<{ key: "specialty" | "capacity" | "booked" | "completed" | "util"; dir: "asc" | "desc" }>({ key: "capacity", dir: "desc" });
+  // Location filter for the Consult Distribution table view ("all" = every location).
+  const [bubbleTableLoc, setBubbleTableLoc] = useState<string>("all");
 
   // Table view for the Demographic Consult Breakdown sunburst. Pivoted as a
   // crosstab: one row per age group with gender as columns (Male / Female /
@@ -939,6 +946,214 @@ export default function OHCUtilizationPage() {
     .map((sc: any) => ({
       category: sc.category, booked: sc.booked, completed: sc.completed,
     }));
+
+  // ── Table-view data for each chart (Chart ⇄ Table toggle) ──────────────
+  // ── Table-view data built as PLAIN CONSTS (not hooks). These sit after the
+  // page's early loading-return, so they must NOT be useMemo — calling a hook
+  // after a conditional return breaks the Rules of Hooks. They're cheap.
+
+  // Visit Trends: one row per period with stage counts + unique patients.
+  const visitTrendsTable = {
+    columns: [
+      { key: "period", label: "Period", align: "left" as const },
+      { key: "completed", label: "Completed", align: "right" as const },
+      { key: "cancelled", label: "Cancelled", align: "right" as const },
+      { key: "noShow", label: "No-Show", align: "right" as const },
+      { key: "unique", label: "Unique Patients", align: "right" as const },
+    ],
+    rows: (visitTrends as any[]).map((v) => ({
+      period: v.period,
+      completed: formatNum(v.completed), cancelled: formatNum(v.cancelled),
+      noShow: formatNum(v.noShow), unique: formatNum(v.uniquePatients),
+    })),
+  };
+
+  // Visits by Specialty (donut): specialty, consults, % of total + total row.
+  const specialtyTable = (() => {
+    const items = (charts?.specialtyTreemap || []) as { name: string; value: number }[];
+    const total = items.reduce((s, i) => s + Number(i.value || 0), 0);
+    const rows: Record<string, React.ReactNode>[] = items.map((i) => ({
+      name: i.name, value: formatNum(i.value),
+      pct: total > 0 ? `${Math.round((Number(i.value) / total) * 100)}%` : "0%",
+    }));
+    rows.push({ __group: true, name: "Total", value: formatNum(total), pct: "100%" });
+    return {
+      columns: [
+        { key: "name", label: "Specialty", align: "left" as const },
+        { key: "value", label: "Consults", align: "right" as const },
+        { key: "pct", label: "% of Total", align: "right" as const },
+      ], rows,
+    };
+  })();
+
+  // Clinic Utilization: crosstab location × specialty (+ per-row & grand totals).
+  const locationTable = (() => {
+    const specs = stackSpecialties;
+    const data = locationBySpecialtyData as any[];
+    const colTotals: Record<string, number> = {};
+    const rows: Record<string, React.ReactNode>[] = data.map((r) => {
+      const row: Record<string, React.ReactNode> = { location: r.location };
+      let rowTotal = 0;
+      for (const s of specs) { const v = Number(r[s]) || 0; row[s] = formatNum(v); colTotals[s] = (colTotals[s] || 0) + v; rowTotal += v; }
+      row.__rowtotal = formatNum(rowTotal);
+      return row;
+    });
+    const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
+    const totalRow: Record<string, React.ReactNode> = { __group: true, location: "Total" };
+    for (const s of specs) totalRow[s] = formatNum(colTotals[s] || 0);
+    totalRow.__rowtotal = formatNum(grand);
+    rows.push(totalRow);
+    return {
+      columns: [
+        { key: "location", label: "Location", align: "left" as const },
+        ...specs.map((s) => ({ key: s, label: s, align: "right" as const })),
+        { key: "__rowtotal", label: "Total", align: "right" as const },
+      ], rows,
+    };
+  })();
+
+  // Category Radar: booked vs completed per category + completion %.
+  const radarTable = (() => {
+    const items = radarData as { category: string; booked: number; completed: number }[];
+    const rows: Record<string, React.ReactNode>[] = items.map((i) => ({
+      category: i.category, booked: formatNum(i.booked), completed: formatNum(i.completed),
+      rate: i.booked > 0 ? `${Math.round((i.completed / i.booked) * 100)}%` : "—",
+    }));
+    const tb = items.reduce((s, i) => s + Number(i.booked || 0), 0);
+    const tc = items.reduce((s, i) => s + Number(i.completed || 0), 0);
+    rows.push({ __group: true, category: "Total", booked: formatNum(tb), completed: formatNum(tc), rate: tb > 0 ? `${Math.round((tc / tb) * 100)}%` : "—" });
+    return {
+      columns: [
+        { key: "category", label: "Category", align: "left" as const },
+        { key: "booked", label: "Booked", align: "right" as const },
+        { key: "completed", label: "Completed", align: "right" as const },
+        { key: "rate", label: "Completion %", align: "right" as const },
+      ], rows,
+    };
+  })();
+
+  // Capacity vs Booked vs Completed: plain numeric table (the card's default
+  // view is the interactive sortable+bars table) with a grand-total row.
+  const capacityTableData = (() => {
+    const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
+    const rows: Record<string, React.ReactNode>[] = (capacityData as any[]).map((d) => ({
+      specialty: d.specialty,
+      capacity: formatNum(d.capacity), booked: formatNum(d.booked), completed: formatNum(d.completed),
+      util: `${pct(d.booked, d.capacity)}%`,
+    }));
+    const tc = capacityData.reduce((s, d) => s + d.capacity, 0);
+    const tb = capacityData.reduce((s, d) => s + d.booked, 0);
+    const tcomp = capacityData.reduce((s, d) => s + d.completed, 0);
+    rows.push({ __group: true, specialty: "Total", capacity: formatNum(tc), booked: formatNum(tb), completed: formatNum(tcomp), util: `${pct(tb, tc)}%` });
+    return {
+      columns: [
+        { key: "specialty", label: "Specialty", align: "left" as const },
+        { key: "capacity", label: "Capacity", align: "right" as const },
+        { key: "booked", label: "Booked", align: "right" as const },
+        { key: "completed", label: "Completed", align: "right" as const },
+        { key: "util", label: "Utilization %", align: "right" as const },
+      ], rows,
+    };
+  })();
+
+  // Repeat Visit Trends: one row per period.
+  const repeatTrendsTable = {
+    columns: [
+      { key: "label", label: "Period", align: "left" as const },
+      { key: "repeatVisits", label: "Repeat Visits", align: "right" as const },
+      { key: "repeatPatients", label: "Repeat Patients", align: "right" as const },
+    ],
+    rows: (repeatTrendData as any[]).map((r) => ({
+      label: r.label, repeatVisits: formatNum(r.repeatVisits), repeatPatients: formatNum(r.repeatPatients),
+    })),
+  };
+
+  // Consult Distribution (bubble): ALL specialties as rows, gender as columns,
+  // with a location dropdown that re-aggregates the table. (The chart still
+  // shows one specialty at a time; the table gives the full picture.)
+  const bubbleTable = (() => {
+    const bySpec = (charts?.bubbleBySpecialty || {}) as Record<string, { location: string; male: number; female: number; total: number }[]>;
+    const specs = (charts?.bubbleSpecialties as string[]) || Object.keys(bySpec);
+    // Distinct locations across every specialty for the dropdown.
+    const locSet = new Set<string>();
+    for (const arr of Object.values(bySpec)) for (const b of arr) locSet.add(b.location);
+    const locations = Array.from(locSet).sort();
+    const inLoc = (b: { location: string }) => bubbleTableLoc === "all" || b.location === bubbleTableLoc;
+
+    let tm = 0, tf = 0, tt = 0;
+    const rows: Record<string, React.ReactNode>[] = specs.map((sp) => {
+      const arr = (bySpec[sp] || []).filter(inLoc);
+      const male = arr.reduce((s, b) => s + Number(b.male || 0), 0);
+      const female = arr.reduce((s, b) => s + Number(b.female || 0), 0);
+      const total = male + female;
+      tm += male; tf += female; tt += total;
+      return { __sp: sp, specialty: sp, male, female, total };
+    })
+      .filter((r) => (r.total as number) > 0)
+      .sort((a, b) => (b.total as number) - (a.total as number))
+      .map((r) => ({ specialty: r.specialty, male: formatNum(r.male as number), female: formatNum(r.female as number), total: formatNum(r.total as number) }));
+    rows.push({ __group: true, specialty: "Total", male: formatNum(tm), female: formatNum(tf), total: formatNum(tt) });
+
+    const controls = (
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[12px] font-medium" style={{ color: T.textMuted }}>Location</span>
+        <select
+          value={bubbleTableLoc}
+          onChange={(e) => setBubbleTableLoc(e.target.value)}
+          className="h-8 px-2 rounded-lg border text-[12px] bg-white outline-none"
+          style={{ borderColor: T.border, color: T.textPrimary }}
+        >
+          <option value="all">All locations</option>
+          {locations.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+      </div>
+    );
+
+    return {
+      columns: [
+        { key: "specialty", label: "Specialty", align: "left" as const },
+        { key: "male", label: "Male", align: "right" as const },
+        { key: "female", label: "Female", align: "right" as const },
+        { key: "total", label: "Total", align: "right" as const },
+      ],
+      rows,
+      controls,
+    };
+  })();
+
+  // Peak Hours: crosstab weekday × hour (only hours with any activity), with
+  // per-row and grand totals.
+  const peakHoursTable = (() => {
+    const data = (charts?.peakHours?.data || []) as [number, number, number][];
+    const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const matrix: number[][] = DAYS.map(() => new Array(24).fill(0));
+    const hourTotals = new Array(24).fill(0);
+    for (const cell of data) {
+      const h = cell[0], d = cell[1], c = cell[2];
+      if (matrix[d] !== undefined && h >= 0 && h < 24) { matrix[d][h] += c; hourTotals[h] += c; }
+    }
+    const activeHours = Array.from({ length: 24 }, (_, h) => h).filter((h) => hourTotals[h] > 0);
+    const hourLabel = (h: number) => { const ampm = h < 12 ? "AM" : "PM"; const hr = h % 12 === 0 ? 12 : h % 12; return `${hr} ${ampm}`; };
+    const rows: Record<string, React.ReactNode>[] = DAYS.map((dn, d) => {
+      const row: Record<string, React.ReactNode> = { day: dn };
+      let t = 0;
+      for (const h of activeHours) { const v = matrix[d][h]; row[`h${h}`] = v ? formatNum(v) : "—"; t += v; }
+      row.__rowtotal = formatNum(t);
+      return row;
+    });
+    const totalRow: Record<string, React.ReactNode> = { __group: true, day: "Total" };
+    let grand = 0;
+    for (const h of activeHours) { totalRow[`h${h}`] = formatNum(hourTotals[h]); grand += hourTotals[h]; }
+    totalRow.__rowtotal = formatNum(grand);
+    rows.push(totalRow);
+    return {
+      columns: [
+        { key: "day", label: "Weekday", align: "left" as const },
+        ...activeHours.map((h) => ({ key: `h${h}`, label: hourLabel(h), align: "right" as const })),
+        { key: "__rowtotal", label: "Total", align: "right" as const },
+      ], rows,
+    };
+  })();
 
   return (
     <>
@@ -1624,7 +1839,7 @@ export default function OHCUtilizationPage() {
             })()} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consultations at ${locationBySpecialtyData[0]?.location || "your clinic"} are broken down by specialty.` : clinicChartMode === "heatmap" ? "Darker cells mean more consults at that clinic-specialty pair." : "Each bar shows the consultations at one clinic, split by specialty."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown">
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consultations at ${locationBySpecialtyData[0]?.location || "your clinic"} are broken down by specialty.` : clinicChartMode === "heatmap" ? "Darker cells mean more consults at that clinic-specialty pair." : "Each bar shows the consultations at one clinic, split by specialty."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown" tableData={locationTable}>
             {clinicChartMode !== "specialtyOnly" && (
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {stackSpecialties.map((spec: string, i: number) => (
@@ -2041,7 +2256,7 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Each day shows completed, cancelled, and no-show consults alongside unique patients." : "Each month shows completed, cancelled, and no-show consults alongside unique patients.") : "Each year shows completed, cancelled, and no-show consults with the year-over-year change."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Each day shows completed, cancelled, and no-show consults alongside unique patients." : "Each month shows completed, cancelled, and no-show consults alongside unique patients.") : "Each year shows completed, cancelled, and no-show consults with the year-over-year change."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)} tableData={visitTrendsTable}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (
@@ -2154,7 +2369,7 @@ export default function OHCUtilizationPage() {
               : "No trend data yet for this date range."} />
         </CVCard>}
 
-        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations." tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty">
+        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations." tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty" tableData={specialtyTable}>
           {(() => {
             const raw = charts?.specialtyTreemap || [];
             const top6 = raw.slice(0, 6);
@@ -2326,7 +2541,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Booked vs completed across service categories</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("categoryRadar"), isChartVisible("serviceCategoryMatrix")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked and completed volumes are compared across Pathology, Radiology, and Cardiology." tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories">
+          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked and completed volumes are compared across Pathology, Radiology, and Cardiology." tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories" tableData={radarTable}>
             <div style={{ height: 340 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart
@@ -2501,7 +2716,7 @@ export default function OHCUtilizationPage() {
       {isChartVisible("bubbleChart") && (() => {
         const singleClinicMode = locationOrder.length <= 1;
         const onlyClinic = locationOrder[0] || "your clinic";
-        return <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle={singleClinicMode ? `Consultations at ${onlyClinic} by age group, sized by volume and coloured by gender mix.` : "Each bubble is one clinic and age group, sized by volume and coloured by gender mix."} tooltipText={singleClinicMode ? "One row per age group at this clinic. Bar length is consultation volume; bar colour shifts from blue (more male) to pink (more female), grey when balanced." : "X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced."} chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split">
+        return <CVCard accentColor="#4f46e5" title="Consult Distribution by Specialty & Location" subtitle={singleClinicMode ? `Consultations at ${onlyClinic} by age group, sized by volume and coloured by gender mix.` : "Each bubble is one clinic and age group, sized by volume and coloured by gender mix."} tooltipText={singleClinicMode ? "One row per age group at this clinic. Bar length is consultation volume; bar colour shifts from blue (more male) to pink (more female), grey when balanced." : "X-axis is clinic location, Y-axis is age group. Bubble size is consultation volume; colour shifts from blue (more male) to pink (more female), grey when balanced."} chartId="bubbleChart" chartData={bubbleData} chartTitle={`Consult Distribution — ${activeBubbleSpec}`} chartDescription="Bubble chart showing consultation distribution by specialty, location, and age group with gender split" tableData={bubbleTable}>
         {/* ── How to read this chart ── (hidden in single-clinic mode) */}
         {!singleClinicMode && (
         <div className="flex items-center gap-5 mb-4 px-4 py-3 rounded-xl flex-wrap" style={{ backgroundColor: "rgba(79,70,229,0.04)", border: "1px solid rgba(79,70,229,0.08)" }}>
@@ -2593,7 +2808,7 @@ export default function OHCUtilizationPage() {
       })()}
 
       {/* ── Peak Consultation Hours Heatmap ── */}
-      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Each cell shows the consultation volume for one weekday and hour." tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday">
+      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Each cell shows the consultation volume for one weekday and hour." tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday" tableData={peakHoursTable}>
         {/* ── Slider instruction ── */}
         <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.12)" }}>
           <SlidersHorizontal size={16} style={{ color: "#4f46e5", flexShrink: 0, marginTop: 1 }} />
@@ -2702,6 +2917,7 @@ export default function OHCUtilizationPage() {
         chartData={repeatView === "yearly" ? repeatYearlyTrends : repeatTrendData}
         chartTitle="Repeat Visit Trends"
         chartDescription={`${repeatView} view of repeat visit trends`}
+        tableData={repeatTrendsTable}
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: T.borderLight }}>
@@ -2924,7 +3140,7 @@ export default function OHCUtilizationPage() {
       </CVCard>}
 
       {/* Capacity vs Booked vs Completed — grouped bar by specialty. */}
-      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)}>
+      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)} tableData={capacityTableData}>
         {capacityData.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-[13px]" style={{ color: T.textMuted }}>
             No capacity data available for the selected filters.

@@ -193,6 +193,7 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
   const ageGroups = searchParams.get("ageGroups")?.split(",").filter(Boolean);
   const specialties = searchParams.get("specialties")?.split(",").filter(Boolean);
   const relations = searchParams.get("relations")?.split(",").filter(Boolean);
+  const shifts = searchParams.get("shifts")?.split(",").filter(Boolean);
 
   const conditions: string[] = [`a.cug_code_mapped = $1`, COMPLETED];
   const prevConditions: string[] = [`a.cug_code_mapped = $1`, COMPLETED];
@@ -257,6 +258,23 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     allStageConditions.push(cond); allStagePrevConditions.push(cond);
     params.push(relations);
     idx++;
+  }
+  // Shift filter (derived from consult_hour, the appointment hour):
+  //   General = hours 8–20 (8 AM–8 PM); Night = the rest (21–23 and 0–7).
+  // Multiple selections OR together; both selected ≈ "All shifts" (no filter).
+  if (shifts?.length) {
+    const sc = shifts
+      .map((s) => {
+        if (s === "General") return "(a.consult_hour BETWEEN 8 AND 20)";
+        if (s === "Night") return "(a.consult_hour < 8 OR a.consult_hour > 20)";
+        return null;
+      })
+      .filter(Boolean) as string[];
+    if (sc.length) {
+      const cond = `(${sc.join(" OR ")})`;
+      conditions.push(cond); prevConditions.push(cond);
+      allStageConditions.push(cond); allStagePrevConditions.push(cond);
+    }
   }
 
   return {

@@ -452,6 +452,7 @@ export default function OHCUtilizationPage() {
     consultationTypes: [] as string[],
     locations: [] as string[],
     relations: [] as string[],
+    shifts: [] as string[],
   });
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
@@ -466,6 +467,7 @@ export default function OHCUtilizationPage() {
     consultationTypes: [] as string[],
     locations: [] as string[],
     relations: [] as string[],
+    shifts: [] as string[],
   });
 
   // Push the picker forward if the active tenant has a date floor
@@ -508,6 +510,7 @@ export default function OHCUtilizationPage() {
     if (appliedFilters.ageGroups.length) p.set("ageGroups", appliedFilters.ageGroups.join(","));
     if (appliedFilters.specialties.length) p.set("specialties", appliedFilters.specialties.join(","));
     if (appliedFilters.relations.length) p.set("relations", appliedFilters.relations.join(","));
+    if (appliedFilters.shifts.length) p.set("shifts", appliedFilters.shifts.join(","));
     return `/api/ohc/utilization?${p.toString()}`;
   }, [activeClientId, appliedDateRange, appliedFilters]);
 
@@ -655,7 +658,7 @@ export default function OHCUtilizationPage() {
     setPageFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
   };
   const handleClearAll = () => {
-    const empty = { ageGroups: [], genders: [], specialties: [], consultationTypes: [], locations: [], relations: [] };
+    const empty = { ageGroups: [], genders: [], specialties: [], consultationTypes: [], locations: [], relations: [], shifts: [] };
     setAppliedFilters(empty);
     setPageFilters(empty);
   };
@@ -1374,6 +1377,9 @@ export default function OHCUtilizationPage() {
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Specialty" options={filterOptions.specialties} selected={pageFilters.specialties} onChange={(v) => setPageFilters((p) => ({ ...p, specialties: v }))} />
         <FilterMultiSelect label="Relationship" options={filterOptions.relations} selected={pageFilters.relations} onChange={(v) => setPageFilters((p) => ({ ...p, relations: v }))} />
+        {/* Shift: derived from consult_hour (General = 8 AM–8 PM, Night = the
+            rest). Static options; empty = All shifts. */}
+        <FilterMultiSelect label="Shift" options={["General", "Night"]} selected={pageFilters.shifts} onChange={(v) => setPageFilters((p) => ({ ...p, shifts: v }))} />
 
 
         <div className="flex-1" />

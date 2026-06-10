@@ -436,6 +436,19 @@ async function handler(request: NextRequest) {
       q.params
     ), "visitTrends");
 
+    // Per-YEAR unique patients for the Visit Trends table's year rows —
+    // COUNT(DISTINCT uhid) per calendar year over Completed rows. Computed
+    // separately because a patient visiting in multiple months must be
+    // counted once for the year (summing month distincts would overcount).
+    const trendYearUniquePromise = safeQuery(() => dwQuery<{ year: string; unique_patients: string }>(
+      `SELECT EXTRACT(YEAR FROM a.consult_date)::int::text AS year,
+              COUNT(DISTINCT a.uhid)::bigint AS unique_patients
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere}
+      GROUP BY 1`,
+      q.params
+    ), "trendYearUnique");
+
     // ── BATCH 4: Repeat trends ──
     // per_period_uhid aggregates Completed rows to one row per (period, uhid)
     // repeat_visits = SUM(consult_count) − COUNT(*)  (true_repeat_visits)
@@ -611,10 +624,10 @@ async function handler(request: NextRequest) {
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
+      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, trendYearUniqueRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
     ] = await Promise.all([
       filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise, locUniquePromise,
-      demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
+      demoPromise, peakPromise, trendPromise, trendYearUniquePromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
     ]);
 
     // Shape into the grouped-bar payload (top 15 specialties by capacity).
@@ -960,6 +973,7 @@ async function handler(request: NextRequest) {
         },
         locationBySpecialty, topSpecialties: stackKeys, othersBreakdown, otherSpecialtyBreakdown,
         visitTrends, avgConsults,
+        visitTrendsYearlyUnique: Object.fromEntries(trendYearUniqueRows.map((r) => [r.year, Number(r.unique_patients || 0)])),
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
         serviceCategories, serviceCategoryLineItems, bubbleBySpecialty, bubbleSpecialties,

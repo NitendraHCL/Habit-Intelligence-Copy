@@ -1081,7 +1081,8 @@ export default function OHCUtilizationPage() {
           </button>
         ),
         completed: formatNum(yd.completed), cancelled: formatNum(yd.cancelled), noShow: formatNum(yd.noShow),
-        unique: "—",
+        // True distinct patients for the year (a patient across months counted once).
+        unique: (charts?.visitTrendsYearlyUnique?.[y] != null ? formatNum(Number(charts.visitTrendsYearlyUnique[y])) : "—"),
       });
       if (isOpen) {
         const sorted = [...yd.items].sort((a, b) => String(a.period).localeCompare(String(b.period)));

@@ -62,12 +62,66 @@ import {
   LabelList,
   ResponsiveContainer,
   ReferenceLine,
+  usePlotArea,
+  useXAxisScale,
+  useYAxisScale,
 } from "recharts";
 import { format } from "date-fns";
 import { ResetFilter } from "@/components/ui/reset-filter";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+
+/**
+ * In-chart data labels for a multi-line trend: shows EVERY series value at
+ * EVERY point, but runs a per-x vertical de-collision pass over the real
+ * pixel positions (from recharts v3 hooks) so no two numbers overlap, and the
+ * stack stays inside the plot (off the lines and both axes). Render as a child
+ * of the LineChart, after the <Line>s.
+ */
+function LineValueLabels({
+  data, xKey, series,
+}: {
+  data: any[];
+  xKey: string;
+  series: { key: string; color: string }[];
+}) {
+  const plot = usePlotArea();
+  const xScale = useXAxisScale() as any;
+  const yScale = useYAxisScale() as any;
+  if (!plot || !xScale || !yScale || !data?.length) return null;
+  const compact = (n: number) => (n >= 100000 ? `${(n / 100000).toFixed(1)}L` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+  const GAP = 13;
+  const top = plot.y + 4, bottom = plot.y + plot.height - 4;
+  const els: React.ReactNode[] = [];
+  data.forEach((d, idx) => {
+    const xPos = xScale(d[xKey]);
+    if (xPos == null) return;
+    const lab = series
+      .map((s) => ({ value: Number(d[s.key] || 0), color: s.color }))
+      .filter((it) => it.value > 0)
+      .map((it) => ({ ...it, y: Number(yScale(it.value)) }))
+      .sort((a, b) => a.y - b.y);
+    const n = lab.length;
+    if (!n) return;
+    // Place just above each point, then pack within the plot band by GAP.
+    const y = lab.map((l) => l.y - 7);
+    for (let i = 1; i < n; i++) if (y[i] < y[i - 1] + GAP) y[i] = y[i - 1] + GAP;
+    const overflow = y[n - 1] - bottom;
+    if (overflow > 0) for (let i = 0; i < n; i++) y[i] -= overflow;
+    for (let i = n - 2; i >= 0; i--) if (y[i] > y[i + 1] - GAP) y[i] = y[i + 1] - GAP;
+    if (y[0] < top) { const dd = top - y[0]; for (let i = 0; i < n; i++) y[i] += dd; }
+    const atStart = idx === 0, atEnd = idx === data.length - 1;
+    const anchor = atStart ? "start" : atEnd ? "end" : "middle";
+    const dx = atStart ? 5 : atEnd ? -5 : 0;
+    lab.forEach((l, i) => {
+      els.push(
+        <text key={`${idx}-${i}`} x={xPos + dx} y={y[i]} textAnchor={anchor} dominantBaseline="middle" fontSize={9.5} fontWeight={700} fill={l.color}>{compact(l.value)}</text>
+      );
+    });
+  });
+  return <g>{els}</g>;
+}
 
 
 const SUNBURST_COLORS: Record<string, string> = {
@@ -694,6 +748,14 @@ export default function OHCUtilizationPage() {
   }
 
   // ─── Sunburst Option ───
+  // Compact label formatter for ON-CHART data labels — short forms (12.3K /
+  // 1.5L) keep slice labels clean; hover tooltips still show the full number.
+  const compactLabel = (n: number) => {
+    const v = Number(n) || 0;
+    if (v >= 100000) return `${(v / 100000).toFixed(1)}L`;
+    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
+    return String(v);
+  };
   const sunburstOption = {
     tooltip: {
       trigger: "item",
@@ -773,15 +835,30 @@ export default function OHCUtilizationPage() {
           },
         },
         {
+          // Inner ring (age group). Band name (bold) on top, consult count
+          // (lighter) beneath. minAngle (series) hides labels on thin slices.
           r0: "30%", r: "60%",
-          label: { fontSize: 13, fontWeight: 700, rotate: 0, color: "#fff" },
+          label: {
+            rotate: 0, color: "#fff", lineHeight: 16,
+            formatter: (p: any) => `{n|${p.name}}\n{v|${compactLabel(p.value)}}`,
+            rich: {
+              n: { fontSize: 15, fontWeight: "bold", color: "#fff" },
+              v: { fontSize: 9.5, fontWeight: "normal", color: "rgba(255,255,255,0.6)", padding: [2, 0, 0, 0] },
+            },
+          },
           itemStyle: { borderWidth: 3, borderColor: "#fff", borderRadius: 4 },
         },
         {
-          // Outer ring (gender). White label color so "M" / "F" / "O" stay
-          // legible on the dark blue / deep pink / gray slice backgrounds.
+          // Outer ring (gender). Gender letter (bold) + consult count (lighter).
           r0: "62%", r: "85%",
-          label: { fontSize: 12, fontWeight: 700, rotate: 0, align: "center", color: "#fff" },
+          label: {
+            rotate: 0, align: "center", color: "#fff", lineHeight: 14,
+            formatter: (p: any) => `{n|${p.name}}\n{v|${compactLabel(p.value)}}`,
+            rich: {
+              n: { fontSize: 13, fontWeight: "bold", color: "#fff" },
+              v: { fontSize: 9, fontWeight: "normal", color: "rgba(255,255,255,0.6)", padding: [1, 0, 0, 0] },
+            },
+          },
           itemStyle: { borderWidth: 2, borderColor: "#fff", borderRadius: 4 },
         },
       ],
@@ -953,6 +1030,14 @@ export default function OHCUtilizationPage() {
   // ── Table-view data built as PLAIN CONSTS (not hooks). These sit after the
   // page's early loading-return, so they must NOT be useMemo — calling a hook
   // after a conditional return breaks the Rules of Hooks. They're cheap.
+
+  // Series config for the Visit Trends on-chart labels (see LineValueLabels).
+  const VT_LABEL_SERIES = [
+    { key: "completed", color: "#4f46e5" },
+    { key: "uniquePatients", color: "#0d9488" },
+    { key: "cancelled", color: "#d97706" },
+    { key: "noShow", color: "#dc2626" },
+  ];
 
   // Visit Trends: clubbed by year (bold, clickable band); click a year to
   // drill into its periods — months normally, or per-date when the range is
@@ -2372,10 +2457,12 @@ export default function OHCUtilizationPage() {
           <div className="overflow-x-auto">
             <div style={{ height: 300, minWidth: Math.max(600, visitTrends.length * (isDailyView ? 48 : 64)) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                <LineChart data={visitTrends} margin={{ top: 30, right: 26, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
                   <XAxis dataKey="period" tick={{ fontSize: 11, fill: T.textSecondary }} tickFormatter={formatPeriodLabel} interval={0} />
-                  <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} />
+                  {/* Headroom above the tallest line so the top data labels
+                      never collide with the axis / top edge. */}
+                  <YAxis tick={{ fontSize: 11, fill: T.textSecondary }} domain={[0, (dataMax: number) => { const p = dataMax * 1.18; const mag = Math.pow(10, Math.floor(Math.log10(Math.max(p, 1)))); return Math.ceil(p / mag) * mag; }]} />
                   <RechartsTooltip content={({ active, payload, label }: any) => {
                     if (!active || !payload?.length) return null;
                     const dd = payload[0]?.payload;
@@ -2398,9 +2485,11 @@ export default function OHCUtilizationPage() {
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
                   <ReferenceLine y={avgConsults} stroke={T.textSecondary} strokeDasharray="6 4" strokeWidth={1.5} />
                   <Line type="monotone" dataKey="completed" name="Completed" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#4f46e5", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#4f46e5" }} />
+                  <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
                   <Line type="monotone" dataKey="cancelled" name="Cancelled" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#f59e0b", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#f59e0b" }} />
                   <Line type="monotone" dataKey="noShow" name="No-Show" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#fff", stroke: "#ef4444", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#ef4444" }} />
-                  <Line type="monotone" dataKey="uniquePatients" name="Unique Patients" stroke="#0d9488" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#fff", stroke: "#0d9488", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#0d9488" }} />
+                  {/* All numbers, de-collided per month (see LineValueLabels). */}
+                  <LineValueLabels data={visitTrends} xKey="period" series={VT_LABEL_SERIES} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

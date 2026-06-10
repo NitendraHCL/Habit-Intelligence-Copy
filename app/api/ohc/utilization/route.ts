@@ -112,8 +112,8 @@ const PROVENANCE: DashboardProvenance = {
     sources: [BASE_TABLE],
     logic:
       "Completed agg_kpi rows with a non-empty speciality_name, grouped by speciality_name. value = SUM(total_consult_count), " +
-      "ordered descending.",
-    sql: "GROUP BY a.speciality_name → SUM(total_consult_count) ORDER BY value DESC.",
+      "uniquePatients = COUNT(DISTINCT uhid) per specialty; ordered by value descending.",
+    sql: "GROUP BY a.speciality_name → SUM(total_consult_count), COUNT(DISTINCT uhid) ORDER BY value DESC.",
   },
   peakHours: {
     chart: "Peak Consultation Hours heatmap (weekday × hour)",
@@ -347,8 +347,10 @@ async function handler(request: NextRequest) {
     ), "totalBooked");
 
     // ── BATCH 2: Specialty treemap + Location × Specialty ──
-    const specPromise = safeQuery(() => dwQuery<{ name: string; value: string }>(
-      `SELECT a.speciality_name AS name, COALESCE(SUM(a.total_consult_count), 0)::bigint AS value
+    const specPromise = safeQuery(() => dwQuery<{ name: string; value: string; unique_patients: string }>(
+      `SELECT a.speciality_name AS name,
+              COALESCE(SUM(a.total_consult_count), 0)::bigint AS value,
+              COUNT(DISTINCT a.uhid)::bigint AS unique_patients
       FROM ${BASE_TABLE} a
       WHERE ${q.currentWhere} AND a.speciality_name IS NOT NULL AND a.speciality_name <> ''
       GROUP BY a.speciality_name ORDER BY value DESC`,
@@ -773,7 +775,7 @@ async function handler(request: NextRequest) {
     }));
 
     // ── Specialty treemap ──
-    const specialtyTreemap = specRows.map((r) => ({ name: r.name, value: Number(r.value) }));
+    const specialtyTreemap = specRows.map((r) => ({ name: r.name, value: Number(r.value), uniquePatients: Number(r.unique_patients || 0) }));
 
     // ── Location × Specialty ──
     // Rank top 6 from labelled specialties only; NULL/empty rows always

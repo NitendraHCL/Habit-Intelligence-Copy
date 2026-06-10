@@ -1107,17 +1107,20 @@ export default function OHCUtilizationPage() {
 
   // Visits by Specialty (donut): specialty, consults, % of total + total row.
   const specialtyTable = (() => {
-    const items = (charts?.specialtyTreemap || []) as { name: string; value: number }[];
+    const items = (charts?.specialtyTreemap || []) as { name: string; value: number; uniquePatients?: number }[];
     const total = items.reduce((s, i) => s + Number(i.value || 0), 0);
     const rows: Record<string, React.ReactNode>[] = items.map((i) => ({
       name: i.name, value: formatNum(i.value),
+      unique: formatNum(Number(i.uniquePatients) || 0),
       pct: total > 0 ? `${Math.round((Number(i.value) / total) * 100)}%` : "0%",
     }));
-    rows.push({ __group: true, name: "Total", value: formatNum(total), pct: "100%" });
+    // Total unique uses the true distinct KPI (a patient can span specialties).
+    rows.push({ __group: true, name: "Total", value: formatNum(total), unique: formatNum(Number(kpis?.uniquePatients) || 0), pct: "100%" });
     return {
       columns: [
         { key: "name", label: "Specialty", align: "left" as const },
         { key: "value", label: "Consults", align: "right" as const },
+        { key: "unique", label: "Unique Patients", align: "right" as const },
         { key: "pct", label: "% of Total", align: "right" as const },
       ], rows,
     };
@@ -2535,7 +2538,8 @@ export default function OHCUtilizationPage() {
             const top6 = raw.slice(0, 6);
             const othersItems = raw.slice(6);
             const othersTotal = othersItems.reduce((s: number, d: any) => s + d.value, 0);
-            const donutData = [...top6, ...(othersTotal > 0 ? [{ name: "Others", value: othersTotal }] : [])];
+            const othersUnique = othersItems.reduce((s: number, d: any) => s + (Number(d.uniquePatients) || 0), 0);
+            const donutData = [...top6, ...(othersTotal > 0 ? [{ name: "Others", value: othersTotal, uniquePatients: othersUnique }] : [])];
             const total = donutData.reduce((s: number, d: any) => s + d.value, 0);
             return (
               <div style={{ height: 340 }}>
@@ -2552,10 +2556,11 @@ export default function OHCUtilizationPage() {
                       textStyle: { fontSize: 12, fontFamily: "Inter, system-ui, sans-serif", color: T.textPrimary },
                       formatter: (p: any) => {
                         const pct = total > 0 ? ((p.value / total) * 100).toFixed(1) : "0";
+                        const uniq = Number((donutData.find((d: any) => d.name === p.name) as any)?.uniquePatients || 0);
                         const hint = p.name === "Others" && othersItems.length > 0
                           ? `<div style="font-size:11px;color:#4f46e5;margin-top:6px;font-weight:500">${othersItems.length} smaller specialties · click below to view breakdown</div>`
                           : "";
-                        return `<div style="min-width:140px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${p.name}</div><div style="font-size:20px;font-weight:800;color:#111827">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-top:2px">${pct}% of total</div>${hint}</div>`;
+                        return `<div style="min-width:150px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${p.name}</div><div style="font-size:20px;font-weight:800;color:#111827">${formatNum(p.value)}</div><div style="font-size:12px;color:#6B7280;margin-top:2px">${pct}% of total consults</div><div style="font-size:12px;color:#4f46e5;margin-top:4px;font-weight:600">${formatNum(uniq)} unique patients</div>${hint}</div>`;
                       },
                     },
                     legend: {

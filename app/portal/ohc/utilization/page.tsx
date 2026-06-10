@@ -1133,18 +1133,23 @@ export default function OHCUtilizationPage() {
       let rowTotal = 0;
       for (const s of specs) { const v = Number(r[s]) || 0; row[s] = formatNum(v); colTotals[s] = (colTotals[s] || 0) + v; rowTotal += v; }
       row.__rowtotal = formatNum(rowTotal);
+      row.__unique = formatNum(Number(r.uniquePatients) || 0);
       return row;
     });
     const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
     const totalRow: Record<string, React.ReactNode> = { __group: true, location: "Total" };
     for (const s of specs) totalRow[s] = formatNum(colTotals[s] || 0);
     totalRow.__rowtotal = formatNum(grand);
+    // Total distinct patients across all clinics (not the column sum — a patient
+    // seen at multiple clinics is counted once); use the headline KPI.
+    totalRow.__unique = formatNum(Number(kpis?.uniquePatients) || 0);
     rows.push(totalRow);
     return {
       columns: [
         { key: "location", label: "Location", align: "left" as const },
         ...specs.map((s) => ({ key: s, label: s, align: "right" as const })),
-        { key: "__rowtotal", label: "Total", align: "right" as const },
+        { key: "__rowtotal", label: "Total Consults", align: "right" as const },
+        { key: "__unique", label: "Unique Patients", align: "right" as const },
       ], rows,
     };
   })();
@@ -2203,6 +2208,17 @@ export default function OHCUtilizationPage() {
                               <span style={{ fontWeight: 600 }}>{formatNum(p.value)}</span>
                             </div>
                           ))}
+                          {(() => {
+                            const row = payload[0]?.payload || {};
+                            const consults = Number(row.__total || 0);
+                            const uniq = Number(row.uniquePatients || 0);
+                            return (
+                              <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}><span style={{ color: T.textSecondary }}>Total Consults</span><span style={{ fontWeight: 700 }}>{formatNum(consults)}</span></div>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}><span style={{ color: "#4f46e5" }}>Unique Patients</span><span style={{ fontWeight: 700, color: "#4f46e5" }}>{formatNum(uniq)}</span></div>
+                              </div>
+                            );
+                          })()}
                           {isOthers && breakdown.length > 0 && (
                             <div style={{ borderTop: `1px solid ${T.borderLight}`, marginTop: 6, paddingTop: 6, fontSize: 11, color: T.textSecondary }}>
                               <div><strong>{breakdown.length}</strong> locations · <strong>{formatNum(othersTotal)}</strong> consults</div>
@@ -2232,21 +2248,24 @@ export default function OHCUtilizationPage() {
                           <LabelList
                             dataKey="__total"
                             content={(props: any) => {
-                              const { x, y, width, value } = props;
-                              const n = Number(value);
-                              if (!n || n <= 0) return null;
-                              const text = formatNum(n);
+                              const { x, y, width, value, index } = props;
+                              const consults = Number(value);
+                              if (!consults || consults <= 0) return null;
+                              const uniq = Number(locationBySpecialtyData[index]?.uniquePatients || 0);
+                              const line1 = formatNum(consults);
+                              const line2 = `${formatNum(uniq)} patients`;
                               const cx = Number(x) + Number(width) / 2;
                               const barTop = Number(y);
-                              const h = 18;
-                              const gap = 10;
-                              const w = Math.max(36, text.length * 6 + 14);
+                              const h = 30;
+                              const gap = 8;
+                              const w = Math.max(44, Math.max(line1.length, line2.length) * 5.6 + 14);
                               const rectY = barTop - h - gap;
-                              const textY = rectY + h / 2 + 4;
                               return (
                                 <g>
-                                  <rect x={cx - w / 2} y={rectY} width={w} height={h} rx={4} ry={4} fill="#fff" stroke={T.borderLight} />
-                                  <text x={cx} y={textY} textAnchor="middle" fontSize={11} fontWeight={700} fill={T.textPrimary}>{text}</text>
+                                  <rect x={cx - w / 2} y={rectY} width={w} height={h} rx={5} ry={5} fill="#fff" stroke={T.borderLight} />
+                                  {/* Total consults (top) + unique patient count (bottom, indigo). */}
+                                  <text x={cx} y={rectY + 12} textAnchor="middle" fontSize={11} fontWeight={700} fill={T.textPrimary}>{line1}</text>
+                                  <text x={cx} y={rectY + 24} textAnchor="middle" fontSize={8.5} fontWeight={600} fill="#4f46e5">{line2}</text>
                                 </g>
                               );
                             }}

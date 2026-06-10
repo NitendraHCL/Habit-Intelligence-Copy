@@ -93,8 +93,10 @@ const PROVENANCE: DashboardProvenance = {
       "All Completed agg_kpi rows grouped by facility_mapping × speciality_name (NULL facility → 'Unknown'). " +
       "Top 6 specialities by total consults become stack segments; remaining/unlabeled fall into 'Other'. " +
       "Top 15 locations kept; the rest rolled into an 'Others' row. Companion keys topSpecialties / othersBreakdown / " +
-      "otherSpecialtyBreakdown carry the stack keys and the rolled-up tails.",
-    sql: "GROUP BY facility_mapping, speciality_name → SUM(total_consult_count); top-6 specialties, top-15 locations in JS.",
+      "otherSpecialtyBreakdown carry the stack keys and the rolled-up tails. Each location row also carries " +
+      "uniquePatients = COUNT(DISTINCT uhid) at that clinic (computed per-location, not per specialty, so a patient " +
+      "seen in multiple specialties is counted once).",
+    sql: "GROUP BY facility_mapping, speciality_name → SUM(total_consult_count); plus GROUP BY facility_mapping → COUNT(DISTINCT uhid) for uniquePatients; top-6 specialties, top-15 locations in JS.",
   },
   visitTrends: {
     chart: "Visit Trends over time (Completed · Cancelled · No Show, with unique patients)",
@@ -368,6 +370,20 @@ async function handler(request: NextRequest) {
       q.params
     ), "locSpec");
 
+    // Unique patients per LOCATION — COUNT(DISTINCT uhid) per clinic. Computed
+    // separately (not per location×specialty) because one uhid can appear under
+    // multiple specialties at the same clinic; summing per-specialty distincts
+    // would overcount.
+    const locUniquePromise = safeQuery(() => dwQuery<{ location: string; unique_patients: string }>(
+      `SELECT
+         COALESCE(NULLIF(TRIM(a.facility_mapping), ''), 'Unknown') AS location,
+         COUNT(DISTINCT a.uhid)::bigint AS unique_patients
+      FROM ${BASE_TABLE} a
+      WHERE ${q.currentWhere}
+      GROUP BY 1`,
+      q.params
+    ), "locUnique");
+
     // ── BATCH 3: Demographics + Peak hours + Visit Trends ──
     const demoPromise = safeQuery(() => dwQuery<{ age_group: string; gender: string; total_consults: string; unique_pats: string }>(
       `SELECT
@@ -593,9 +609,9 @@ async function handler(request: NextRequest) {
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, bookedRows, specRows, locSpecRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
+      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
     ] = await Promise.all([
-      filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise,
+      filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise, locUniquePromise,
       demoPromise, peakPromise, trendPromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
     ]);
 
@@ -811,9 +827,14 @@ async function handler(request: NextRequest) {
       }
     }
     othersBreakdown.sort((a, b) => b.total - a.total);
+    // Attach unique-patient count per location (distinct UHIDs at that clinic).
+    const locUniqueMap: Record<string, number> = {};
+    for (const r of locUniqueRows) locUniqueMap[r.location] = Number(r.unique_patients || 0);
+    othersEntry.uniquePatients = restLocations.reduce((s, loc) => s + (locUniqueMap[loc.location as string] || 0), 0);
+    const topLocationsU = topLocations.map((loc) => ({ ...loc, uniquePatients: locUniqueMap[loc.location as string] || 0 }));
     const locationBySpecialty = restLocations.length > 0
-      ? [...topLocations, othersEntry as any]
-      : topLocations;
+      ? [...topLocationsU, othersEntry as any]
+      : topLocationsU;
 
     // ── Peak hours ──
     const dowToChart: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };

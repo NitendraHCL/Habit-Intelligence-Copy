@@ -21,7 +21,7 @@ import { withProvenance } from "@/lib/audit/with-provenance";
  *     Conditions Performance table (chronic only).
  *
  *   • aggregated_table.vitals         — new table. Per-visit vital
- *     parameter readings keyed by uhid + vitals_creation_time. We pull
+ *     parameter readings keyed by uhid + slotstarttime. We pull
  *     BMI to build the Same-Cohort-Progression Sankey (Visit 1→2→3
  *     transitions between Below Normal / In Range / Above Normal using
  *     WHO cut-offs: <18.5 / 18.5–24.9 / ≥25).
@@ -130,9 +130,9 @@ const PROVENANCE: DashboardProvenance = {
     sources: [KPI_TABLE, VITALS_TABLE],
     logic:
       "For repeat-patient UHIDs, take their first 3 BMI readings from vitals (vital_parameter_name='BMI', value 5–80), " +
-      "ordered by vitals_creation_time. Bucket each by WHO cut-offs (<18.5 Below Normal / 18.5–24.9 In Range / ≥25 " +
+      "ordered by slotstarttime. Bucket each by WHO cut-offs (<18.5 Below Normal / 18.5–24.9 In Range / ≥25 " +
       "Above Normal) and count Visit 1→2 and Visit 2→3 bucket transitions.",
-    sql: "ROW_NUMBER() OVER (PARTITION BY uhid ORDER BY vitals_creation_time); LEAD(bucket) for transitions; visit_n IN (1,2).",
+    sql: "ROW_NUMBER() OVER (PARTITION BY uhid ORDER BY slotstarttime); LEAD(bucket) for transitions; visit_n IN (1,2).",
   },
 };
 
@@ -185,7 +185,7 @@ function readFilters(searchParams: URLSearchParams): FilterShape {
  * Build the WHERE clause + params array for a given source table.
  * `alias` is the table alias (e.g. "a" for agg_kpi, "d" for agg_diagnosis,
  * "v" for vitals). `dateColumn` is the date column on that table to
- * filter by (consult_date / last_diagnosis_date / vitals_creation_time).
+ * filter by (consult_date / last_diagnosis_date / slotstarttime).
  *
  * Returns a closure that gives the next placeholder index — callers can
  * tack on more conditions later without colliding.
@@ -270,7 +270,7 @@ async function handler(request: NextRequest) {
     });
     // vitals carries age too; same banding.
     const AGE_GROUP_CASE_VITALS = AGE_GROUP_CASE_KPI.replace(/a\.age/g, "v.age");
-    const vitalsWhere = buildWhere("v", "vitals_creation_time", cugCode, f, {
+    const vitalsWhere = buildWhere("v", "slotstarttime", cugCode, f, {
       ageGroupCase: AGE_GROUP_CASE_VITALS,
     });
 
@@ -564,7 +564,7 @@ async function handler(request: NextRequest) {
               v.uhid,
               v.vital_value,
               ${BMI_BUCKET_CASE} AS bucket,
-              ROW_NUMBER() OVER (PARTITION BY v.uhid ORDER BY v.vitals_creation_time) AS visit_n
+              ROW_NUMBER() OVER (PARTITION BY v.uhid ORDER BY v.slotstarttime) AS visit_n
             FROM ${VITALS_TABLE} v
             INNER JOIN repeat_uhids r ON r.uhid = v.uhid
             WHERE ${vitalsWhere.where}

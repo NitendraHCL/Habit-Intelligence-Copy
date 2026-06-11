@@ -28,9 +28,12 @@ export const AVAILABLE_PAGES: AvailablePage[] = [
 
   // AHC
   { slug: "/portal/ahc/utilization", label: "AHC Utilization", group: "AHC" },
+
+  // Past Data (CISCO01-only)
+  { slug: "/portal/past-data", label: "Past Data", group: "Past Data" },
 ];
 
-export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC"];
+export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC", "Past Data"];
 
 /** All slugs as a flat set for quick lookup. */
 export const ALL_PAGE_SLUGS = AVAILABLE_PAGES.map((p) => p.slug);

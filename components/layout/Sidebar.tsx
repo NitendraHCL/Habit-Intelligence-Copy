@@ -48,6 +48,7 @@ const sectionLabels: Record<string, string> = {
   "/portal/home": "Main",
   "/portal/ohc": "OHC",
   "/portal/ahc": "AHC",
+  "/portal/past-data": "Past Data",
   "/portal/employee-experience": "Employee Experience",
   "/portal/engagement": "Insights",
   "/portal/builder": "Custom Dashboards",
@@ -490,6 +491,9 @@ export function Sidebar() {
           {dynamicNavigation.filter((item) => {
             // Filter by required role
             if (item.requiredRole && user?.role !== item.requiredRole) return false;
+            // Client-specific items (e.g. CISCO01 Past Data) only show when the
+            // active client matches.
+            if (item.requiredCug && activeClient?.cugCode !== item.requiredCug) return false;
             // Group/parent nodes (with children) aren't real pages — their
             // href (e.g. /portal/ohc) is never in enabledPages, so checking
             // it here would nuke the whole group whenever any sub-page is

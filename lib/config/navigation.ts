@@ -17,6 +17,7 @@ import {
   PenTool,
   Database,
   Building2,
+  History,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +30,9 @@ export interface NavItem {
   walkthroughId?: string;
   /** If set, only users with this role see the item. */
   requiredRole?: string;
+  /** If set, only show the item when the ACTIVE client's cugCode matches
+   *  (used for client-specific dashboards, e.g. CISCO01's Past Data). */
+  requiredCug?: string;
   /**
    * Slug used for the CUG-level enabled-pages / config-visibility checks,
    * when it differs from `href`. Needed for external links (whose href is
@@ -72,6 +76,13 @@ export const navigation: NavItem[] = [
       { label: "Comparison Insights", href: "https://facility.habithealth.com/health-dashboard/comparison", icon: BarChart3, external: true, accessSlug: "/portal/ahc/utilization" },
       { label: "Action Plan", href: "https://facility.habithealth.com/health-dashboard/action-plan", icon: ListChecks, external: true, accessSlug: "/portal/ahc/utilization" },
     ],
+  },
+  {
+    // CISCO01-only "Past Data" section + dashboard.
+    label: "Past data",
+    href: "/portal/past-data",
+    icon: History,
+    requiredCug: "CISCO01",
   },
   {
     label: "Employee Experience",

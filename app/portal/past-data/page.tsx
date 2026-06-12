@@ -625,10 +625,13 @@ function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "n
 function BandJourney({ bands }: { bands: any[] }) {
   const [tab, setTab] = useState<"tracked" | "new">("tracked");
   const [offset, setOffset] = useState(0);
-  const maxQ = Math.max(0, ...bands.map((m) => {
+  const [selected, setSelected] = useState<string | null>(null);
+  const current = bands.find((m) => m.key === selected) || bands[0];
+  const quartersLen = (m: any) => {
     const all = (tab === "tracked" ? m.tracked : m.new) ?? [];
     return (tab === "tracked" && all[0]?.label === "Then") ? all.length - 1 : all.length;
-  }));
+  };
+  const maxQ = current ? quartersLen(current) : 0;
   const canPrev = offset > 0, canNext = offset + QPAGE < maxQ;
   const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
     <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
@@ -638,7 +641,13 @@ function BandJourney({ bands }: { bands: any[] }) {
   );
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Metric</span>
+          <select value={current?.key ?? ""} onChange={(e) => { setSelected(e.target.value); setOffset(0); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
+            {bands.map((m) => <option key={m.key} value={m.key}>{m.title}</option>)}
+          </select>
+        </div>
         <div className="flex items-center gap-2">
           <TabBtn id="tracked" label="Then → Now" />
           <TabBtn id="new" label="New members only" />
@@ -652,9 +661,7 @@ function BandJourney({ bands }: { bands: any[] }) {
       <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
         <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — watch it grow across <b>Then → quarters</b>. Hover a grid for the exact split.
       </div>
-      <div className="space-y-7">
-        {bands.map((m) => <BandSection key={m.key} metric={m} tab={tab} offset={offset} />)}
-      </div>
+      {current ? <BandSection metric={current} tab={tab} offset={offset} /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
     </div>
   );
 }

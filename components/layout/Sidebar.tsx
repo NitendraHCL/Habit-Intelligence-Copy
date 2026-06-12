@@ -317,7 +317,7 @@ function NavItemLink({
 }
 
 export function Sidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [flyout, setFlyout] = useState<{ item: NavItem; top: number } | null>(null);
   const { shouldExpandSidebar } = useWalkthrough();
   const { user, assignedClients, activeClientId, setActiveClientId, isPageEnabledForClient, isCustomDashboardsEnabled } = useAuth();

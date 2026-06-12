@@ -832,7 +832,7 @@ export default function PastDataPage() {
 
       {/* ── Appointment Outcomes (waffle per quarter) ── */}
       {isChartVisible("apptOutcomes") && (
-        <CVCard accentColor="#6366f1" title="Appointment Outcomes — by quarter" subtitle="Share of appointments by outcome each quarter — the green Completed line is the show-up rate." tooltipText="Each line is an outcome's share of that quarter's appointments (Completed / Rescheduled / No-show / Cancelled / Other). Note: the newer scheduling system logs No-shows more and dropped the 'Rescheduled' stage, so the mix shifts partly for that reason." chartId="apptOutcomes" chartData={data?.apptOutcomes} chartTitle="Appointment Outcomes" chartDescription="Quarterly appointment outcome distribution (show-up rate)">
+        <CVCard accentColor="#6366f1" title="Appointment Outcomes — by quarter" subtitle="Share of appointments by outcome each quarter — the green Completed line is the show-up rate." tooltipText="Each line is a status's share of that quarter's appointments. The 12 raw stages collapse to 4: Completed (+ Prescription Sent, Re Open), Pending (Rescheduled, Nurse Ack*, Started, Checked In), No Show (No Show + NoShow), Cancelled. Note: the newer scheduling system logs No-shows more, so the mix shifts partly for that reason." chartId="apptOutcomes" chartData={data?.apptOutcomes} chartTitle="Appointment Outcomes" chartDescription="Quarterly appointment outcome distribution (show-up rate)">
           <ApptOutcomes data={data?.apptOutcomes} />
         </CVCard>
       )}

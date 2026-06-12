@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, ArrowLeft, Mail, Lightbulb, LayoutDashboard, Globe, type LucideIcon } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, Mail } from "lucide-react";
 
 // Step machine for the login form. We keep this dead simple — credentials
 // first, OTP second. On any terminal MFA error we bounce back to step 1 so
@@ -133,10 +133,10 @@ function LoginForm() {
 // ─── left brand panel (illustration + Understand / Act / Elevate) ──────────
 
 function BrandPanel() {
-  const pillars: { word: string; Icon: LucideIcon }[] = [
-    { word: "Understand", Icon: Lightbulb },
-    { word: "Act", Icon: LayoutDashboard },
-    { word: "Elevate", Icon: Globe },
+  const pillars: { word: string; icon: string }[] = [
+    { word: "Understand", icon: "/pillar-understand.png" },
+    { word: "Act", icon: "/pillar-act.png" },
+    { word: "Elevate", icon: "/pillar-elevate.png" },
   ];
 
   return (
@@ -156,11 +156,10 @@ function BrandPanel() {
       {/* Understand / Act / Elevate */}
       <div className="relative">
         <div className="space-y-3.5">
-          {pillars.map(({ word, Icon }) => (
+          {pillars.map(({ word, icon }) => (
             <div key={word} className="flex items-center gap-4">
-              <span className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center border border-white/15" style={{ background: "rgba(255,255,255,0.08)" }}>
-                <Icon size={17} className="text-white" strokeWidth={1.7} />
-              </span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={icon} alt="" className="shrink-0 w-9 h-9 select-none" draggable={false} />
               <span className="text-white text-[34px] font-extrabold tracking-[-0.02em] leading-none">{word}</span>
             </div>
           ))}

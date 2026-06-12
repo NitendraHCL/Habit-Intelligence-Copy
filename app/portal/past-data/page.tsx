@@ -334,6 +334,224 @@ function MemberJourney({ journey }: { journey: any[] }) {
   );
 }
 
+// ─── Value Progression: quarter-by-quarter average values (zoomed bars + normal line) ───
+const PANEL_ORDER = ["Glycemic", "Lipid Profile", "Thyroid", "Liver Function", "Kidney Function", "Haematology", "Vitals"];
+// Per-parameter unit + healthy threshold (line). Comparator derived from the param's better-direction.
+const PARAM_META: Record<string, { unit?: string; normal?: number }> = {
+  "HbA1c": { unit: "%", normal: 5.7 },
+  "Glucose (Fasting)": { unit: "mg/dL", normal: 100 },
+  "Glucose (PP)": { unit: "mg/dL", normal: 140 },
+  "Cholesterol (Total)": { unit: "mg/dL", normal: 200 },
+  "LDL": { unit: "mg/dL", normal: 100 },
+  "HDL": { unit: "mg/dL", normal: 40 },
+  "VLDL": { unit: "mg/dL", normal: 30 },
+  "Triglycerides": { unit: "mg/dL", normal: 150 },
+  "LDL/HDL Ratio": { unit: "", normal: 3.5 },
+  "TSH": { unit: "mIU/L" },
+  "Thyroxine (T4)": { unit: "µg/dL" },
+  "T3 Uptake": { unit: "%" },
+  "Albumin": { unit: "g/dL", normal: 3.5 },
+  "Globulin": { unit: "g/dL" },
+  "Total Proteins": { unit: "g/dL" },
+  "Bilirubin (Total)": { unit: "mg/dL", normal: 1.2 },
+  "SGPT / ALT": { unit: "U/L", normal: 45 },
+  "SGOT / AST": { unit: "U/L", normal: 40 },
+  "Alk. Phosphatase": { unit: "U/L", normal: 120 },
+  "GGTP": { unit: "U/L", normal: 55 },
+  "Creatinine": { unit: "mg/dL", normal: 1.3 },
+  "Blood Urea": { unit: "mg/dL", normal: 40 },
+  "BUN": { unit: "mg/dL", normal: 20 },
+  "Uric Acid": { unit: "mg/dL", normal: 7 },
+  "Haemoglobin": { unit: "g/dL", normal: 12 },
+  "WBC": { unit: "/µL" },
+  "BMI": { unit: "", normal: 25 },
+  "BP (Systolic)": { unit: "mmHg", normal: 130 },
+  "BP (Diastolic)": { unit: "mmHg", normal: 85 },
+  "Weight": { unit: "kg" },
+  "SPO2": { unit: "%", normal: 95 },
+};
+const dirColor = (change: number, dir: string) => {
+  if (dir === "neutral" || change === 0) return C_FLAT;
+  const improved = dir === "lower" ? change < 0 : change > 0;
+  return improved ? C_DOWN : C_UP;
+};
+const num1 = (n: number) => (Math.abs(n) >= 100 ? Math.round(n).toString() : n.toFixed(1));
+
+type VCol = { label: string; value: number; n: number; color: string; delta: number | null };
+
+function ValueColumnChart({ columns, normal, normalText, large }: { columns: VCol[]; normal?: number; normalText?: string; large?: boolean }) {
+  const vals = columns.map((c) => c.value);
+  const lo0 = Math.min(...vals, normal ?? Infinity);
+  const hi0 = Math.max(...vals, normal ?? -Infinity);
+  const pad = Math.max(0.4, (hi0 - lo0) * 0.18);
+  const yMin = lo0 - pad, yMax = hi0 + pad;
+  const h = (v: number) => Math.max(2, ((v - yMin) / (yMax - yMin)) * 100);
+  const barH = large ? 200 : 80, numH = large ? 52 : 40, maxBarW = large ? 64 : 40;
+  return (
+    <div>
+      <div className="flex justify-around gap-2">
+        {columns.map((col, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center justify-end leading-none" style={{ height: numH }}>
+            {col.delta != null ? (
+              <span className={`${large ? "text-[12px]" : "text-[10px]"} font-bold mb-1`} style={{ color: col.color }}>{col.delta < 0 ? "▼" : col.delta > 0 ? "▲" : ""}{num1(Math.abs(col.delta))}</span>
+            ) : <span className={`${large ? "text-[10px]" : "text-[9px]"} mb-1`} style={{ color: T.textMuted }}>baseline</span>}
+            <span className={`${large ? "text-[18px]" : "text-[13px]"} font-extrabold tabular-nums`} style={{ color: T.textPrimary }}>{num1(col.value)}</span>
+            <span className={`${large ? "text-[10.5px]" : "text-[9px]"} tabular-nums`} style={{ color: T.textMuted }}>n={fmt(col.n)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="relative" style={{ height: barH }}>
+        {normal != null && (
+          <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ bottom: `${Math.max(0, Math.min(100, ((normal - yMin) / (yMax - yMin)) * 100))}%`, borderTop: "1px dashed #94a3b8" }}>
+            <span className="absolute right-0 -top-[7px] text-[9px] px-1 font-semibold" style={{ color: "#64748b", backgroundColor: "#fff" }}>normal {normalText}</span>
+          </div>
+        )}
+        <div className="flex items-end justify-around gap-2 h-full">
+          {columns.map((col, i) => (
+            <div key={i} className="flex-1 flex items-end justify-center h-full" title={`${col.label}: ${num1(col.value)} (n=${fmt(col.n)})`}>
+              <div className="w-full rounded-t-[3px]" style={{ height: `${h(col.value)}%`, maxWidth: maxBarW, backgroundColor: col.color }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex justify-around gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
+        {columns.map((col, i) => <span key={i} className={`flex-1 text-center ${large ? "text-[11px]" : "text-[10px]"} font-semibold tabular-nums`} style={{ color: T.textSecondary }}>{col.label}</span>)}
+      </div>
+    </div>
+  );
+}
+
+function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; offset: number; large?: boolean }) {
+  const allQ: any[] = (tab === "tracked" ? p.series?.tracked : p.series?.new) ?? [];
+  const dir: string = p.direction || "neutral";
+  const meta = PARAM_META[p.param] || {};
+  const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
+
+  // Full chronological sequence (Then pinned for tracked), deltas vs previous bar.
+  const seq: VCol[] = [];
+  if (tab === "tracked" && p.baselineOld != null) seq.push({ label: "Then", value: Number(p.baselineOld), n: 0, color: C_BASE, delta: null });
+  allQ.forEach((q) => seq.push({ label: shortQ(q.quarter), value: Number(q.avg), n: Number(q.n), color: C_BASE, delta: null }));
+  seq.forEach((col, i) => {
+    if (i === 0) { col.color = C_BASE; col.delta = null; return; }
+    const change = col.value - seq[i - 1].value;
+    col.delta = change;
+    col.color = dirColor(change, dir);
+  });
+
+  const quartersOnly = tab === "tracked" && p.baselineOld != null ? seq.slice(1) : seq;
+  const columns: VCol[] = [...(tab === "tracked" && p.baselineOld != null ? [seq[0]] : []), ...quartersOnly.slice(offset, offset + QPAGE)];
+  const empty = seq.length < (tab === "tracked" ? 2 : 1) || quartersOnly.length === 0;
+
+  // Overall first→last badge.
+  const first = seq[0], last = seq[seq.length - 1];
+  const oChange = empty ? 0 : last.value - first.value;
+  const oColor = dirColor(oChange, dir);
+  const dirChip = dir === "neutral" ? null : dir === "lower" ? "lower is better" : "higher is better";
+
+  return (
+    <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{p.param} {meta.unit ? <span className="text-[10.5px] font-medium" style={{ color: T.textMuted }}>· {meta.unit}</span> : null}</div>
+          {dirChip && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mt-1" style={{ color: "#4338ca", backgroundColor: "#EEF2FF" }}>{dirChip}</span>}
+        </div>
+        {!empty && oChange !== 0 && dir !== "neutral" && (
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0" style={{ color: oColor === C_DOWN ? "#0f766e" : "#b91c1c", backgroundColor: oColor === C_DOWN ? "#ecfdf5" : "#fef2f2" }}>
+            {oChange < 0 ? "▼" : "▲"}{num1(Math.abs(oChange))} {oColor === C_DOWN ? "better" : "worse"}
+          </span>
+        )}
+      </div>
+      {empty || columns.length === 0 ? (
+        <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div>
+      ) : (
+        <ValueColumnChart columns={columns} normal={meta.normal} normalText={normalText} large={large} />
+      )}
+    </div>
+  );
+}
+
+function ValueJourney({ params }: { params: any[] }) {
+  const [tab, setTab] = useState<"tracked" | "new">("tracked");
+  const [offset, setOffset] = useState(0);
+  const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
+  const list = params ?? [];
+  const byPanel = PANEL_ORDER.map((panel) => ({ panel, items: list.filter((p) => p.panel === panel) })).filter((g) => g.items.length);
+  const curPanel = byPanel.find((g) => g.panel === selectedPanel) || byPanel[0];
+  const items: any[] = curPanel?.items ?? [];
+  const maxQ = Math.max(0, ...items.map((p) => ((tab === "tracked" ? p.series?.tracked : p.series?.new) ?? []).length));
+  const canPrev = offset > 0;
+  const canNext = offset + QPAGE < maxQ;
+
+  const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
+    <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
+  );
+  const PageBtn = ({ dir, disabled, children }: { dir: "prev" | "next"; disabled: boolean; children: React.ReactNode }) => (
+    <button disabled={disabled} onClick={() => setOffset((o) => Math.max(0, o + (dir === "next" ? QPAGE : -QPAGE)))} className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{children}</button>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Panel</span>
+          <select value={curPanel?.panel ?? ""} onChange={(e) => { setSelectedPanel(e.target.value); setOffset(0); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
+            {byPanel.map((g) => <option key={g.panel} value={g.panel}>{g.panel} ({g.items.length})</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <TabBtn id="tracked" label="Then → Now" />
+          <TabBtn id="new" label="New members only" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: T.textMuted }}>{maxQ > QPAGE ? `quarters ${offset + 1}–${Math.min(offset + QPAGE, maxQ)} of ${maxQ}` : "quarterly"}</span>
+          <PageBtn dir="prev" disabled={!canPrev}>◂ Prev</PageBtn>
+          <PageBtn dir="next" disabled={!canNext}>Next ▸</PageBtn>
+        </div>
+      </div>
+      {tab === "new" && <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>New members have no past baseline — columns show their quarterly average (oldest first).</p>}
+
+      {/* How to read each bar */}
+      <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
+        <div className="text-[12px] font-bold mb-2.5" style={{ color: T.textPrimary }}>How to read each bar</div>
+        <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+          <tbody>
+            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+              <td className="py-2 pr-4 w-[120px]"><span className="text-[15px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>5.9</span></td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The <b>average value</b> for that group at that point (e.g. average HbA1c). <span style={{ color: T.textMuted }}>n = members measured.</span></td>
+            </tr>
+            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+              <td className="py-2 pr-4"><span className="text-[12px] font-bold" style={{ color: C_DOWN }}>▼0.2</span> <span className="text-[12px] font-bold" style={{ color: C_UP }}>▲0.3</span></td>
+              <td className="py-2" style={{ color: T.textSecondary }}><b>Change vs the previous bar</b>, coloured by the <b>healthy direction</b> for that metric — <span style={{ color: C_DOWN }}>teal = moved the right way</span>, <span style={{ color: C_UP }}>red = wrong way</span>. The bar takes that colour.</td>
+            </tr>
+            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+              <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: "#64748b" }}>- - normal</span></td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The <b>healthy threshold</b> line — bars on the at-risk side of it are outside the normal range.</td>
+            </tr>
+            <tr>
+              <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>baseline</span></td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The first <b>"Then"</b> bar (each member's most-recent past reading) — nothing earlier to compare against.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="text-[10.5px] mt-2" style={{ color: T.textMuted }}>Bars are zoomed to show movement (the value labels are exact); the normal line keeps the scale honest.</p>
+      </div>
+
+      {items.length ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {items.map((p) => <ValueCard key={p.param} p={p} tab={tab} offset={offset} />)}
+        </div>
+      ) : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No parameters available.</div>}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 pt-3 text-[11px]" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderLight}` }}>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#cbd5e1" }} /> baseline</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#0d9488" }} /> moved the healthy way</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#dc2626" }} /> moved the wrong way</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#94a3b8" }} /> neutral metric</span>
+      </div>
+    </div>
+  );
+}
+
 export default function PastDataPage() {
   const { activeClient } = useAuth();
   const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("cisco/past-data");
@@ -451,25 +669,11 @@ export default function PastDataPage() {
         </CVCard>
       )}
 
-      {/* ── Value progression (warm section) ── */}
+      {/* ── Value Progression (quarter-by-quarter, by panel) ── */}
       {(isChartVisible("labProgression") || isChartVisible("vitalsProgression")) && (
-        <WarmSection>
-          <AccentBar color="#4f46e5" />
-          <h2 className="text-[18px] font-extrabold tracking-[-0.02em] mb-0.5" style={{ color: T.textPrimary }}>Value Progression</h2>
-          <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Average reading then vs now for every parameter, grouped by clinical panel.</p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            {isChartVisible("labProgression") && (
-              <CVCard accentColor="#4f46e5" title="Lab Value Progression — by panel" subtitle="Then vs now for every lab parameter." chartId="labProgression" chartData={data?.labProgression} chartTitle="Lab Value Progression" chartDescription="Then vs now averages by lab panel">
-                <ProgressionPanel rows={data?.labProgression ?? []} />
-              </CVCard>
-            )}
-            {isChartVisible("vitalsProgression") && (
-              <CVCard accentColor="#0d9488" title="Vitals Value Progression" subtitle="Then vs now for each vital." chartId="vitalsProgression" chartData={data?.vitalsProgression} chartTitle="Vitals Value Progression" chartDescription="Then vs now averages for vitals">
-                <ProgressionPanel rows={data?.vitalsProgression ?? []} />
-              </CVCard>
-            )}
-          </div>
-        </WarmSection>
+        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values, quarter by quarter, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = most-recent past reading; then one bar per quarter. Bars are zoomed to show movement; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Quarter-by-quarter average lab & vital values, tracked & new cohorts">
+          <ValueJourney params={[...(isChartVisible("labProgression") ? (data?.labQuarterly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsQuarterly ?? []) : [])]} />
+        </CVCard>
       )}
 
       {/* ── Band transitions ── */}

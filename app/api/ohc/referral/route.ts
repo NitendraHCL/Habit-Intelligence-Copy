@@ -307,6 +307,7 @@ async function handler(request: NextRequest) {
              ${REFERRALS_SUM}                                AS cnt
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
+             AND r.consumption = 'Consumed'
              AND r.speciality_referred_from IS NOT NULL
              AND TRIM(r.speciality_referred_from) <> ''
              AND r.speciality_referred_to   IS NOT NULL

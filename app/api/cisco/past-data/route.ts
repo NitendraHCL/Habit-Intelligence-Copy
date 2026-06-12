@@ -206,6 +206,35 @@ function buildMatrix(rows: MatrixRow[], order: string[]) {
   return { categories: order, matrix, thenTotals, nowTotals, total };
 }
 
+// ── Band distribution over time (Then + quarters) for the waffle charts ──
+// BP uses systolic-only thresholds here (single-param, quarter-friendly).
+const BP_SYS_CLS = `CASE WHEN VAL >= 140 THEN 'Hypertension' WHEN VAL >= 130 THEN 'Elevated' ELSE 'Normal' END`;
+const BAND_METRICS = [
+  { key: "glycemic", title: "Glycemic Status", note: "by fasting glucose", base: LAB_S, item: "service_item_name", src: srcOf("Glucose (Fasting)"), cls: GLUCOSE_CLS, categories: ["Normal", "Pre-diabetic", "Diabetic"] },
+  { key: "bmi", title: "BMI Band", note: "by BMI", base: VIT_S, item: "vital_parameter_name", src: ["BMI"], cls: BMI_CLS, categories: ["Underweight", "Normal", "Overweight", "Obese"] },
+  { key: "bp", title: "Blood Pressure Stage", note: "by systolic BP", base: VIT_S, item: "vital_parameter_name", src: ["BP(Systolic)"], cls: BP_SYS_CLS, categories: ["Normal", "Elevated", "Hypertension"] },
+];
+type BandMetric = (typeof BAND_METRICS)[number];
+function bandQuarterlySQL(m: BandMetric) {
+  const { table, uhid, value, date, cug } = m.base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  return `
+    WITH membership AS (SELECT ${uhid} AS uhid, bool_or("Source" = 'old') AS ho FROM ${table} WHERE ${cug ? `cug_code = 'CISCO01'` : `TRUE`} GROUP BY 1),
+    ppq AS (SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS q, AVG(TRIM(${value})::numeric) AS v
+            FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW} GROUP BY 1, 2)
+    SELECT to_char(p.q, 'YYYY-"Q"Q') AS quarter, CASE WHEN mm.ho THEN 'tracked' ELSE 'new' END AS cohort, ${m.cls.replace(/VAL/g, "p.v")} AS band, COUNT(*)::int AS n
+    FROM ppq p JOIN membership mm USING (uhid) GROUP BY 1, 2, 3`;
+}
+function bandThenSQL(m: BandMetric) {
+  const { table, uhid, value, date, cug } = m.base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const inList = `${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}`;
+  return `
+    WITH old_latest AS (SELECT DISTINCT ON (${uhid}) ${uhid} AS uhid, TRIM(${value})::numeric AS v FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${inList} ORDER BY ${uhid}, ${date} DESC),
+    new_has AS (SELECT DISTINCT ${uhid} AS uhid FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${inList})
+    SELECT ${m.cls.replace(/VAL/g, "o.v")} AS band, COUNT(*)::int AS n FROM old_latest o JOIN new_has nh USING (uhid) GROUP BY 1`;
+}
+
 async function handler(request: NextRequest) {
   try {
     await requireAuth();
@@ -301,12 +330,18 @@ async function handler(request: NextRequest) {
          FROM oldv o JOIN newv n USING (uhid)`, [], HEAVY), `condTN:${c.key}`);
     });
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, ...condQP, ...condTNP, ...prevP, ...scatterP]);
-    const NC = CONDITIONS.length;
+    // Band distribution (Then + quarterly) for the waffle charts.
+    const bandThenP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandThenSQL(m), [], HEAVY), `bandThen:${m.key}`));
+    const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
+
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandQP]);
+    const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
-    const prevResults = rest.slice(2 * NC, 2 * NC + prevDefs.length) as { cohort: string; then_pos: string; now_pos: string }[][];
-    const scatterResults = rest.slice(2 * NC + prevDefs.length) as { o: string; n: string }[][];
+    const prevResults = rest.slice(2 * NC, 2 * NC + P) as { cohort: string; then_pos: string; now_pos: string }[][];
+    const scatterResults = rest.slice(2 * NC + P, 2 * NC + P + S) as { o: string; n: string }[][];
+    const bandThenResults = rest.slice(2 * NC + P + S, 2 * NC + P + S + B) as { band: string; n: string }[][];
+    const bandQResults = rest.slice(2 * NC + P + S + B, 2 * NC + P + S + 2 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
 
     // ── Shape value progression rows (attach panel + direction + delta). ──
     const ALL = [...LAB_PARAMS, ...VIT_PARAMS];
@@ -384,6 +419,28 @@ async function handler(request: NextRequest) {
         new: { quarters: newQ },
       };
     }).sort((a, b) => (b.tracked.then.positive - b.tracked.now.positive) - (a.tracked.then.positive - a.tracked.now.positive));
+    // ── Band distribution journey (waffle charts): Then + quarters, per cohort ──
+    const bandJourney: Record<string, any> = {};
+    BAND_METRICS.forEach((m, i) => {
+      const catIdx = Object.fromEntries(m.categories.map((c, ix) => [c, ix]));
+      const zeros = () => m.categories.map(() => 0);
+      const thenCounts = zeros();
+      (bandThenResults[i] || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) thenCounts[ix] += Number(r.n); });
+      const thenTotal = thenCounts.reduce((a, b) => a + b, 0);
+      const tQ: Record<string, number[]> = {}, nQ: Record<string, number[]> = {};
+      (bandQResults[i] || []).forEach((r) => {
+        allQuarters.add(r.quarter);
+        const bucket = r.cohort === "tracked" ? tQ : nQ;
+        (bucket[r.quarter] ||= zeros());
+        const ix = catIdx[r.band]; if (ix != null) bucket[r.quarter][ix] += Number(r.n);
+      });
+      const toPoints = (bucket: Record<string, number[]>) => Object.keys(bucket).sort().map((qk) => ({ label: qk, counts: bucket[qk], total: bucket[qk].reduce((a, b) => a + b, 0) }));
+      bandJourney[m.key] = {
+        key: m.key, title: m.title, note: m.note, categories: m.categories,
+        tracked: [...(thenTotal > 0 ? [{ label: "Then", counts: thenCounts, total: thenTotal }] : []), ...toPoints(tQ)],
+        new: toPoints(nQ),
+      };
+    });
     const quarters = [...allQuarters].sort();
 
     const kpi = kpiRows[0];
@@ -407,6 +464,7 @@ async function handler(request: NextRequest) {
       labQuarterly,
       vitalsQuarterly,
       conditionJourney,
+      bandJourney,
       quarters,
       transitions: { glycemic: glycemicMatrix, bmi: bmiMatrix, bp: bpMatrix },
       scatter,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import { T } from "@/lib/ui/theme";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -552,22 +552,124 @@ function ValueJourney({ params }: { params: any[] }) {
   );
 }
 
+// ─── Band Distribution: waffle (100-dot) grids across Then → quarters ───
+const BAND_COLOR: Record<string, string> = {
+  Normal: "#10b981", Underweight: "#60a5fa",
+  "Pre-diabetic": "#f59e0b", Overweight: "#f59e0b", Elevated: "#f59e0b",
+  Diabetic: "#ef4444", Obese: "#ef4444", Hypertension: "#ef4444",
+};
+// 100-dot allocation by largest-remainder so dots sum to exactly 100.
+function allocate(counts: number[], total: number, dots = 100): number[] {
+  if (!total) return counts.map(() => 0);
+  const raw = counts.map((c) => (c / total) * dots);
+  const floors = raw.map(Math.floor);
+  const rem = dots - floors.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac);
+  for (let k = 0; k < rem && order.length; k++) floors[order[k % order.length].i]++;
+  return floors;
+}
+
+function Waffle({ point, categories }: { point: any; categories: string[] }) {
+  const alloc = allocate(point.counts, point.total);
+  const dots: string[] = [];
+  categories.forEach((cat, ci) => { for (let k = 0; k < alloc[ci]; k++) dots.push(BAND_COLOR[cat] || "#cbd5e1"); });
+  while (dots.length < 100) dots.push("#e5e7eb");
+  const normIdx = Math.max(0, categories.indexOf("Normal"));
+  const healthyPct = point.total ? Math.round((point.counts[normIdx] / point.total) * 100) : 0;
+  const tip = categories.map((c, i) => `${c}: ${fmt(point.counts[i])} (${point.total ? Math.round((point.counts[i] / point.total) * 100) : 0}%)`).join("\n");
+  return (
+    <div className="flex flex-col items-center shrink-0" title={tip}>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(10, 13px)", gap: 2.5 }}>
+        {dots.map((c, i) => <div key={i} style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: c }} />)}
+      </div>
+      <span className="text-[12px] font-bold mt-2.5 tabular-nums" style={{ color: T.textSecondary }}>{point.label}</span>
+      <span className="text-[13px] font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{healthyPct}% normal</span>
+      <span className="text-[10px] tabular-nums" style={{ color: T.textMuted }}>n={fmt(point.total)}</span>
+    </div>
+  );
+}
+
+function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "new"; offset: number }) {
+  const all: any[] = (tab === "tracked" ? metric.tracked : metric.new) ?? [];
+  const isThen = tab === "tracked" && all[0]?.label === "Then";
+  const quarters = isThen ? all.slice(1) : all;
+  const points = [...(isThen ? [all[0]] : []), ...quarters.slice(offset, offset + QPAGE)];
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[14px] font-bold" style={{ color: T.textPrimary }}>{metric.title}</span>
+        <span className="text-[11px]" style={{ color: T.textMuted }}>{metric.note}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 mb-4">
+        {metric.categories.map((c: string) => (
+          <span key={c} className="flex items-center gap-1.5 text-[11px]" style={{ color: T.textSecondary }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: BAND_COLOR[c] || "#cbd5e1", display: "inline-block" }} />{c}
+          </span>
+        ))}
+      </div>
+      {points.length ? (
+        <div className="flex items-start">
+          <Waffle point={points[0]} categories={metric.categories} />
+          {points.slice(1).map((p, i) => (
+            <div key={i} className="flex items-start flex-1 min-w-[40px]">
+              <div className="flex-1 flex justify-center" style={{ marginTop: 66 }}><span className="text-[18px]" style={{ color: "#cbd5e1" }}>→</span></div>
+              <Waffle point={p} categories={metric.categories} />
+            </div>
+          ))}
+        </div>
+      ) : <div className="text-[12px] py-4" style={{ color: T.textMuted }}>No data yet.</div>}
+    </div>
+  );
+}
+
+function BandJourney({ bands }: { bands: any[] }) {
+  const [tab, setTab] = useState<"tracked" | "new">("tracked");
+  const [offset, setOffset] = useState(0);
+  const maxQ = Math.max(0, ...bands.map((m) => {
+    const all = (tab === "tracked" ? m.tracked : m.new) ?? [];
+    return (tab === "tracked" && all[0]?.label === "Then") ? all.length - 1 : all.length;
+  }));
+  const canPrev = offset > 0, canNext = offset + QPAGE < maxQ;
+  const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
+    <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
+  );
+  const PageBtn = ({ dir, disabled, children }: { dir: "prev" | "next"; disabled: boolean; children: React.ReactNode }) => (
+    <button disabled={disabled} onClick={() => setOffset((o) => Math.max(0, o + (dir === "next" ? QPAGE : -QPAGE)))} className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{children}</button>
+  );
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <TabBtn id="tracked" label="Then → Now" />
+          <TabBtn id="new" label="New members only" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: T.textMuted }}>{maxQ > QPAGE ? `quarters ${offset + 1}–${Math.min(offset + QPAGE, maxQ)} of ${maxQ}` : "quarterly"}</span>
+          <PageBtn dir="prev" disabled={!canPrev}>◂ Prev</PageBtn>
+          <PageBtn dir="next" disabled={!canNext}>Next ▸</PageBtn>
+        </div>
+      </div>
+      <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
+        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — watch it grow across <b>Then → quarters</b>. Hover a grid for the exact split.
+      </div>
+      <div className="space-y-7">
+        {bands.map((m) => <BandSection key={m.key} metric={m} tab={tab} offset={offset} />)}
+      </div>
+    </div>
+  );
+}
+
 export default function PastDataPage() {
   const { activeClient } = useAuth();
   const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("cisco/past-data");
   const [previewConfig, setPreviewConfig] = useState<PageConfig | null>(null);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
-  const [scatterParam, setScatterParam] = useState<string>("HbA1c");
 
   const isChartVisible = useChartVisibility(SLUG, previewConfig);
   const isPreview = previewConfig != null;
 
   const isCisco = !activeClient || activeClient.cugCode === "CISCO01";
   const kpis = data?.kpis;
-  const prevalence = data?.prevalence ?? [];
-  const scatter = data?.scatter ?? [];
-  const activeScatter = useMemo(() => scatter.find((s: any) => s.param === scatterParam) || scatter[0], [scatter, scatterParam]);
-  const prevMax = Math.max(1, ...prevalence.map((p: any) => Math.max(p.thenPositive, p.nowPositive)));
 
   if (!isCisco) {
     return <div className="p-10 text-center text-[14px]" style={{ color: T.textMuted }}>The Past Data dashboard is available for CISCO only.</div>;
@@ -616,7 +718,6 @@ export default function PastDataPage() {
             { id: "glycemicTransition", label: "Glycemic Status Transition" },
             { id: "bmiTransition", label: "BMI Band Transition" },
             { id: "bpTransition", label: "Blood Pressure Stage Transition" },
-            { id: "trajectoryScatter", label: "Individual Trajectory (Old vs Now)" },
           ]}
           filters={[]}
           onPreview={setPreviewConfig}
@@ -676,58 +777,14 @@ export default function PastDataPage() {
         </CVCard>
       )}
 
-      {/* ── Band transitions ── */}
-      {(isChartVisible("glycemicTransition") || isChartVisible("bmiTransition")) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {isChartVisible("glycemicTransition") && (
-            <CVCard accentColor="#dc2626" title="Glycemic Status — Then → Now" subtitle="Normal / Pre-diabetic / Diabetic, via fasting glucose." chartId="glycemicTransition" chartData={data?.transitions?.glycemic} chartTitle="Glycemic Status Transition" chartDescription="Band movement old to new">
-              <TransitionBody m={data?.transitions?.glycemic} />
-            </CVCard>
-          )}
-          {isChartVisible("bmiTransition") && (
-            <CVCard accentColor="#6366f1" title="BMI Band — Then → Now" subtitle="Underweight / Normal / Overweight / Obese." chartId="bmiTransition" chartData={data?.transitions?.bmi} chartTitle="BMI Band Transition" chartDescription="Band movement old to new">
-              <TransitionBody m={data?.transitions?.bmi} />
-            </CVCard>
-          )}
-        </div>
-      )}
-      {isChartVisible("bpTransition") && (
-        <CVCard accentColor="#f59e0b" title="Blood Pressure Stage — Then → Now" subtitle="Normal / Elevated / Hypertension, from systolic & diastolic." chartId="bpTransition" chartData={data?.transitions?.bp} chartTitle="Blood Pressure Stage Transition" chartDescription="Band movement old to new">
-          <TransitionBody m={data?.transitions?.bp} />
-        </CVCard>
-      )}
-
-      {/* ── Individual trajectory scatter ── */}
-      {isChartVisible("trajectoryScatter") && (
-        <CVCard accentColor="#6366f1" title="Individual Trajectory — Old vs Now" subtitle="One dot per patient. Below the diagonal = improved (value dropped); above = worsened." chartId="trajectoryScatter" chartData={activeScatter} chartTitle="Individual Trajectory" chartDescription="Per-patient old vs now scatter">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-[12px] font-medium" style={{ color: T.textMuted }}>Parameter</span>
-            <select value={scatterParam} onChange={(e) => setScatterParam(e.target.value)} className="h-8 px-2 rounded-lg border text-[12px] bg-white outline-none" style={{ borderColor: T.border, color: T.textPrimary }}>
-              {scatter.map((s: any) => <option key={s.param} value={s.param}>{s.param}</option>)}
-            </select>
-            {activeScatter && <span className="text-[11px]" style={{ color: T.textMuted }}>{fmt(activeScatter.points.length)} patients</span>}
-          </div>
-          {activeScatter ? (
-            <div style={{ height: 360 }}>
-              <ReactECharts
-                option={(() => {
-                  const pts = activeScatter.points.map((p: any) => [p.o, p.n]);
-                  const max = Math.max(1, ...activeScatter.points.flatMap((p: any) => [p.o, p.n]));
-                  return {
-                    grid: { left: 48, right: 20, top: 20, bottom: 40 },
-                    tooltip: { trigger: "item", formatter: (p: any) => `Old: <b>${p.value[0]}</b><br/>Now: <b>${p.value[1]}</b>` },
-                    xAxis: { name: "Old (then)", nameLocation: "middle", nameGap: 26, min: 0, max, axisLabel: { fontSize: 11, color: T.textSecondary } },
-                    yAxis: { name: "Now", nameLocation: "middle", nameGap: 34, min: 0, max, axisLabel: { fontSize: 11, color: T.textSecondary } },
-                    series: [
-                      { type: "line", data: [[0, 0], [max, max]], showSymbol: false, lineStyle: { type: "dashed", color: "#9CA3AF", width: 1 }, silent: true, tooltip: { show: false } },
-                      { type: "scatter", symbolSize: 5, data: pts, itemStyle: { color: "#6366f1", opacity: 0.45 } },
-                    ],
-                  };
-                })()}
-                style={{ height: "100%", width: "100%" }}
-              />
-            </div>
-          ) : <div className="h-40 flex items-center justify-center text-[13px]" style={{ color: T.textMuted }}>No data.</div>}
+      {/* ── Health Band Distribution (waffle grids, Then → quarterly) ── */}
+      {(isChartVisible("glycemicTransition") || isChartVisible("bmiTransition") || isChartVisible("bpTransition")) && (
+        <CVCard accentColor="#0d9488" title="Health Band Distribution — Then → Now" subtitle="Share of members in each health band, quarter by quarter. Each grid is 100 members; the green block is the healthy share." tooltipText="Each dot = 1% of the members measured at that point, coloured by band. Watch the green (normal) block grow across Then → quarters. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP band share over Then and quarters">
+          <BandJourney bands={[
+            isChartVisible("glycemicTransition") && data?.bandJourney?.glycemic,
+            isChartVisible("bmiTransition") && data?.bandJourney?.bmi,
+            isChartVisible("bpTransition") && data?.bandJourney?.bp,
+          ].filter(Boolean)} />
         </CVCard>
       )}
     </div>

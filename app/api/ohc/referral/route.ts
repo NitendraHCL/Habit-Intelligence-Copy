@@ -304,11 +304,10 @@ async function handler(request: NextRequest) {
         ),
         "trends"
       ),
-      // Year × from-spec → to-spec matrix.
+      // From-spec → to-spec matrix over the full selected date range.
       safeQuery(
-        () => dwQuery<{ year: string; from_spec: string; to_spec: string; cnt: string }>(
+        () => dwQuery<{ from_spec: string; to_spec: string; cnt: string }>(
           `SELECT
-             EXTRACT(YEAR FROM r.g_creation_time)::int::text AS year,
              r.speciality_referred_from                      AS from_spec,
              r.speciality_referred_to                        AS to_spec,
              ${REFERRALS_SUM}                                AS cnt
@@ -319,7 +318,7 @@ async function handler(request: NextRequest) {
              AND TRIM(r.speciality_referred_from) <> ''
              AND r.speciality_referred_to   IS NOT NULL
              AND TRIM(r.speciality_referred_to) <> ''
-           GROUP BY year, from_spec, to_spec`,
+           GROUP BY from_spec, to_spec`,
           q.params
         ),
         "matrix"
@@ -384,19 +383,12 @@ async function handler(request: NextRequest) {
       inClinicConversions: Number(row.conversions),
     }));
 
-    // ── Matrix by year ──
-    const matrixByYear: Record<string, { referredFrom: string; referredTo: string; count: number }[]> = {};
-    const matrixYearsSet = new Set<string>();
-    for (const row of matrixRows) {
-      matrixYearsSet.add(row.year);
-      if (!matrixByYear[row.year]) matrixByYear[row.year] = [];
-      matrixByYear[row.year].push({
-        referredFrom: row.from_spec,
-        referredTo: row.to_spec,
-        count: Number(row.cnt),
-      });
-    }
-    const matrixYears = Array.from(matrixYearsSet).sort();
+    // ── Matrix (full selected date range) ──
+    const matrix = matrixRows.map((row) => ({
+      referredFrom: row.from_spec,
+      referredTo: row.to_spec,
+      count: Number(row.cnt),
+    }));
 
     // ── Specialty details with real conversion rates ──
     const specialtyDetails = specRows.map((s) => {
@@ -513,8 +505,7 @@ async function handler(request: NextRequest) {
       },
       charts: {
         referralTrends,
-        matrixByYear,
-        matrixYears,
+        matrix,
         demographics,
         demographicStats,
         specialtyDetails,

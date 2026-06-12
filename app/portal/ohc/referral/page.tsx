@@ -354,7 +354,6 @@ export default function ReferralAnalyticsPage() {
       .catch(() => {});
   }, [activeClientId]);
 
-  const [matrixYear, setMatrixYear] = useState<string>("");
   const [matrixView, setMatrixView] = useState<"absolute" | "percent">("absolute");
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
@@ -476,10 +475,8 @@ export default function ReferralAnalyticsPage() {
     setAppliedFilters({ ...pageFilters });
   };
 
-  // Matrix data
-  const years: string[] = charts?.matrixYears || [];
-  const activeYear = matrixYear || years[years.length - 1] || "";
-  const matrixData: Array<{ referredFrom: string; referredTo: string; count: number }> = charts?.matrixByYear?.[activeYear] || [];
+  // Matrix data (full selected date range)
+  const matrixData: Array<{ referredFrom: string; referredTo: string; count: number }> = charts?.matrix || [];
 
   const referringSpecs = [...new Set(matrixData.map((m) => m.referredFrom))];
   const referredSpecs = [...new Set(matrixData.map((m) => m.referredTo))];
@@ -1153,15 +1150,8 @@ export default function ReferralAnalyticsPage() {
       </CVCard>}
 
       {/* ── Who Refers to Whom (Heatmap Matrix) ── */}
-      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — columns make the referral (from), rows receive it (to)" tooltipText="Heatmap of cross-specialty referral flow. Columns are the referring specialty (from), rows are the receiving specialty (to) — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap" tableData={matrixTable}>
+      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — columns make the referral (from), rows receive it (to)" tooltipText="Heatmap of cross-specialty referral flow over the selected date range. Columns are the referring specialty (from), rows are the receiving specialty (to) — darker cells signal stronger pathways." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap" tableData={matrixTable}>
         <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>Year:</span>
-            <select value={activeYear} onChange={(e) => setMatrixYear(e.target.value)}
-              className="h-8 px-2 rounded-lg border text-[12px]" style={{ borderColor: T.border, color: T.textPrimary }}>
-              {years.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>View:</span>
             <select value={matrixView} onChange={(e) => setMatrixView(e.target.value as any)}
@@ -1170,7 +1160,7 @@ export default function ReferralAnalyticsPage() {
               <option value="percent">Percentage</option>
             </select>
           </div>
-          <ResetFilter visible={matrixYear !== "" || matrixView !== "absolute"} onClick={() => { setMatrixYear(""); setMatrixView("absolute"); }} />
+          <ResetFilter visible={matrixView !== "absolute"} onClick={() => { setMatrixView("absolute"); }} />
         </div>
         {matrixView === "percent" && (
           <div className="flex items-start gap-2 mb-3 px-3.5 py-2.5 rounded-lg text-[11.5px]" style={{ backgroundColor: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.18)", color: T.textSecondary }}>

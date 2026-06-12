@@ -25,6 +25,7 @@ import { withCache } from "@/lib/cache/middleware";
  * old→new match works. Vitals names are identical across sources.
  * ──────────────────────────────────────────────────────────────────── */
 
+const APT = "aggregated_table.cisco__apt_compilled"; // appointments (CISCO-only); old/new effectively time-split, no dupes
 const LAB = "aggregated_table.cisco__lab_compilled";
 const VIT = "aggregated_table.cisco_vitals_compilled_data";
 const NUMERIC = `~ '^-?[0-9]+(\\.[0-9]+)?$'`;
@@ -330,11 +331,22 @@ async function handler(request: NextRequest) {
          FROM oldv o JOIN newv n USING (uhid)`, [], HEAVY), `condTN:${c.key}`);
     });
 
+    // Appointment outcomes per quarter (all appts by slotstarttime; merge No-show spellings).
+    const apptP = safeQuery(() => dwQuery<{ quarter: string; outcome: string; n: string }>(
+      `WITH base AS (
+         SELECT date_trunc('quarter', slotstarttime) AS q,
+           CASE WHEN stage IN ('Completed', 'Prescription Sent', 'Re Open') THEN 'Completed'
+                WHEN stage IN ('No Show', 'NoShow') THEN 'No Show'
+                WHEN stage = 'Cancelled' THEN 'Cancelled'
+                ELSE 'Pending' END AS outcome
+         FROM ${APT} WHERE slotstarttime >= date_trunc('quarter', NOW()) - INTERVAL '21 months')
+       SELECT to_char(q, 'YYYY-"Q"Q') AS quarter, outcome, COUNT(*)::int AS n FROM base GROUP BY 1, 2`, [], HEAVY), "apptOutcomes");
+
     // Band distribution (Then + quarterly) for the waffle charts.
     const bandThenP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandThenSQL(m), [], HEAVY), `bandThen:${m.key}`));
     const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandQP]);
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandQP]);
     const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
@@ -441,6 +453,18 @@ async function handler(request: NextRequest) {
         new: toPoints(nQ),
       };
     });
+    // ── Appointment outcomes (waffle per quarter) ──
+    const APT_CATS = ["Completed", "Pending", "No Show", "Cancelled"];
+    const apptByQ: Record<string, number[]> = {};
+    (apptRows as { quarter: string; outcome: string; n: string }[]).forEach((r) => {
+      (apptByQ[r.quarter] ||= APT_CATS.map(() => 0));
+      const ix = APT_CATS.indexOf(r.outcome); if (ix >= 0) apptByQ[r.quarter][ix] += Number(r.n);
+    });
+    const apptOutcomes = {
+      categories: APT_CATS,
+      quarters: Object.keys(apptByQ).sort().map((qk) => ({ label: qk, counts: apptByQ[qk], total: apptByQ[qk].reduce((a, b) => a + b, 0) })),
+    };
+
     const quarters = [...allQuarters].sort();
 
     const kpi = kpiRows[0];
@@ -465,6 +489,7 @@ async function handler(request: NextRequest) {
       vitalsQuarterly,
       conditionJourney,
       bandJourney,
+      apptOutcomes,
       quarters,
       transitions: { glycemic: glycemicMatrix, bmi: bmiMatrix, bp: bpMatrix },
       scatter,

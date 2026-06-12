@@ -557,6 +557,8 @@ const BAND_COLOR: Record<string, string> = {
   Normal: "#10b981", Underweight: "#60a5fa",
   "Pre-diabetic": "#f59e0b", Overweight: "#f59e0b", Elevated: "#f59e0b",
   Diabetic: "#ef4444", Obese: "#ef4444", Hypertension: "#ef4444",
+  // appointment statuses
+  Completed: "#10b981", Pending: "#f59e0b", "No Show": "#ef4444", Cancelled: "#64748b",
 };
 // 100-dot allocation by largest-remainder so dots sum to exactly 100.
 function allocate(counts: number[], total: number, dots = 100): number[] {
@@ -569,12 +571,12 @@ function allocate(counts: number[], total: number, dots = 100): number[] {
   return floors;
 }
 
-function Waffle({ point, categories }: { point: any; categories: string[] }) {
+function Waffle({ point, categories, healthyLabel = "Normal", healthyWord = "normal" }: { point: any; categories: string[]; healthyLabel?: string; healthyWord?: string }) {
   const alloc = allocate(point.counts, point.total);
   const dots: string[] = [];
   categories.forEach((cat, ci) => { for (let k = 0; k < alloc[ci]; k++) dots.push(BAND_COLOR[cat] || "#cbd5e1"); });
   while (dots.length < 100) dots.push("#e5e7eb");
-  const normIdx = Math.max(0, categories.indexOf("Normal"));
+  const normIdx = Math.max(0, categories.indexOf(healthyLabel));
   const healthyPct = point.total ? Math.round((point.counts[normIdx] / point.total) * 100) : 0;
   const tip = categories.map((c, i) => `${c}: ${fmt(point.counts[i])} (${point.total ? Math.round((point.counts[i] / point.total) * 100) : 0}%)`).join("\n");
   return (
@@ -583,7 +585,7 @@ function Waffle({ point, categories }: { point: any; categories: string[] }) {
         {dots.map((c, i) => <div key={i} style={{ width: 13, height: 13, borderRadius: "50%", backgroundColor: c }} />)}
       </div>
       <span className="text-[12px] font-bold mt-2.5 tabular-nums" style={{ color: T.textSecondary }}>{point.label}</span>
-      <span className="text-[13px] font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{healthyPct}% normal</span>
+      <span className="text-[13px] font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{healthyPct}% {healthyWord}</span>
       <span className="text-[10px] tabular-nums" style={{ color: T.textMuted }}>n={fmt(point.total)}</span>
     </div>
   );
@@ -666,6 +668,38 @@ function BandJourney({ bands }: { bands: any[] }) {
   );
 }
 
+// ─── Appointment Outcomes: 100% stacked-area "outcome flow" over quarters ───
+function ApptOutcomes({ data }: { data: any }) {
+  const cats: string[] = data?.categories ?? [];
+  const quarters: any[] = data?.quarters ?? [];
+  if (!quarters.length) return <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No appointment data.</div>;
+  const xLabels = quarters.map((q) => q.label);
+  const pct = (ci: number) => quarters.map((q) => (q.total ? Math.round((q.counts[ci] / q.total) * 1000) / 10 : 0));
+  const series = cats.map((cat, ci) => ({
+    name: cat, type: "line", smooth: true, symbol: "circle", symbolSize: 5,
+    lineStyle: { width: cat === "Completed" ? 3 : 2 }, itemStyle: { color: BAND_COLOR[cat] || "#cbd5e1" },
+    emphasis: { focus: "series" }, data: pct(ci),
+  }));
+  const option = {
+    tooltip: { trigger: "axis", valueFormatter: (v: number) => `${v}%` },
+    legend: { data: cats, bottom: 0, icon: "circle", itemWidth: 9, itemHeight: 9, textStyle: { fontSize: 11, color: T.textSecondary } },
+    grid: { left: 42, right: 18, top: 14, bottom: 44 },
+    xAxis: { type: "category", boundaryGap: false, data: xLabels, axisLabel: { fontSize: 11, color: T.textSecondary }, axisLine: { lineStyle: { color: T.border } } },
+    yAxis: { type: "value", min: 0, axisLabel: { formatter: "{value}%", fontSize: 11, color: T.textSecondary }, splitLine: { lineStyle: { color: T.borderLight } } },
+    series,
+  };
+  const latest = quarters[quarters.length - 1];
+  const latestShow = latest?.total ? Math.round((latest.counts[0] / latest.total) * 100) : 0;
+  return (
+    <div>
+      <div className="rounded-xl p-3.5 mb-4 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
+        <b style={{ color: T.textPrimary }}>How to read:</b> each line is an outcome's <b>share of appointments</b> that quarter. The <span style={{ color: "#059669", fontWeight: 700 }}>green Completed</span> line is the <b>show-up rate</b> — latest <b>{latestShow}%</b>. Hover any quarter for the full split.
+      </div>
+      <div style={{ height: 340 }}><ReactECharts option={option} style={{ height: "100%", width: "100%" }} /></div>
+    </div>
+  );
+}
+
 export default function PastDataPage() {
   const { activeClient } = useAuth();
   const { data, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("cisco/past-data");
@@ -725,6 +759,7 @@ export default function PastDataPage() {
             { id: "glycemicTransition", label: "Glycemic Status Transition" },
             { id: "bmiTransition", label: "BMI Band Transition" },
             { id: "bpTransition", label: "Blood Pressure Stage Transition" },
+            { id: "apptOutcomes", label: "Appointment Outcomes" },
           ]}
           filters={[]}
           onPreview={setPreviewConfig}
@@ -792,6 +827,13 @@ export default function PastDataPage() {
             isChartVisible("bmiTransition") && data?.bandJourney?.bmi,
             isChartVisible("bpTransition") && data?.bandJourney?.bp,
           ].filter(Boolean)} />
+        </CVCard>
+      )}
+
+      {/* ── Appointment Outcomes (waffle per quarter) ── */}
+      {isChartVisible("apptOutcomes") && (
+        <CVCard accentColor="#6366f1" title="Appointment Outcomes — by quarter" subtitle="Share of appointments by outcome each quarter — the green Completed line is the show-up rate." tooltipText="Each line is an outcome's share of that quarter's appointments (Completed / Rescheduled / No-show / Cancelled / Other). Note: the newer scheduling system logs No-shows more and dropped the 'Rescheduled' stage, so the mix shifts partly for that reason." chartId="apptOutcomes" chartData={data?.apptOutcomes} chartTitle="Appointment Outcomes" chartDescription="Quarterly appointment outcome distribution (show-up rate)">
+          <ApptOutcomes data={data?.apptOutcomes} />
         </CVCard>
       )}
     </div>

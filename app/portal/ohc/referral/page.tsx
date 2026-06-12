@@ -1153,7 +1153,7 @@ export default function ReferralAnalyticsPage() {
       </CVCard>}
 
       {/* ── Who Refers to Whom (Heatmap Matrix) ── */}
-      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — rows are the source, columns the destination" tooltipText="Heatmap of cross-specialty referral flow. Rows are the originating specialty, columns are the destination — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap" tableData={matrixTable}>
+      {isChartVisible("referralMatrix") && <CVCard accentColor={T.amber} title="Referral Matrix: Who Refers to Whom?" subtitle="The hand-off paths between specialties — columns make the referral (from), rows receive it (to)" tooltipText="Heatmap of cross-specialty referral flow. Columns are the referring specialty (from), rows are the receiving specialty (to) — darker cells signal stronger pathways. Use the year toggle to track how relationships shift over time." chartId="referralMatrix" chartData={matrixData} chartTitle="Referral Matrix: Who Refers to Whom?" chartDescription="Cross-specialty referral pathways heatmap" tableData={matrixTable}>
         <div className="flex items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium" style={{ color: T.textSecondary }}>Year:</span>
@@ -1183,7 +1183,7 @@ export default function ReferralAnalyticsPage() {
             <thead>
               <tr>
                 <th className="py-2.5 px-3 text-left font-semibold text-[11px]" style={{ color: T.textSecondary, minWidth: 140 }}>
-                  Referring &rarr;<br/>Referred &darr;
+                  From (refers) &rarr;<br/>To (receives) &darr;
                 </th>
                 {referringSpecs.map((from) => (
                   <th key={from} className="py-2.5 px-3 text-center font-bold text-[11px]" style={{ color: T.textPrimary, minWidth: 100 }}>

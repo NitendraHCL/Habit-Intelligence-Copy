@@ -193,6 +193,13 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     idx++;
   }
 
+  // Exclude the "Care Coordinator" specialty everywhere (both as referrer and
+  // receiver) — applied globally so every chart drops these rows.
+  conditions.push(
+    "COALESCE(TRIM(r.speciality_referred_from), '') <> 'Care Coordinator'",
+    "COALESCE(TRIM(r.speciality_referred_to), '') <> 'Care Coordinator'"
+  );
+
   return { params, where: conditions.join(" AND ") };
 }
 

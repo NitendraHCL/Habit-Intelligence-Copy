@@ -458,11 +458,8 @@ export default function HealthInsightsPage() {
   // refetches the other charts on the page.
   const [trendsCategory, setTrendsCategory] = useState<string>("");
   const [trendsCondition, setTrendsCondition] = useState<string>("");
-  const [coOccYear, setCoOccYear] = useState<number>(2025);
-  const [demoYear, setDemoYear] = useState<number>(2025);
   const [demoCategory, setDemoCategory] = useState<string>("");
   const [demoCondition, setDemoCondition] = useState<string>("");
-  const [seasonalYear, setSeasonalYear] = useState<number>(2025);
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
     to: new Date(2026, 2, 31),
@@ -480,6 +477,9 @@ export default function HealthInsightsPage() {
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
+  // Seasonal (Jan–Dec) chart is year-based by design — derive the year from the
+  // global date range (latest year in range) instead of a per-chart dropdown.
+  const seasonalYear = appliedDateRange.to.getFullYear();
   // Which Condition Share Distribution rows are expanded (multi-select).
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   // Co-Occurrence venn — up to 3 chronic ICD parent categories. Selection
@@ -567,8 +567,8 @@ export default function HealthInsightsPage() {
   const trendsApi = trendsRaw as any;
 
   const coOccUrl = useMemo(
-    () => buildChartUrl({ chart: "coOcc", coOccurrenceCategories: coOccCats.join(","), year: coOccYear }),
-    [apiUrl, coOccCats, coOccYear],
+    () => buildChartUrl({ chart: "coOcc", coOccurrenceCategories: coOccCats.join(",") }),
+    [apiUrl, coOccCats],
   );
   const { data: coOccRaw } = useSWR(coOccUrl, fetcher, {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
@@ -576,8 +576,8 @@ export default function HealthInsightsPage() {
   const coOccApi = coOccRaw as any;
 
   const demoUrl = useMemo(
-    () => buildChartUrl({ chart: "demo", year: demoYear, category: demoCategory, condition: demoCondition }),
-    [apiUrl, demoYear, demoCategory, demoCondition],
+    () => buildChartUrl({ chart: "demo", category: demoCategory, condition: demoCondition }),
+    [apiUrl, demoCategory, demoCondition],
   );
   const { data: demoRaw } = useSWR(demoUrl, fetcher, {
     revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true,
@@ -1351,8 +1351,6 @@ export default function HealthInsightsPage() {
         chartDescription="Condition frequency across demographic segments (heatmap)" tableData={demoTable}
         headerRight={
           <div className="flex items-center gap-2">
-            <YearSelector years={years} value={demoYear} onChange={setDemoYear} />
-            <ResetFilter visible={demoYear !== 2025} onClick={() => setDemoYear(2025)} />
             <CategorySelector categories={categories.length > 0 ? categories : (categoriesForSelect.map((c: any) => c.name))} value={demoCategory} onChange={(c) => { setDemoCategory(c); setDemoCondition(""); }} />
             <ResetFilter visible={demoCategory !== ""} onClick={() => setDemoCategory("")} />
           </div>
@@ -1627,7 +1625,6 @@ export default function HealthInsightsPage() {
           chartId="coOccurrence"
           chartData={coOccApi?.coOccurrenceVenn}
           chartDescription="Venn diagram of unique UHID overlap across selected chronic diseases with age + gender breakdown of the intersection" tableData={coOccTable}
-          headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={coOccYear} onChange={setCoOccYear} includeAll /><ResetFilter visible={coOccYear !== 2025} onClick={() => setCoOccYear(2025)} /></div>}
         >
           {(() => {
             const venn = coOccApi?.coOccurrenceVenn || { categories: [], subsets: {}, overlapAge: {}, overlapGender: {} };
@@ -1894,7 +1891,7 @@ export default function HealthInsightsPage() {
             chartId="seasonalPatterns"
             chartData={monthData}
             chartDescription="Top chronic diseases per month with diagnosis counts" tableData={seasonalTable}
-            headerRight={<div className="flex items-center gap-2"><YearSelector years={years} value={seasonalYear} onChange={setSeasonalYear} /><ResetFilter visible={seasonalYear !== 2025} onClick={() => setSeasonalYear(2025)} /></div>}
+            headerRight={<span className="text-[12px] font-semibold px-2.5 py-1 rounded-lg" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{seasonalYear}</span>}
           >
             <div className="overflow-x-auto">
               <div className="grid grid-cols-4 gap-3" style={{ minWidth: 700 }}>

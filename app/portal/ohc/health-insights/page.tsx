@@ -469,6 +469,10 @@ export default function HealthInsightsPage() {
   const [pageFilters, setPageFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
+  // Diagnosis-by filter (draft): 'all' | 'nurse' (Care Coordinator) | 'doctor' (others).
+  const [diagnosedBy, setDiagnosedBy] = useState<"all" | "nurse" | "doctor">("all");
+  const [appliedDiagnosedBy, setAppliedDiagnosedBy] = useState<"all" | "nurse" | "doctor">("all");
+  const [diagByOpen, setDiagByOpen] = useState(false);
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
   const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
@@ -542,8 +546,9 @@ export default function HealthInsightsPage() {
     if (appliedFilters.genders.length) p.set("genders", appliedFilters.genders.join(","));
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
+    if (appliedDiagnosedBy !== "all") p.set("diagnosedBy", appliedDiagnosedBy);
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, appliedFilters, appliedDateRange]);
+  }, [activeClientId, appliedFilters, appliedDateRange, appliedDiagnosedBy]);
 
   const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -646,6 +651,7 @@ export default function HealthInsightsPage() {
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
+    setAppliedDiagnosedBy(diagnosedBy);
   };
 
   // Chronic / Acute data
@@ -878,6 +884,40 @@ export default function HealthInsightsPage() {
         <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={pageFilters.genders} onChange={(v) => setPageFilters((p) => ({ ...p, genders: v }))} />
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Condition" options={categories} selected={pageFilters.conditions} onChange={(v) => setPageFilters((p) => ({ ...p, conditions: v }))} />
+
+        {/* Diagnosis by — Care Coordinator = Nurse Diagnosis; everyone else = Doctor Diagnosis */}
+        <Popover open={diagByOpen} onOpenChange={setDiagByOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-medium transition-colors border hover:border-gray-300"
+              style={{ borderColor: T.border, color: diagnosedBy !== "all" ? T.textPrimary : T.textSecondary, backgroundColor: T.white }}
+            >
+              Diagnosis by
+              {diagnosedBy !== "all" && (
+                <span className="ml-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: "#4f46e5" }}>
+                  {diagnosedBy === "nurse" ? "Nurse" : "Doctor"}
+                </span>
+              )}
+              <ChevronDown size={13} style={{ color: T.textMuted }} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-2" align="start">
+            <div className="px-1 mb-1.5"><span className="text-[12px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>Diagnosis by</span></div>
+            <div className="space-y-0.5">
+              {([["all", "All"], ["nurse", "Nurse Diagnosis"], ["doctor", "Doctor Diagnosis"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => { setDiagnosedBy(val); setDiagByOpen(false); }}
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[12px]"
+                  style={{ color: T.textPrimary, backgroundColor: diagnosedBy === val ? "#EEF2FF" : "transparent" }}
+                >
+                  <span>{label}</span>
+                  {diagnosedBy === val && <span style={{ color: "#4f46e5" }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
 
         <div className="flex-1" />
         <PageDownload pageTitle="Health Insights" />

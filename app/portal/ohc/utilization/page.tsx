@@ -1792,8 +1792,9 @@ export default function OHCUtilizationPage() {
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
                 const tb = Number(kpis?.totalBooked || 0);
+                const cancelled = Number(kpis?.cancelled || 0);
                 if (tb === 0) return "No appointments booked in this range yet.";
-                return `Total bookings · ${formatNum(tb)}`;
+                return `Total bookings · ${formatNum(tb)} · ${formatNum(cancelled)} cancelled`;
               })()}</p>
             </div>
           </div>

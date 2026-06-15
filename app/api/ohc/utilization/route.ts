@@ -56,17 +56,17 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Headline KPIs (Total Booked · Total Consults · Unique Patients · Repeat Patients · Locations · Repeat Rate · YoY/PoP)",
     sources: [BASE_TABLE],
     logic:
-      "Total Booked = COUNT(*) of agg_kpi rows across stages Completed + No Show + Pending (Cancelled excluded) " +
-      "in the filter window — booked appointments that were not cancelled; uses the same cug/date/location/" +
-      "specialty/gender/age filters but drops the stage = 'Completed' restriction and adds stage <> 'Cancelled' " +
-      "(counts appointment rows, since total_consult_count is 0 for non-Completed stages). " +
+      "Total Booked = SUM(total_booked_count) of agg_kpi rows across stages Completed + No Show + Pending " +
+      "(Cancelled excluded) in the filter window — booked appointments that were not cancelled; uses the same " +
+      "cug/date/location/specialty/gender/age filters but drops the stage = 'Completed' restriction and adds " +
+      "stage <> 'Cancelled'. Cancelled = SUM(total_booked_count) for stage = 'Cancelled'. " +
       "The remaining KPIs use Completed rows only, aggregated to one row per uhid: " +
       "Total Consults = SUM(total_consult_count); Unique Patients = COUNT(uhid); " +
       "Repeat Patients = COUNT(uhid with ≥2 source rows); Locations = COUNT(DISTINCT facility_mapping); " +
       "Repeat Rate = repeatPatients / uniquePatients. YoY compares the same window one year earlier; " +
       "if prior-year consults < 50 it falls back to the immediately preceding equal-length window (PoP), " +
       "else flags insufficient history.",
-    sql: "Total Booked: SELECT COUNT(*) FROM agg_kpi WHERE <all-stage filters> AND stage <> 'Cancelled'. Others: WITH per_uhid AS (… GROUP BY a.uhid) SELECT SUM(consult_count), COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
+    sql: "Total Booked: SELECT SUM(total_booked_count) FILTER (WHERE stage <> 'Cancelled'), SUM(total_booked_count) FILTER (WHERE stage = 'Cancelled') FROM agg_kpi WHERE <all-stage filters>. Others: WITH per_uhid AS (… GROUP BY a.uhid) SELECT SUM(consult_count), COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
   },
   demographicSunburst: {
     chart: "Demographics Sunburst (Age Group → Gender)",
@@ -359,8 +359,10 @@ async function handler(request: NextRequest) {
     // without the stage = 'Completed' restriction) plus an explicit
     // stage <> 'Cancelled'. Counts appointment rows, not total_consult_count,
     // which is 0 for every non-Completed stage.
-    const bookedPromise = safeQuery(() => dwQuery<{ total_booked: string }>(
-      `SELECT COUNT(*)::bigint AS total_booked FROM ${BASE_TABLE} a WHERE ${q.allStageWhere} AND a.stage <> 'Cancelled'`,
+    const bookedPromise = safeQuery(() => dwQuery<{ total_booked: string; cancelled: string }>(
+      `SELECT COALESCE(SUM(a.total_booked_count) FILTER (WHERE a.stage <> 'Cancelled'), 0)::bigint AS total_booked,
+              COALESCE(SUM(a.total_booked_count) FILTER (WHERE a.stage = 'Cancelled'), 0)::bigint AS cancelled
+       FROM ${BASE_TABLE} a WHERE ${q.allStageWhere}`,
       q.params
     ), "totalBooked");
 
@@ -670,6 +672,7 @@ async function handler(request: NextRequest) {
     const kpi = kpiRows[0];
     const totalConsults = Number(kpi?.total_consults || 0);
     const totalBooked = Number(bookedRows[0]?.total_booked || 0);
+    const cancelled = Number(bookedRows[0]?.cancelled || 0);
     const uniquePatients = Number(kpi?.unique_patients || 0);
     const repeatPatients = Number(kpi?.repeat_patients || 0);
     const locationCount = Number(kpi?.location_count || 0);
@@ -703,7 +706,7 @@ async function handler(request: NextRequest) {
           COALESCE((SELECT SUM(consult_count) FROM per_uhid), 0)::bigint AS total_consults,
           (SELECT COUNT(*) FROM per_uhid)::bigint AS unique_patients,
           (SELECT COUNT(*) FROM per_uhid WHERE row_count >= 2)::bigint AS repeat_patients,
-          (SELECT COUNT(*) FROM ${BASE_TABLE} a WHERE ${q.allStagePrevWhere} AND a.stage <> 'Cancelled')::bigint AS total_booked`,
+          COALESCE((SELECT SUM(a.total_booked_count) FROM ${BASE_TABLE} a WHERE ${q.allStagePrevWhere} AND a.stage <> 'Cancelled'), 0)::bigint AS total_booked`,
         q.params
       ), "kpiYoY");
       const yoyPrevConsults = Number(yoyPrev[0]?.total_consults || 0);
@@ -980,7 +983,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       filterOptions,
-      kpis: { totalBooked, totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyBooked, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
+      kpis: { totalBooked, cancelled, totalConsults, uniquePatients, repeatPatients, locationCount, repeatRate, yoyBooked, yoyConsults, yoyUnique, yoyRepeat, yoyBasis, yoyLabel, hasInsufficientHistory },
       charts: {
         demographicSunburst,
         demographicStats: {

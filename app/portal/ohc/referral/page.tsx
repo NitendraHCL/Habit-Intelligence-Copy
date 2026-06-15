@@ -832,7 +832,7 @@ export default function ReferralAnalyticsPage() {
               <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Times the OHC routed an employee on for specialist care</p>
               <div className="mt-auto pt-4">
                 <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
-                  The 100% baseline. Every conversion rate, specialty ranking and demographic split on this page measures back to this number.
+                  The total — every other number on this page is a share of this.
                 </p>
               </div>
             </div>
@@ -851,7 +851,7 @@ export default function ReferralAnalyticsPage() {
               <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Hand-offs that reached the specialist's chair</p>
               <div className="mt-auto pt-4">
                 <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>
-                  <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> of the <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> referrals issued were acted on — the share of physician recommendations the workforce actually followed through.
+                  <span className="font-semibold" style={{ color: T.teal }}>{kpis?.conversionPct || 0}%</span> of <span className="font-semibold" style={{ color: T.textPrimary }}>{formatNum(kpis?.totalReferrals || 0)}</span> referrals acted on.
                 </p>
               </div>
             </div>
@@ -1397,7 +1397,7 @@ export default function ReferralAnalyticsPage() {
               </div>
             </div>
           )}
-          <InsightBox text={demoStats ? `Most referrals are for the ${demoStats.topAgeGroup?.ageGroup || ''} age group (${formatNum(demoStats.topAgeGroup?.total || 0)} referrals), and most are for ${demoStats.topGender?.gender || ''} patients.` : 'Loading demographic insights...'} />
+          <InsightBox text={demoStats ? `Top: ${demoStats.topAgeGroup?.ageGroup || ''} (${formatNum(demoStats.topAgeGroup?.total || 0)}) · mostly ${demoStats.topGender?.gender || ''}.` : 'Loading…'} />
         </CVCard>}
 
         {/* Referral Volume by Specialty & Location */}
@@ -1693,7 +1693,7 @@ export default function ReferralAnalyticsPage() {
               </button>
             );
           })()}
-          <InsightBox text="Each bar is one clinic. Coloured sections show which specialties patients were referred to from that clinic. The number above each bar is the clinic's total referrals." />
+          <InsightBox text="Each bar = one clinic, split by referred-to specialty; number = clinic total." />
         </CVCard>}
 
         {/* Data Audit — superadmin-only source + extraction logic per chart.

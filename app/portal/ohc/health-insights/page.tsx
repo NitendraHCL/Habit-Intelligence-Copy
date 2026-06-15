@@ -643,6 +643,8 @@ export default function HealthInsightsPage() {
   }, [categories]);
 
   const handleRemoveChip = (key: string, value: string) => {
+    if (key === "__relation") { setRelation("all"); setAppliedRelation("all"); return; }
+    if (key === "__diagnosedBy") { setDiagnosedBy("all"); setAppliedDiagnosedBy("all"); return; }
     setAppliedFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
     setPageFilters((p) => ({ ...p, [key]: (p as any)[key].filter((v: string) => v !== value) }));
   };
@@ -650,8 +652,10 @@ export default function HealthInsightsPage() {
     const empty = { ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[] };
     setAppliedFilters(empty);
     setPageFilters(empty);
+    setRelation("all"); setAppliedRelation("all");
+    setDiagnosedBy("all"); setAppliedDiagnosedBy("all");
   };
-  const hasActiveFilters = Object.values(appliedFilters).some((v) => v.length > 0);
+  const hasActiveFilters = Object.values(appliedFilters).some((v) => v.length > 0) || appliedRelation !== "all" || appliedDiagnosedBy !== "all";
 
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
@@ -1017,7 +1021,15 @@ export default function HealthInsightsPage() {
         </Button>
       </div>
       {hasActiveFilters && (
-        <ActiveFilterChips filters={appliedFilters} onRemove={handleRemoveChip} onClearAll={handleClearAll} />
+        <ActiveFilterChips
+          filters={{
+            ...appliedFilters,
+            ...(appliedDiagnosedBy !== "all" ? { __diagnosedBy: [appliedDiagnosedBy === "nurse" ? "Nurse Diagnosis" : "Doctor Diagnosis"] } : {}),
+            ...(appliedRelation !== "all" ? { __relation: [appliedRelation] } : {}),
+          }}
+          onRemove={handleRemoveChip}
+          onClearAll={handleClearAll}
+        />
       )}
 
       {/* TODO: chronic-only summary — uses all-categories aggregates as a

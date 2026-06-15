@@ -1570,14 +1570,14 @@ export default function OHCUtilizationPage() {
             </div>
           ),
           demographicBreakdown: (
-            <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultation volume split by age group (inner ring) and gender (outer ring) — hover any slice to reveal cohort counts." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart">
+            <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Volume by age & gender" chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart">
               <div style={{ height: 360, position: "relative" }}>
                 <ReactECharts ref={sunburstRef} option={sunburstOption} style={{ height: "100%", width: "100%" }} />
               </div>
             </CVCard>
           ),
           locationBySpecialty: (
-            <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Stacked consultation volumes per clinic — each colour segment is a specialty. Hover a bar for exact counts." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization" chartDescription="Stacked bar">
+            <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle="Volume by clinic & specialty" chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization" chartDescription="Stacked bar">
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {(charts?.topSpecialties || []).map((spec: string, i: number) => (
                   <div key={spec} className="flex items-center gap-1">
@@ -1792,9 +1792,8 @@ export default function OHCUtilizationPage() {
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
                 const tb = Number(kpis?.totalBooked || 0);
-                const tc = Number(kpis?.totalConsults || 0);
                 if (tb === 0) return "No appointments booked in this range yet.";
-                return `Includes completed, no-show & pending (excludes cancelled) · ${formatNum(tc)} consults completed`;
+                return `Total bookings · ${formatNum(tb)}`;
               })()}</p>
             </div>
           </div>
@@ -1828,7 +1827,7 @@ export default function OHCUtilizationPage() {
                 const lc = Number(kpis?.locationCount || 0);
                 if (tc === 0 || up === 0) return "No completed consultations in this range yet.";
                 const avg = (tc / up).toFixed(1);
-                return `Average ${avg} visits per patient · across ${formatNum(lc)} clinics`;
+                return `${avg} visits/patient · ${formatNum(lc)} clinics`;
               })()}</p>
             </div>
           </div>
@@ -1910,7 +1909,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Consultation breakdown by age, gender, and location</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("demographicBreakdown"), isChartVisible("locationBySpecialty")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Consultations are split by age group on the inner ring and gender on the outer ring." tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender" tableData={demographicTableData}>
+          {isChartVisible("demographicBreakdown") && <CVCard accentColor="#4f46e5" title="Demographic Consult Breakdown" subtitle="Volume by age & gender" tooltipText="Inner ring is age group; outer ring is gender. Slice size is consultation volume. Click a wedge to drill in." chartId="demographicBreakdown" chartData={charts?.demographicSunburst} chartTitle="Demographic Consult Breakdown" chartDescription="Sunburst chart showing consultation breakdown by age group and gender" tableData={demographicTableData}>
             <div ref={sunburstContainerRef} style={{ height: 360, position: "relative" }}>
               <ReactECharts
                 ref={sunburstRef}
@@ -1985,13 +1984,13 @@ export default function OHCUtilizationPage() {
             <InsightBox text={(() => {
               const cohort = charts?.demographicStats?.highestCohort;
               const total = Number(kpis?.totalConsults || 0);
-              if (!cohort || total === 0) return "Pick a date range to see who's using OHC the most.";
+              if (!cohort || total === 0) return "Pick a date range.";
               const pct = Math.round((cohort.count / total) * 100);
-              return `${cohort.ageGroup} · ${cohort.gender} are the single largest cohort — ${formatNum(cohort.count)} consults (~${pct}% of total) from ${formatNum(cohort.patients)} patients.`;
+              return `Largest cohort: ${cohort.ageGroup} · ${cohort.gender} — ${formatNum(cohort.count)} consults (${pct}%), ${formatNum(cohort.patients)} patients.`;
             })()} />
           </CVCard>}
 
-          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `Consultations at ${locationBySpecialtyData[0]?.location || "your clinic"} are broken down by specialty.` : clinicChartMode === "heatmap" ? "Darker cells mean more consults at that clinic-specialty pair." : "Each bar shows the consultations at one clinic, split by specialty."} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown" tableData={locationTable}>
+          {isChartVisible("locationBySpecialty") && <CVCard accentColor="#4f46e5" title="Clinic Utilization by Location & Specialty" subtitle={clinicChartMode === "specialtyOnly" ? `${locationBySpecialtyData[0]?.location || "Clinic"} — by specialty` : clinicChartMode === "heatmap" ? "Darker = more consults" : "By clinic & specialty"} tooltipText="Specialty mix per clinic. The top six specialties are shown; the rest fold into 'Other'. The view switches from single-clinic bars to a heatmap (2–4 clinics) to stacked bars (5+)." chartId="locationBySpecialty" chartData={charts?.locationBySpecialty} chartTitle="Clinic Utilization by Location & Specialty" chartDescription="Adaptive view of consult volume per location with specialty breakdown" tableData={locationTable}>
             {clinicChartMode !== "specialtyOnly" && (
               <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 mt-2">
                 {stackSpecialties.map((spec: string, i: number) => (
@@ -2336,11 +2335,11 @@ export default function OHCUtilizationPage() {
               if (real.length === 0) return "Clinic breakdown will appear once data loads.";
               const top = real[0];
               const topPct = Math.round((top.total / total) * 100);
-              if (real.length === 1) return `${top.location} accounts for ${topPct}% of all consults.`;
+              if (real.length === 1) return `${top.location}: ${topPct}% of consults.`;
               const nextN = Math.min(4, real.length - 1);
               const nextSum = real.slice(1, 1 + nextN).reduce((s, r) => s + r.total, 0);
               const nextPct = Math.round((nextSum / total) * 100);
-              return `${top.location} drives ${topPct}% of all consults; the next ${nextN} sites account for another ${nextPct}%.`;
+              return `${top.location}: ${topPct}% of consults · next ${nextN} sites: ${nextPct}%.`;
             })()} />
           </CVCard>}
         </div>
@@ -2527,19 +2526,19 @@ export default function OHCUtilizationPage() {
           <InsightBox text={trendView === "yearly"
             ? (() => {
                 if (yearlyTrends.length === 0) return "No trend data yet for this date range.";
-                if (yearlyTrends.length === 1) { const y = yearlyTrends[0]; return `In ${y.period}${y.isYtd ? " (so far)" : ""}: ${formatNum(y.completed)} completed visits. Pick a wider date range to compare years.`; }
+                if (yearlyTrends.length === 1) { const y = yearlyTrends[0]; return `${y.period}${y.isYtd ? " (so far)" : ""}: ${formatNum(y.completed)} completed.`; }
                 const lastFull = [...yearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
                 const ytd = yearlyTrends.find((y) => y.isYtd);
-                const basePart = lastFull ? `Completed visits in ${lastFull.period} were ${Math.abs(lastFull.yoy!)}% ${lastFull.yoy! >= 0 ? "higher" : "lower"} than the year before.` : "";
-                const ytdPart = ytd ? ` So far in ${ytd.period}: ${formatNum(ytd.completed)} completed.` : "";
-                return (basePart + ytdPart).trim() || "Not enough history yet to compare years.";
+                const basePart = lastFull ? `${lastFull.period}: ${lastFull.yoy! >= 0 ? "▲" : "▼"}${Math.abs(lastFull.yoy!)}% YoY.` : "";
+                const ytdPart = ytd ? ` ${ytd.period} so far: ${formatNum(ytd.completed)}.` : "";
+                return (basePart + ytdPart).trim() || "Not enough history to compare.";
               })()
             : visitTrends.length > 0
-              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); const bucket = isDailyView ? "day" : "month"; const peakLabel = isDailyView ? "Busiest day" : "Busiest month"; return `Averaging ${formatNum(avgConsults)} visits per ${bucket}. ${peakLabel}: ${peak.period} with ${formatNum(peak.completed)} completed.`; })()
+              ? (() => { const peak = visitTrends.reduce((a: any, b: any) => a.completed > b.completed ? a : b); const bucket = isDailyView ? "day" : "month"; const peakLabel = isDailyView ? "Busiest day" : "Busiest month"; return `${formatNum(avgConsults)} visits/${bucket} avg · ${peakLabel}: ${peak.period} (${formatNum(peak.completed)}).`; })()
               : "No trend data yet for this date range."} />
         </CVCard>}
 
-        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Each slice is a specialty's share of completed consultations." tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty" tableData={specialtyTable}>
+        {isChartVisible("specialtyDonut") && <CVCard accentColor="#4f46e5" title="Visits by Specialty" subtitle="Specialty share of consults" tooltipText="Share of completed consultations by specialty. Specialties below the top six fold into 'Others'." chartId="specialtyDonut" chartData={charts?.specialtyTreemap} chartTitle="Visits by Specialty" chartDescription="Donut chart showing proportional distribution of consultations by specialty" tableData={specialtyTable}>
           {(() => {
             const raw = charts?.specialtyTreemap || [];
             const top6 = raw.slice(0, 6);
@@ -2694,14 +2693,14 @@ export default function OHCUtilizationPage() {
             if (list.length === 0 || !total) return "Specialty breakdown will appear once data loads.";
             const top = list[0];
             const topShare = ((top.value / total) * 100).toFixed(1);
-            const leadLine = `${top.name} is the most-visited specialty — ${formatNum(top.value)} of ${formatNum(total)} visits (${topShare}%).`;
+            const leadLine = `Top specialty: ${top.name} — ${formatNum(top.value)} visits (${topShare}%).`;
             if (list.length <= 1) return leadLine;
             const topN = Math.min(5, list.length);
             const topNSum = list.slice(0, topN).reduce((s, d) => s + d.value, 0);
             const topNPct = Math.round((topNSum / total) * 100);
             const remaining = list.length - topN;
-            if (remaining <= 0) return `${leadLine} Patients use ${list.length} specialties in total.`;
-            return `${leadLine} The top ${topN} specialties together account for ${topNPct}% of all visits — the other ${remaining} share the rest.`;
+            if (remaining <= 0) return `${leadLine} ${list.length} specialties total.`;
+            return `${leadLine} Top ${topN}: ${topNPct}% of visits (${remaining} more share the rest).`;
           })()} />
         </CVCard>}
       </div>}
@@ -2713,7 +2712,7 @@ export default function OHCUtilizationPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Booked vs completed across service categories</p>
 
         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("categoryRadar"), isChartVisible("serviceCategoryMatrix")].filter(Boolean).length || 1}, 1fr)` }}>
-          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked and completed volumes are compared across Pathology, Radiology, and Cardiology." tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories" tableData={radarTable}>
+          {isChartVisible("categoryRadar") && <CVCard accentColor="#0d9488" title="Category Radar" subtitle="Booked vs completed by category" tooltipText="Booked vs Completed for Pathology, Radiology, and Cardiology. Click a category axis to drill into its top packages and tests." chartId="categoryRadar" chartData={radarData} chartTitle="Category Radar (excl. Consultation)" chartDescription="Radar chart comparing booked vs completed volumes across non-consultation service categories" tableData={radarTable}>
             <div style={{ height: 340 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart
@@ -2765,10 +2764,10 @@ export default function OHCUtilizationPage() {
               const byRate = [...cats].sort((a, b) => b.completionRate - a.completionRate);
               const topBooked = byBooked[0];
               const topRate = byRate[0];
-              if (topBooked.category === topRate.category) return `${topBooked.category} leads both bookings (${formatNum(topBooked.booked)}) and completion rate (${topBooked.completionRate}%).`;
+              if (topBooked.category === topRate.category) return `${topBooked.category} leads bookings (${formatNum(topBooked.booked)}) & completion (${topBooked.completionRate}%).`;
               const gap = topRate.completionRate - topBooked.completionRate;
               const wouldAdd = Math.round(topBooked.booked * (gap / 100));
-              return `${topBooked.category} has the most bookings; ${topRate.category} leads on completion (${topRate.completionRate}% vs ${topBooked.completionRate}%). Closing the ${gap}-point gap would add ~${formatNum(wouldAdd)} completed services.`;
+              return `Most booked: ${topBooked.category} · best completion: ${topRate.category} (${topRate.completionRate}% vs ${topBooked.completionRate}%). Closing the gap: +~${formatNum(wouldAdd)} completed.`;
             })()} />
           </CVCard>}
 
@@ -2869,7 +2868,7 @@ export default function OHCUtilizationPage() {
                 </table>
               </div>
             )}
-            <InsightBox text={selectedSvcCategory === "Pathology" ? "Packages are bundled offerings (Health Check / EHC / Care Plan). Tests are individual lab analytes (Vitamin B-12, Calcium, Pap Smear, etc.). If packages are big and individual tests are small, most of the work is annual screenings rather than one-off doctor orders." : selectedSvcCategory ? "These are the most-booked items. If a high-volume item has a low completion rate, fixing that one item helps more than chasing a long tail of small ones." : (() => {
+            <InsightBox text={selectedSvcCategory === "Pathology" ? "Packages = bundled offerings; tests = individual analytes. Big packages vs small tests = mostly annual screenings." : selectedSvcCategory ? "Most-booked items. A high-volume item with low completion is the best fix." : (() => {
               const cats = (serviceCategories || []) as Array<{ category: string; booked: number; completed: number; completionRate: number }>;
               if (cats.length < 2) return "Click any category on the Category Radar to see what's inside.";
               const byRate = [...cats].sort((a, b) => a.completionRate - b.completionRate);
@@ -2877,8 +2876,8 @@ export default function OHCUtilizationPage() {
               const best = byRate[byRate.length - 1];
               const gap = best.completionRate - worst.completionRate;
               const wouldAdd = Math.round(worst.booked * (gap / 100));
-              if (gap <= 0) return `All three categories are completing at ${worst.completionRate}%.`;
-              return `${worst.category} completes ${worst.completionRate}% of bookings — the lowest of the three. Closing the ${gap}-pt gap to ${best.category}'s rate would add ~${formatNum(wouldAdd)} completed services.`;
+              if (gap <= 0) return `All categories completing at ${worst.completionRate}%.`;
+              return `Lowest: ${worst.category} at ${worst.completionRate}%. Matching ${best.category}: +~${formatNum(wouldAdd)} completed.`;
             })()} />
           </CVCard>}
         </div>
@@ -2974,13 +2973,13 @@ export default function OHCUtilizationPage() {
           if (rows.length === 0) return "Bubble breakdown will appear once data loads.";
           const top = [...rows].sort((a, b) => b.total - a.total)[0];
           const skew = top.malePercent > 55 ? "male-heavy" : top.malePercent < 45 ? "female-heavy" : "balanced";
-          return `Largest cohort in ${activeBubbleSpec}: ${top.ageGroup} at ${top.location} — ${formatNum(top.total)} visits, ${skew} (${formatNum(top.male)} male · ${formatNum(top.female)} female).`;
+          return `${activeBubbleSpec} — top: ${top.ageGroup} @ ${top.location}, ${formatNum(top.total)} visits, ${skew} (${formatNum(top.male)}M · ${formatNum(top.female)}F).`;
         })()} />
       </CVCard>;
       })()}
 
       {/* ── Peak Consultation Hours Heatmap ── */}
-      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Each cell shows the consultation volume for one weekday and hour." tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday" tableData={peakHoursTable}>
+      {isChartVisible("peakHours") && <CVCard accentColor="#4f46e5" title="Peak Consultation Hours" subtitle="Volume by weekday & hour" tooltipText="Consultation count per weekday and hour from 6 AM to 10 PM. Darker cells are busier. Drag the slider to fade lower-traffic slots." chartId="peakHours" chartData={charts?.peakHours} chartTitle="Peak Consultation Hours" chartDescription="Heatmap showing hourly consultation footfall by weekday" tableData={peakHoursTable}>
         {/* ── Slider instruction ── */}
         <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.12)" }}>
           <SlidersHorizontal size={16} style={{ color: "#4f46e5", flexShrink: 0, marginTop: 1 }} />
@@ -3071,7 +3070,7 @@ export default function OHCUtilizationPage() {
           </div>
         </div>
         <InsightBox text={charts?.peakHours?.peakDay
-          ? `Demand is highest on ${charts.peakHours.peakDay} around ${charts.peakHours.peakHour} — ${formatNum(charts.peakHours.peakCount)} visits. Adding extra staff in that window would cut wait times the most.`
+          ? `Peak: ${charts.peakHours.peakDay} ~${charts.peakHours.peakHour} — ${formatNum(charts.peakHours.peakCount)} visits. Staff up that window.`
           : "Peak hour data will appear once loaded."} />
       </CVCard>}
 
@@ -3080,10 +3079,10 @@ export default function OHCUtilizationPage() {
         accentColor="#e11d48"
         title="Repeat Visit Trends"
         subtitle={repeatView === "yearly"
-          ? "Each year shows the repeat-visit volume with its year-over-year change."
+          ? "Repeat visits with YoY change"
           : isDailyView
-            ? "The solid line shows daily repeat visits; the dashed line shows unique repeat patients."
-            : "The solid line shows monthly repeat visits; the dashed line shows unique repeat patients."}
+            ? "Daily repeat visits & unique patients"
+            : "Monthly repeat visits & unique patients"}
         tooltipText="Repeat Visits counts every consultation made by employees who have used OHC services more than once. Repeat Patients counts the unique number of such employees in each period. Note: summing Repeat Patients across periods double-counts employees who returned in multiple periods, so the yearly view shows Repeat Visits only."
         chartId="repeatTrends"
         chartData={repeatView === "yearly" ? repeatYearlyTrends : repeatTrendData}
@@ -3276,12 +3275,12 @@ export default function OHCUtilizationPage() {
         <InsightBox text={(() => {
           if (repeatView === "yearly") {
             if (repeatYearlyTrends.length === 0) return "No repeat-visit data yet for this date range.";
-            if (repeatYearlyTrends.length === 1) { const y = repeatYearlyTrends[0]; return `In ${y.period}${y.isYtd ? " (so far)" : ""}: ${formatNum(y.repeatVisits)} repeat visits. Pick a wider date range to compare years.`; }
+            if (repeatYearlyTrends.length === 1) { const y = repeatYearlyTrends[0]; return `${y.period}${y.isYtd ? " (so far)" : ""}: ${formatNum(y.repeatVisits)} repeat visits.`; }
             const lastFull = [...repeatYearlyTrends].reverse().find((y) => !y.isYtd && y.yoy != null);
             const ytd = repeatYearlyTrends.find((y) => y.isYtd);
-            const base = lastFull ? `Repeat visits in ${lastFull.period} were ${Math.abs(lastFull.yoy!)}% ${lastFull.yoy! >= 0 ? "higher" : "lower"} than the year before.` : "";
-            const ytdPart = ytd ? ` So far in ${ytd.period}: ${formatNum(ytd.repeatVisits)} repeat visits.` : "";
-            return (base + ytdPart).trim() || "Not enough history yet to compare years.";
+            const base = lastFull ? `${lastFull.period}: ${lastFull.yoy! >= 0 ? "▲" : "▼"}${Math.abs(lastFull.yoy!)}% YoY.` : "";
+            const ytdPart = ytd ? ` ${ytd.period} so far: ${formatNum(ytd.repeatVisits)}.` : "";
+            return (base + ytdPart).trim() || "Not enough history to compare.";
           }
           const rows = repeatTrendData as Array<{ label: string; repeatVisits: number; repeatPatients: number }>;
           if (rows.length === 0) return "No repeat-visit data yet for this date range.";
@@ -3295,11 +3294,11 @@ export default function OHCUtilizationPage() {
           let gapTrend = "";
           if (firstHalfAvg != null && secondHalfAvg != null) {
             const delta = secondHalfAvg - firstHalfAvg;
-            if (Math.abs(delta) / Math.max(firstHalfAvg, 0.01) >= 0.05) gapTrend = delta > 0 ? " The gap between visits and patients is growing — the same people are coming back more often." : " The gap is shrinking — more new employees are becoming repeat users.";
-            else gapTrend = " The gap has stayed about the same.";
+            if (Math.abs(delta) / Math.max(firstHalfAvg, 0.01) >= 0.05) gapTrend = delta > 0 ? " Gap widening — same people returning more." : " Gap shrinking — more new repeat users.";
+            else gapTrend = " Gap steady.";
           }
-          const peakLabel = isDailyView ? "The busiest day" : "The busiest month";
-          const ratioLine = avgRatio ? ` On average, each repeat patient came back ${avgRatio} times.` : "";
+          const peakLabel = isDailyView ? "Busiest day" : "Busiest month";
+          const ratioLine = avgRatio ? ` ${avgRatio} visits per repeat patient.` : "";
           const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
           const peakLabelFmt = (() => {
             const v = peak.label;
@@ -3307,12 +3306,12 @@ export default function OHCUtilizationPage() {
             if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split("-"); return `${MONTHS[Number(m) - 1]} '${y.slice(2)}`; }
             return v;
           })();
-          return `${peakLabel} was ${peakLabelFmt} with ${formatNum(peak.repeatVisits)} repeat visits.${ratioLine}${gapTrend}`;
+          return `${peakLabel}: ${peakLabelFmt} — ${formatNum(peak.repeatVisits)} repeat visits.${ratioLine}${gapTrend}`;
         })()} />
       </CVCard>}
 
       {/* Capacity vs Booked vs Completed — grouped bar by specialty. */}
-      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Doctor capacity against booked and completed consults, by specialty." tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)} tableData={capacityTableData}>
+      {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Capacity vs booked & completed" tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)} tableData={capacityTableData}>
         {capacityData.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-[13px]" style={{ color: T.textMuted }}>
             No capacity data available for the selected filters.
@@ -3378,11 +3377,11 @@ export default function OHCUtilizationPage() {
             <InsightBox text={(() => {
               const totals = capacityData.reduce((s, d) => ({ cap: s.cap + d.capacity, booked: s.booked + d.booked, completed: s.completed + d.completed }), { cap: 0, booked: 0, completed: 0 });
               if (totals.booked === 0 && totals.completed === 0) {
-                return `Capacity is loaded across ${capacityData.length} ${capacityData.length === 1 ? "specialty" : "specialties"} (${formatNum(totals.cap)} consult slots), but booked and completed consults are not yet populated in doctor_capacity — bars for those will appear once that data lands.`;
+                return `${formatNum(totals.cap)} slots across ${capacityData.length} ${capacityData.length === 1 ? "specialty" : "specialties"} — booked/completed not yet populated.`;
               }
               const util = totals.cap > 0 ? Math.round((totals.booked / totals.cap) * 100) : 0;
               const top = [...capacityData].sort((a, b) => b.capacity - a.capacity)[0];
-              return `Across ${capacityData.length} specialties, ${formatNum(totals.booked)} of ${formatNum(totals.cap)} capacity slots were booked (${util}% utilization) and ${formatNum(totals.completed)} completed.${top ? ` ${top.specialty} carries the most capacity.` : ""}`;
+              return `${formatNum(totals.booked)}/${formatNum(totals.cap)} slots booked (${util}% util) · ${formatNum(totals.completed)} completed.${top ? ` Most capacity: ${top.specialty}.` : ""}`;
             })()} />
           </>
         )}

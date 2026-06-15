@@ -477,9 +477,19 @@ export default function HealthInsightsPage() {
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], conditions: [] as string[],
   });
-  // Seasonal (Jan–Dec) chart is year-based by design — derive the year from the
-  // global date range (latest year in range) instead of a per-chart dropdown.
-  const seasonalYear = appliedDateRange.to.getFullYear();
+  // Seasonal (Jan–Dec) chart is year-based by design. Offer a year dropdown
+  // limited to the years inside the selected global date range; default to the
+  // latest, and clamp back in-range whenever the range changes.
+  const rangeYears = useMemo(() => {
+    const a = appliedDateRange.from.getFullYear(), b = appliedDateRange.to.getFullYear();
+    const arr: number[] = [];
+    for (let y = a; y <= b; y++) arr.push(y);
+    return arr;
+  }, [appliedDateRange]);
+  const [seasonalYear, setSeasonalYear] = useState<number>(appliedDateRange.to.getFullYear());
+  useEffect(() => {
+    if (!rangeYears.includes(seasonalYear)) setSeasonalYear(rangeYears[rangeYears.length - 1]);
+  }, [rangeYears]); // eslint-disable-line react-hooks/exhaustive-deps
   // Which Condition Share Distribution rows are expanded (multi-select).
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   // Co-Occurrence venn — up to 3 chronic ICD parent categories. Selection
@@ -1891,7 +1901,7 @@ export default function HealthInsightsPage() {
             chartId="seasonalPatterns"
             chartData={monthData}
             chartDescription="Top chronic diseases per month with diagnosis counts" tableData={seasonalTable}
-            headerRight={<span className="text-[12px] font-semibold px-2.5 py-1 rounded-lg" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{seasonalYear}</span>}
+            headerRight={<YearSelector years={rangeYears} value={seasonalYear} onChange={setSeasonalYear} />}
           >
             <div className="overflow-x-auto">
               <div className="grid grid-cols-4 gap-3" style={{ minWidth: 700 }}>

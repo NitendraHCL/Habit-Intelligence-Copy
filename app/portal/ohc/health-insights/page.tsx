@@ -966,7 +966,7 @@ export default function HealthInsightsPage() {
               color="#4f46e5"
               sub="Total chronic diagnosis count"
               tooltip="Total number of chronic diagnosis consults recorded in the selected period"
-              insight="Tracks the volume of chronic-condition encounters — a rising count signals growing long-term care load"
+              insight="Rising = growing care load"
             />
             <StatCard
               label="Chronic Patients"
@@ -974,7 +974,7 @@ export default function HealthInsightsPage() {
               color="#4f46e5"
               sub="Unique UHIDs with chronic conditions"
               tooltip="Count of distinct patients (UHIDs) with at least one chronic diagnosis on record in the selected period"
-              insight="A growing chronic patient base signals long-term care demand — prioritise continuity-of-care programs"
+              insight="Rising = more care demand"
             />
             <StatCard
               label="Chronic Diseases"
@@ -982,7 +982,7 @@ export default function HealthInsightsPage() {
               color="#7c3aed"
               sub="Tracked chronic diseases"
               tooltip="Number of distinct chronic diseases with at least one diagnosis in the selected period"
-              insight="Wide chronic disease coverage suggests broad disease burden; narrow coverage points to a focused cohort"
+              insight="More diseases = broader burden"
             />
           </div>
         );
@@ -1058,7 +1058,7 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#4f46e5"
             title="Chronic Disease Distribution"
-            subtitle="Diagnosis Count vs. Unique UHIDs per chronic disease — scroll for the full list. Click any disease to drill into its conditions →"
+            subtitle="Diagnoses vs unique patients · click to drill"
             tooltipText="Horizontal grouped bar chart of all chronic diseases. Indigo bar = diagnosis count, teal bar = unique UHIDs. Sorted by diagnosis volume; scroll vertically for the full list. Click a disease to drill it into the right panel."
             chartId="icdCategoryDistribution"
             chartData={categoryTreemap}
@@ -1200,7 +1200,7 @@ export default function HealthInsightsPage() {
                     </div>
                   </div>
                   {categoryTreemap.length > 0 && (
-                    <InsightBox text={`${sorted.length} chronic diseases in total. The biggest is ${displayCat(dominant?.name || "")} — ${formatNum(dominant?.value || 0)} visits (${dominantPct}% of all chronic visits) from ${formatNum(dominant?.uniquePatients || 0)} different employees. Indigo bars are total visits; teal bars are unique people. A big gap between them means the same people are coming back many times.`} />
+                    <InsightBox text={`Top: ${displayCat(dominant?.name || "")} — ${formatNum(dominant?.value || 0)} visits (${dominantPct}%), ${formatNum(dominant?.uniquePatients || 0)} patients. ${sorted.length} diseases total.`} />
                   )}
                 </div>
               );
@@ -1217,7 +1217,7 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#6366f1"
             title="Condition Share Distribution"
-            subtitle="Every chronic disease — click a row to expand the ICD condition breakdown with diagnosis count and unique UHIDs"
+            subtitle="All diseases · click a row to expand"
             tooltipText="Table of all chronic diseases with diagnosis count and unique UHIDs per row. Click the chevron on any row to expand and see every specific ICD condition inside it with the same two metrics."
             chartId="conditionShareDistribution"
             chartData={categoryTreemap}
@@ -1322,7 +1322,7 @@ export default function HealthInsightsPage() {
                       })}
                     </div>
                   </div>
-                  <InsightBox text={`${sortedCats.length} chronic diseases listed. Click any row to expand it and see every specific ICD condition inside, with how many visits they got and how many different people had them.`} />
+                  <InsightBox text={`${sortedCats.length} diseases · click a row to expand its conditions.`} />
                 </div>
               );
             })() : (
@@ -1344,7 +1344,7 @@ export default function HealthInsightsPage() {
       <CVCard
         accentColor="#0d9488"
         title="Condition & Demographic Insights"
-        subtitle="Explore how each chronic condition within your selected disease is distributed across demographic segments."
+        subtitle="Condition spread by demographic"
         tooltipText="Heatmap matrix showing chronic-condition frequency across demographic segments. Darker cells indicate higher consultation volumes for that condition-segment combination. Acute diagnoses are excluded."
         chartId="demographicAnalysis"
         chartData={demoMatrix}
@@ -1450,7 +1450,7 @@ export default function HealthInsightsPage() {
       <CVCard
         accentColor="#4f46e5"
         title="Year on Year Trends"
-        subtitle="Tracks how the prevalence of chronic conditions changes over time."
+        subtitle="Prevalence over time"
         tooltipText="Line chart tracking how the selected chronic condition's consultation volume changes over time. Toggle between yearly and monthly views. Acute diagnoses are excluded."
         chartId="trendsOverTime"
         chartData={trendData}
@@ -1608,7 +1608,7 @@ export default function HealthInsightsPage() {
           </div>
         </div>
         {trendData.length > 0 && (
-          <InsightBox text={`This ${trendView === "yearly" ? "year-over-year" : "month-over-month"} view shows how visits for ${trendsCondition ? displaySub(trendsCondition) : displayCat(trendsCategory)} have changed over time. A rising line means the condition is becoming more common; a falling one usually means prevention is working.`} />
+          <InsightBox text={`${trendView === "yearly" ? "YoY" : "MoM"} visits for ${trendsCondition ? displaySub(trendsCondition) : displayCat(trendsCategory)}. Rising = more common; falling = prevention working.`} />
         )}
       </CVCard>
       </WarmSection>}
@@ -1622,7 +1622,7 @@ export default function HealthInsightsPage() {
       <CVCard
           accentColor="#7c3aed"
           title="Chronic Disease Co-Occurrence"
-          subtitle="Pick up to 3 chronic diseases — the venn shows unique-UHID overlap, with an age + gender breakdown of patients carrying ALL selected diseases"
+          subtitle="Pick up to 3 — overlap + age/gender of shared patients"
           tooltipText="Multi-select chronic diseases (cap 3). Circles in the venn diagram are sized by the unique UHID count of each disease; overlap regions show how many patients carry the intersecting set. The panel beside it breaks down the all-overlap intersection by age group and gender."
           chartId="coOccurrence"
           chartData={coOccApi?.coOccurrenceVenn}
@@ -1839,7 +1839,7 @@ export default function HealthInsightsPage() {
                     )}
                   </div>
                 </div>
-                <InsightBox text="Pick up to three chronic diseases from the dropdown to compare them. Each circle's size is how many different people have that disease. Where the circles overlap shows people who have all of them at once. The panel on the right tells you the age and gender of those overlap patients — handy for designing programmes that target multiple diseases together." />
+                <InsightBox text="Each circle = people with that disease; overlap = people with all selected. Right panel: their age & gender." />
               </div>
             );
           })()}
@@ -1889,7 +1889,7 @@ export default function HealthInsightsPage() {
           <CVCard
             accentColor="#0d9488"
             title="Monthly Condition Patterns"
-            subtitle="Each month shows the top 3 chronic diseases by diagnosis count for the selected year."
+            subtitle="Top 3 diseases per month"
             tooltipText="12-month calendar grid showing the top 3 chronic ICD parent categories per month with season-colored backgrounds. Useful for spotting cyclical demand on specific care areas."
             chartId="seasonalPatterns"
             chartData={monthData}

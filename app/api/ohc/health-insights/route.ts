@@ -197,6 +197,7 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   const conditions = searchParams.get("conditions")?.split(",").filter(Boolean);
   const conditionType = searchParams.get("conditionType"); // 'chronic' | 'acute' | 'all'
   const diagnosedBy = searchParams.get("diagnosedBy"); // 'nurse' (Care Coordinator) | 'doctor' (all others) | 'all'
+  const relation = searchParams.get("relation"); // 'Employee' | 'Dependent' | 'Others' | 'all'
 
   const where: string[] = [`d.cug_code_mapped = $1`];
   const params: unknown[] = [cugCode];
@@ -246,6 +247,13 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   // else clubbed = "Doctor Diagnosis".
   if (diagnosedBy === "nurse") where.push(`TRIM(d.treating_doctor_speciality) = 'Care Coordinator'`);
   else if (diagnosedBy === "doctor") where.push(`COALESCE(TRIM(d.treating_doctor_speciality), '') <> 'Care Coordinator'`);
+
+  // Relation filter: Employee / Dependent / Others (exact values on relationship).
+  if (relation && relation !== "all") {
+    where.push(`TRIM(d.relationship) = $${idx}`);
+    params.push(relation);
+    idx++;
+  }
 
   return { params, where: where.join(" AND ") };
 }

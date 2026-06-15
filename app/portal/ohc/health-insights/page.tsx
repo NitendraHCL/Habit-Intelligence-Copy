@@ -473,6 +473,10 @@ export default function HealthInsightsPage() {
   const [diagnosedBy, setDiagnosedBy] = useState<"all" | "nurse" | "doctor">("all");
   const [appliedDiagnosedBy, setAppliedDiagnosedBy] = useState<"all" | "nurse" | "doctor">("all");
   const [diagByOpen, setDiagByOpen] = useState(false);
+  // Relation filter: 'all' | 'Employee' | 'Dependent' | 'Others'.
+  const [relation, setRelation] = useState<"all" | "Employee" | "Dependent" | "Others">("all");
+  const [appliedRelation, setAppliedRelation] = useState<"all" | "Employee" | "Dependent" | "Others">("all");
+  const [relationOpen, setRelationOpen] = useState(false);
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
   const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
@@ -547,8 +551,9 @@ export default function HealthInsightsPage() {
     if (appliedFilters.locations.length) p.set("locations", appliedFilters.locations.join(","));
     if (appliedFilters.conditions.length) p.set("conditions", appliedFilters.conditions.join(","));
     if (appliedDiagnosedBy !== "all") p.set("diagnosedBy", appliedDiagnosedBy);
+    if (appliedRelation !== "all") p.set("relation", appliedRelation);
     return `/api/ohc/health-insights?${p.toString()}`;
-  }, [activeClientId, appliedFilters, appliedDateRange, appliedDiagnosedBy]);
+  }, [activeClientId, appliedFilters, appliedDateRange, appliedDiagnosedBy, appliedRelation]);
 
   const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -652,6 +657,7 @@ export default function HealthInsightsPage() {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
     setAppliedDiagnosedBy(diagnosedBy);
+    setAppliedRelation(relation);
   };
 
   // Chronic / Acute data
@@ -913,6 +919,40 @@ export default function HealthInsightsPage() {
                 >
                   <span>{label}</span>
                   {diagnosedBy === val && <span style={{ color: "#4f46e5" }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Relation — Employee / Dependent / Others */}
+        <Popover open={relationOpen} onOpenChange={setRelationOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-medium transition-colors border hover:border-gray-300"
+              style={{ borderColor: T.border, color: relation !== "all" ? T.textPrimary : T.textSecondary, backgroundColor: T.white }}
+            >
+              Relation
+              {relation !== "all" && (
+                <span className="ml-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: "#4f46e5" }}>
+                  {relation}
+                </span>
+              )}
+              <ChevronDown size={13} style={{ color: T.textMuted }} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-2" align="start">
+            <div className="px-1 mb-1.5"><span className="text-[12px] font-bold font-[var(--font-inter)]" style={{ color: T.textPrimary }}>Relation</span></div>
+            <div className="space-y-0.5">
+              {([["all", "All"], ["Employee", "Employee"], ["Dependent", "Dependent"], ["Others", "Others"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => { setRelation(val); setRelationOpen(false); }}
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[12px]"
+                  style={{ color: T.textPrimary, backgroundColor: relation === val ? "#EEF2FF" : "transparent" }}
+                >
+                  <span>{label}</span>
+                  {relation === val && <span style={{ color: "#4f46e5" }}>✓</span>}
                 </button>
               ))}
             </div>

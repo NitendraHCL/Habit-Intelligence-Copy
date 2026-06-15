@@ -872,6 +872,21 @@ async function handler(request: NextRequest) {
       ? [...topLocationsU, othersEntry as any]
       : topLocationsU;
 
+    // Full, untruncated location × specialty pivot (every location, every
+    // specialty — no top-N, no "Other" collapse). Powers the JPM001
+    // master-facility roll-up table view.
+    const locationMapFull: Record<string, Record<string, number>> = {};
+    const fullSpecSet = new Set<string>();
+    for (const row of locSpecRows) {
+      const sp = row.specialty || "Unspecified";
+      fullSpecSet.add(sp);
+      (locationMapFull[row.location] ||= {})[sp] = (locationMapFull[row.location][sp] || 0) + Number(row.total_consults);
+    }
+    const allSpecialties = [...fullSpecSet].sort((a, b) => (specTotals[b] || 0) - (specTotals[a] || 0));
+    const locationBySpecialtyFull = Object.entries(locationMapFull).map(([location, specs]) => ({
+      location, uniquePatients: locUniqueMap[location] || 0, ...specs,
+    }));
+
     // ── Peak hours ──
     const dowToChart: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
     const peakHoursData: [number, number, number][] = [];
@@ -993,6 +1008,7 @@ async function handler(request: NextRequest) {
           topAgeGroup: topAgeEntry ? { ageGroup: topAgeEntry[0], count: topAgeEntry[1] } : null,
         },
         locationBySpecialty, topSpecialties: stackKeys, othersBreakdown, otherSpecialtyBreakdown,
+        allSpecialties, locationBySpecialtyFull,
         visitTrends, avgConsults,
         visitTrendsYearlyUnique: Object.fromEntries(trendYearUniqueRows.map((r) => [r.year, Number(r.unique_patients || 0)])),
         specialtyTreemap,

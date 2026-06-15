@@ -396,6 +396,37 @@ function ActiveFilterChips({
 }
 
 // ─── Main Page ───
+// JPM001-only: maps each clinic to its master facility for the roll-up table.
+// Unmapped clinics stay standalone (rendered as their own top-level row).
+const JPM_MASTER_MAP: Record<string, string> = {
+  "JPMC Delhi": "JPMC Delhi",
+  "JPMC Pune": "JPMC Pune",
+  "JPMC Mumbai": "JPMC Mumbai",
+  "JPMC Bangalore": "JPMC Bangalore",
+  "JPMC Hyderabad Magma Sick Room": "JPMC Hyderabad",
+  "JPMC Hyderabad Magma Emergency Room": "JPMC Hyderabad",
+  "JPMC ETV Parcel 9": "JPMC Bangalore",
+  "JPMC NKP": "JPMC Mumbai",
+  "JPMC Kalina": "JPMC Mumbai",
+  "JPMC Paradigm B": "JPMC Mumbai",
+  "JPMC Kalyani Nagar": "JPMC Pune",
+  "JPMC Noida": "JPMC Noida",
+  "JPMC Magnus": "JPMC Mumbai",
+  "JPMC Ventura": "JPMC Mumbai",
+  "JPMC Platina": "JPMC Bangalore",
+  "JPMC Bluebay": "JPMC Bangalore",
+  "JPMC PTP": "JPMC Bangalore",
+  "JPMC Fairwinds": "JPMC Bangalore",
+  "JPMC L&T Prima Bay": "JPMC Mumbai",
+  "JPMC Mindspace Paradigm A": "JPMC Mumbai",
+  "JPMC Noida EOB Park": "JPMC Noida",
+  "JPMC Pune Kharadi ITPP": "JPMC Pune",
+  "JPMC Mumbai 2": "JPMC Mumbai",
+  "JPMC Bangalore 2": "JPMC Bangalore",
+  "JPMC ETV 8D": "JPMC Bangalore",
+  "JPMC RMZ Hyderabad": "JPMC Hyderabad",
+};
+
 export default function OHCUtilizationPage() {
   usePageAccess("/portal/ohc/utilization");
   const { user, activeClientId, activeClient } = useAuth();
@@ -411,6 +442,8 @@ export default function OHCUtilizationPage() {
   const [selectedSvcCategory, setSelectedSvcCategory] = useState<string>("");
   const [repeatView, setRepeatView] = useState<"monthly" | "yearly">("monthly");
   const [sunburstDrilled, setSunburstDrilled] = useState(false);
+  const [expandedMasters, setExpandedMasters] = useState<Set<string>>(new Set());
+  const toggleMaster = (m: string) => setExpandedMasters((prev) => { const n = new Set(prev); if (n.has(m)) n.delete(m); else n.add(m); return n; });
   const [othersModalOpen, setOthersModalOpen] = useState(false);
   const [othersSearch, setOthersSearch] = useState("");
   const [otherSpecModalOpen, setOtherSpecModalOpen] = useState(false);
@@ -1132,6 +1165,69 @@ export default function OHCUtilizationPage() {
 
   // Clinic Utilization: crosstab location × specialty (+ per-row & grand totals).
   const locationTable = (() => {
+    // JPM001 only: roll clinics up into their master facility with expandable
+    // sub-location rows; show every specialty and every count (no truncation).
+    const fullData = charts?.locationBySpecialtyFull as any[] | undefined;
+    const allSpecs = charts?.allSpecialties as string[] | undefined;
+    if (activeClient?.cugCode === "JPM001" && fullData?.length && allSpecs?.length) {
+      const specs = allSpecs;
+      const groups: Record<string, any[]> = {};
+      for (const r of fullData) {
+        const master = JPM_MASTER_MAP[r.location] || r.location; // unmapped → standalone
+        (groups[master] ||= []).push(r);
+      }
+      const num = (r: any, s: string) => Number(r[s]) || 0;
+      const masters = Object.entries(groups).map(([master, children]) => {
+        const agg: Record<string, number> = {};
+        let uniq = 0, total = 0;
+        for (const r of children) { for (const s of specs) { const v = num(r, s); agg[s] = (agg[s] || 0) + v; total += v; } uniq += Number(r.uniquePatients) || 0; }
+        return { master, children: [...children].sort((a, b) => specs.reduce((s, sp) => s + num(b, sp), 0) - specs.reduce((s, sp) => s + num(a, sp), 0)), agg, uniq, total };
+      }).sort((a, b) => b.total - a.total);
+
+      const rows: Record<string, React.ReactNode>[] = [];
+      const colTotals: Record<string, number> = {};
+      for (const m of masters) {
+        for (const s of specs) colTotals[s] = (colTotals[s] || 0) + (m.agg[s] || 0);
+        const expandable = m.children.length > 1 || m.children[0]?.location !== m.master;
+        const open = expandedMasters.has(m.master);
+        const mrow: Record<string, React.ReactNode> = {
+          location: expandable ? (
+            <button onClick={() => toggleMaster(m.master)} className="flex items-center gap-1.5 font-bold" style={{ color: T.textPrimary }}>
+              <ChevronDown size={12} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />{m.master}
+            </button>
+          ) : <span className="font-semibold" style={{ color: T.textPrimary }}>{m.master}</span>,
+        };
+        for (const s of specs) mrow[s] = formatNum(m.agg[s] || 0);
+        mrow.__rowtotal = formatNum(m.total);
+        mrow.__unique = formatNum(m.uniq);
+        rows.push(mrow);
+        if (expandable && open) {
+          for (const c of m.children) {
+            const crow: Record<string, React.ReactNode> = { location: <span className="pl-[22px] block" style={{ color: T.textSecondary }}>{c.location}</span> };
+            let ct = 0;
+            for (const s of specs) { const v = num(c, s); crow[s] = formatNum(v); ct += v; }
+            crow.__rowtotal = formatNum(ct);
+            crow.__unique = formatNum(Number(c.uniquePatients) || 0);
+            rows.push(crow);
+          }
+        }
+      }
+      const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
+      const totalRow: Record<string, React.ReactNode> = { __group: true, location: "Total" };
+      for (const s of specs) totalRow[s] = formatNum(colTotals[s] || 0);
+      totalRow.__rowtotal = formatNum(grand);
+      totalRow.__unique = formatNum(Number(kpis?.uniquePatients) || 0);
+      rows.push(totalRow);
+      return {
+        columns: [
+          { key: "location", label: "Location", align: "left" as const },
+          ...specs.map((s) => ({ key: s, label: s, align: "right" as const })),
+          { key: "__rowtotal", label: "Total Consults", align: "right" as const },
+          { key: "__unique", label: "Unique Patients", align: "right" as const },
+        ], rows,
+      };
+    }
+
     const specs = stackSpecialties;
     const data = locationBySpecialtyData as any[];
     const colTotals: Record<string, number> = {};

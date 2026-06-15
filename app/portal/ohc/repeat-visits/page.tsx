@@ -352,6 +352,11 @@ export default function RepeatVisitsPage() {
   const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
   const [appliedGenders, setAppliedGenders] = useState<string[]>([]);
   const [appliedAgeGroups, setAppliedAgeGroups] = useState<string[]>([]);
+  // Draft filters — edited in the bar, committed to the applied set on Apply.
+  const [draftLocations, setDraftLocations] = useState<string[]>([]);
+  const [draftGenders, setDraftGenders] = useState<string[]>([]);
+  const [draftAgeGroups, setDraftAgeGroups] = useState<string[]>([]);
+  const [draftMinVisits, setDraftMinVisits] = useState<number>(2);
 
   // Fetch real filter options from API
   const [filterOptions, setFilterOptions] = useState({
@@ -400,6 +405,16 @@ export default function RepeatVisitsPage() {
     ...(appliedGenders.length ? { genders: appliedGenders.join(",") } : {}),
     ...(appliedAgeGroups.length ? { ageGroups: appliedAgeGroups.join(",") } : {}),
   }), [appliedDateRange, appliedLocations, appliedGenders, appliedAgeGroups, minVisits]);
+
+  // Commit all draft filters at once (matches the other pages — nothing
+  // filters until Apply).
+  const handleApply = () => {
+    setAppliedDateRange({ ...dateRange });
+    setAppliedLocations(draftLocations);
+    setAppliedGenders(draftGenders);
+    setAppliedAgeGroups(draftAgeGroups);
+    setMinVisits(draftMinVisits);
+  };
 
   const { data: repeatApi, isLoading, isValidating, refresh, isRefreshing } = useDashboardData<any>("ohc/repeat-visits", repeatExtraParams);
 
@@ -663,19 +678,10 @@ export default function RepeatVisitsPage() {
                 style={{ color: T.textPrimary }}
               />
             </div>
-            {(dateRange.from.getTime() !== appliedDateRange.from.getTime() || dateRange.to.getTime() !== appliedDateRange.to.getTime()) && (
-              <button
-                onClick={() => setAppliedDateRange({ ...dateRange })}
-                className="h-9 px-3.5 rounded-lg text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
-              >
-                Apply
-              </button>
-            )}
           </div>
-          <FilterMultiSelect label="Location" options={filterOptions.locations} selected={appliedLocations} onChange={setAppliedLocations} />
-          <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={appliedGenders} onChange={setAppliedGenders} />
-          <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={appliedAgeGroups} onChange={setAppliedAgeGroups} />
+          <FilterMultiSelect label="Location" options={filterOptions.locations} selected={draftLocations} onChange={setDraftLocations} />
+          <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={draftGenders} onChange={setDraftGenders} />
+          <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={draftAgeGroups} onChange={setDraftAgeGroups} />
 
           {/* Repeat Visit Count Filter */}
           <div className="flex items-center gap-1 ml-2">
@@ -684,15 +690,22 @@ export default function RepeatVisitsPage() {
               {[2, 3, 4, 5].map((v) => (
                 <button
                   key={v}
-                  onClick={() => setMinVisits(v)}
-                  className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${minVisits === v ? "bg-white shadow-sm" : ""}`}
-                  style={{ color: minVisits === v ? "#4f46e5" : T.textMuted }}
+                  onClick={() => setDraftMinVisits(v)}
+                  className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${draftMinVisits === v ? "bg-white shadow-sm" : ""}`}
+                  style={{ color: draftMinVisits === v ? "#4f46e5" : T.textMuted }}
                 >
                   {v === 5 ? "5+" : String(v)}
                 </button>
               ))}
             </div>
           </div>
+          <button
+            onClick={handleApply}
+            className="h-9 px-5 rounded-lg text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 ml-2"
+            style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)" }}
+          >
+            Apply
+          </button>
           <div className="flex-1" />
           <PageDownload pageTitle="Repeat Visit Analysis" />
           <div className="relative">

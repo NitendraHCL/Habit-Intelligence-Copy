@@ -288,7 +288,7 @@ async function handler(request: NextRequest) {
     const conversionPct = totalReferrals > 0 ? Math.round((convertedCount / totalReferrals) * 100) : 0;
 
     // ── Concurrent batch: trends, matrix, specialty, demographics, location ──
-    const [trendRows, matrixRows, specRows, demoRows, locSpecRows] = await Promise.all([
+    const [trendRows, matrixRows, specRows, specByRefRows, demoRows, locSpecRows] = await Promise.all([
       // Trend per period (referrals + conversions, single query).
       safeQuery(
         () => dwQuery<{ period: string; total: string; conversions: string }>(
@@ -340,6 +340,23 @@ async function handler(request: NextRequest) {
         ),
         "specialty"
       ),
+      // Per receiving-specialty × referring-specialty: referrals + conversions.
+      safeQuery(
+        () => dwQuery<{ to_spec: string; from_spec: string; referrals: string; conversions: string }>(
+          `SELECT
+             r.speciality_referred_to   AS to_spec,
+             r.speciality_referred_from AS from_spec,
+             ${REFERRALS_SUM}           AS referrals,
+             ${CONVERTED_SUM}           AS conversions
+           FROM ${BASE_TABLE} r
+           WHERE ${q.where}
+             AND r.speciality_referred_to   IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
+             AND r.speciality_referred_from IS NOT NULL AND TRIM(r.speciality_referred_from) <> ''
+           GROUP BY to_spec, from_spec`,
+          q.params
+        ),
+        "specByReferrer"
+      ),
       // Demographics: age_group × gender, weighted by COUNT.
       safeQuery(
         () => dwQuery<{ age_group: string; gender: string; cnt: string }>(
@@ -390,6 +407,19 @@ async function handler(request: NextRequest) {
       count: Number(row.cnt),
     }));
 
+    // ── Per receiving-specialty: breakdown by referring specialty ──
+    const byReferrer: Record<string, { from: string; referrals: number; conversions: number; rate: number }[]> = {};
+    for (const r of specByRefRows) {
+      const referrals = Number(r.referrals), conversions = Number(r.conversions);
+      (byReferrer[r.to_spec] ||= []).push({
+        from: r.from_spec,
+        referrals,
+        conversions,
+        rate: referrals > 0 ? Math.round((conversions / referrals) * 100) : 0,
+      });
+    }
+    Object.values(byReferrer).forEach((arr) => arr.sort((a, b) => b.referrals - a.referrals));
+
     // ── Specialty details with real conversion rates ──
     const specialtyDetails = specRows.map((s) => {
       const referrals = Number(s.referrals);
@@ -399,6 +429,7 @@ async function handler(request: NextRequest) {
         referrals,
         inClinicConsults: conversions,
         conversionRate: referrals > 0 ? Math.round((conversions / referrals) * 100) : 0,
+        byReferrer: byReferrer[s.specialty] || [],
         // Page no longer gates on this flag; kept for backward compat.
         isAvailableInClinic: true,
       };

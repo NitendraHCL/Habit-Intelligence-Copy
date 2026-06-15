@@ -355,6 +355,7 @@ export default function ReferralAnalyticsPage() {
   }, [activeClientId]);
 
   const [matrixView, setMatrixView] = useState<"absolute" | "percent">("absolute");
+  const [openSpecs, setOpenSpecs] = useState<Record<string, boolean>>({});
   const [previewConfig, setPreviewConfig] = useState<import("@/lib/types/dashboard-config").PageConfig | null>(null);
   const isPreview = previewConfig !== null;
   const isChartVisible = useChartVisibility("/portal/ohc/referral", previewConfig);
@@ -1077,11 +1078,14 @@ export default function ReferralAnalyticsPage() {
             const medalRing = idx === 0 ? "#F59E0B" : idx === 1 ? "#9CA3AF" : idx === 2 ? "#F97316" : "transparent";
             const medalText = idx === 0 ? "#92400E" : idx === 1 ? "#374151" : idx === 2 ? "#9A3412" : T.textMuted;
             const zebra = idx % 2 === 1 ? "#FBFCFD" : T.white;
+            const hasBreakdown = (s.byReferrer?.length ?? 0) > 0;
+            const isOpen = !!openSpecs[s.specialty];
             return (
+              <div key={s.specialty}>
               <div
-                key={s.specialty}
-                className="group grid items-center py-3.5 px-5 transition-all duration-150 hover:bg-[#F4F6FB] relative"
-                style={{ gridTemplateColumns: "0.5fr 1.7fr 1.3fr 1.6fr", borderBottom: `1px solid ${T.borderLight}`, minWidth: 520, backgroundColor: zebra }}
+                onClick={() => hasBreakdown && setOpenSpecs((o) => ({ ...o, [s.specialty]: !o[s.specialty] }))}
+                className={`group grid items-center py-3.5 px-5 transition-all duration-150 hover:bg-[#F4F6FB] relative ${hasBreakdown ? "cursor-pointer" : ""}`}
+                style={{ gridTemplateColumns: "0.5fr 1.7fr 1.3fr 1.6fr", minWidth: 520, backgroundColor: zebra }}
               >
                 {/* Hover left-edge accent */}
                 <span className="absolute left-0 top-0 bottom-0 w-[3px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: "#4f46e5" }} />
@@ -1099,7 +1103,10 @@ export default function ReferralAnalyticsPage() {
                   </span>
                 </div>
                 {/* Specialty name */}
-                <div className="pr-3">
+                <div className="pr-3 flex items-center gap-1.5">
+                  {hasBreakdown && (
+                    <ChevronDown size={13} className="shrink-0" style={{ color: T.textMuted, transform: isOpen ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
+                  )}
                   <p className="text-[13.5px] font-semibold leading-tight" style={{ color: T.textPrimary }}>{s.specialty}</p>
                 </div>
                 {/* Referral volume — number + gradient bar */}
@@ -1127,6 +1134,31 @@ export default function ReferralAnalyticsPage() {
                     {s.conversionRate}%
                   </span>
                 </div>
+              </div>
+
+              {/* Per-referrer breakdown — referrals + conversion rate by who referred */}
+              {hasBreakdown && isOpen && (
+                <div className="px-5 pb-3 pt-1" style={{ backgroundColor: zebra, minWidth: 520 }}>
+                  <div className="ml-9 rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderLight}`, backgroundColor: "#FAFBFD" }}>
+                    <div className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: "1.7fr 1fr 1.1fr", borderBottom: `1px solid ${T.borderLight}` }}>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Referred by</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Referrals</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Conversion</span>
+                    </div>
+                    {s.byReferrer.map((b: any) => {
+                      const rc = b.rate >= 70 ? T.teal : b.rate > 0 ? T.amber : T.coral;
+                      const rbg = b.rate >= 70 ? "#E6F9F5" : b.rate > 0 ? "#FFF6E6" : "#FDE8E8";
+                      return (
+                        <div key={b.from} className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: "1.7fr 1fr 1.1fr", borderTop: `1px solid ${T.borderLight}` }} title={`${formatNum(b.conversions)} of ${formatNum(b.referrals)} converted`}>
+                          <span className="text-[12px] truncate pr-2" style={{ color: T.textSecondary }}>{b.from}</span>
+                          <span className="text-[12px] font-semibold tabular-nums text-right" style={{ color: T.textPrimary }}>{formatNum(b.referrals)}</span>
+                          <span className="justify-self-end inline-flex items-center justify-center min-w-[44px] h-[20px] px-2 rounded-full text-[11px] font-bold tabular-nums" style={{ backgroundColor: rbg, color: rc }}>{b.rate}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               </div>
             );
           })}

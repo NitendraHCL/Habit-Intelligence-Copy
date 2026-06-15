@@ -119,6 +119,12 @@ const TENANT_SPECIALTY_WHITELIST: Record<string, string[]> = {};
 const REFERRALS_SUM = `COUNT(*)::bigint`;
 const CONVERTED_SUM = `COUNT(*) FILTER (WHERE r.consumption = 'Consumed')::bigint`;
 
+// Specialty normalization — "Dietary" and "Dietetics" are the same specialty;
+// fold "Dietary" into "Dietetics" on both columns wherever specialties are
+// selected/grouped, so they combine across every chart.
+const NORM_FROM = `(CASE WHEN r.speciality_referred_from = 'Dietary' THEN 'Dietetics' ELSE r.speciality_referred_from END)`;
+const NORM_TO = `(CASE WHEN r.speciality_referred_to = 'Dietary' THEN 'Dietetics' ELSE r.speciality_referred_to END)`;
+
 const AGE_GROUP_CASE = `CASE
   WHEN r.age < 20 THEN '<20'
   WHEN r.age BETWEEN 20 AND 35 THEN '20-35'
@@ -255,7 +261,7 @@ async function handler(request: NextRequest) {
       ),
       safeQuery(
         () => dwQuery<{ v: string }>(
-          `SELECT DISTINCT r.speciality_referred_to AS v
+          `SELECT DISTINCT ${NORM_TO} AS v
            FROM ${BASE_TABLE} r
            WHERE r.cug_code_mapped = $1
              AND r.speciality_referred_to IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
@@ -308,8 +314,8 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ from_spec: string; to_spec: string; cnt: string }>(
           `SELECT
-             r.speciality_referred_from                      AS from_spec,
-             r.speciality_referred_to                        AS to_spec,
+             ${NORM_FROM}                                    AS from_spec,
+             ${NORM_TO}                                      AS to_spec,
              ${REFERRALS_SUM}                                AS cnt
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
@@ -327,14 +333,14 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ specialty: string; referrals: string; conversions: string }>(
           `SELECT
-             r.speciality_referred_to AS specialty,
-             ${REFERRALS_SUM}         AS referrals,
-             ${CONVERTED_SUM}         AS conversions
+             ${NORM_TO}       AS specialty,
+             ${REFERRALS_SUM} AS referrals,
+             ${CONVERTED_SUM} AS conversions
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
              AND r.speciality_referred_to IS NOT NULL
              AND TRIM(r.speciality_referred_to) <> ''
-           GROUP BY r.speciality_referred_to
+           GROUP BY ${NORM_TO}
            ORDER BY referrals DESC`,
           q.params
         ),
@@ -344,10 +350,10 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ to_spec: string; from_spec: string; referrals: string; conversions: string }>(
           `SELECT
-             r.speciality_referred_to   AS to_spec,
-             r.speciality_referred_from AS from_spec,
-             ${REFERRALS_SUM}           AS referrals,
-             ${CONVERTED_SUM}           AS conversions
+             ${NORM_TO}       AS to_spec,
+             ${NORM_FROM}     AS from_spec,
+             ${REFERRALS_SUM} AS referrals,
+             ${CONVERTED_SUM} AS conversions
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
              AND r.speciality_referred_to   IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
@@ -376,7 +382,7 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ location: string; specialty: string; cnt: string }>(
           `SELECT
              r.referral_facility        AS location,
-             r.speciality_referred_to  AS specialty,
+             ${NORM_TO}                AS specialty,
              ${REFERRALS_SUM}          AS cnt
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
@@ -384,7 +390,7 @@ async function handler(request: NextRequest) {
              AND TRIM(r.referral_facility) <> ''
              AND r.speciality_referred_to IS NOT NULL
              AND TRIM(r.speciality_referred_to) <> ''
-           GROUP BY r.referral_facility, r.speciality_referred_to`,
+           GROUP BY r.referral_facility, ${NORM_TO}`,
           q.params
         ),
         "locSpec"

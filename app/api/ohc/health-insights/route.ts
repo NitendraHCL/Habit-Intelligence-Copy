@@ -9,15 +9,14 @@ import { withProvenance } from "@/lib/audit/with-provenance";
  * OHC Health Insights API — sourced from aggregated_table.agg_diagnosis
  * (the freshly prepared chronic-aware fact table).
  *
- * Columns we use: cug_code_mapped, last_diagnosis_date,
- * first_diagnosis_date, facility_mapping, uhid, age, patient_gender,
- * status, disease, icd_code, icd_description, total_diagnosis_records,
- * encounter_count.
+ * Columns we use: cug_code_mapped, g_creation_time (date filter),
+ * facility_mapping, uhid, age, patient_gender, status, disease, icd_code,
+ * icd_description.
  *
- * Row grain: ONE row per (uhid × icd_code). total_diagnosis_records is
- * the visit count for that combo, encounter_count is the distinct
- * encounter count. So "total consults" must come from
- * SUM(total_diagnosis_records), NOT COUNT(*).
+ * Row grain: ONE row per diagnosis record (per encounter). So "count" /
+ * "visits" = COUNT(*) and "patients" = COUNT(DISTINCT uhid). (The previous
+ * schema's last_diagnosis_date / total_diagnosis_records columns are gone —
+ * date is now g_creation_time and counts are plain COUNT(*).)
  *
  * Key column semantics (per product):
  *   uhid               — unique patient identifier
@@ -79,7 +78,7 @@ END`;
  * (DIAG_TABLE), one row per (uhid × icd_code), filtered to the request's
  * cug_code_mapped plus optional date / year / location / gender / age /
  * condition / conditionType filters. "visits/count" is always
- * SUM(total_diagnosis_records); "patients" is COUNT(DISTINCT uhid). The
+ * COUNT(*); "patients" is COUNT(DISTINCT uhid). The
  * chronic flag is LOWER(status) IN ('chronic','acute or chronic'); the
  * disease bucket ("category") is COALESCE(NULLIF(TRIM(disease),''),'Other').
  * ──────────────────────────────────────────────────────────────────── */
@@ -89,31 +88,31 @@ const PROVENANCE: DashboardProvenance = {
     sources: [DIAG_TABLE],
     logic:
       "Grouped by disease bucket (COALESCE(NULLIF(TRIM(disease),''),'Other')) over rows with a non-blank icd_description. " +
-      "count = SUM(total_diagnosis_records); patients = COUNT(DISTINCT uhid); each row's percentage is its share of the total " +
+      "count = COUNT(*); patients = COUNT(DISTINCT uhid); each row's percentage is its share of the total " +
       "count. Backs both the `categories` list and `categoryTreemap`.",
-    sql: "SELECT disease_bucket, SUM(total_diagnosis_records), COUNT(DISTINCT uhid) GROUP BY 1 ORDER BY 2 DESC.",
+    sql: "SELECT disease_bucket, COUNT(*), COUNT(DISTINCT uhid) GROUP BY 1 ORDER BY 2 DESC.",
   },
   conditionBreakdown: {
     chart: "Condition Breakdown (top conditions)",
     sources: [DIAG_TABLE],
     logic:
-      "Top 20 icd_descriptions by SUM(total_diagnosis_records), with COUNT(DISTINCT uhid) as patients. When a disease " +
+      "Top 20 icd_descriptions by COUNT(*), with COUNT(DISTINCT uhid) as patients. When a disease " +
       "(category) is selected it restricts to that disease bucket. Non-blank icd_description only.",
-    sql: "GROUP BY icd_description [AND disease_bucket = :category] ORDER BY SUM(total_diagnosis_records) DESC LIMIT 20.",
+    sql: "GROUP BY icd_description [AND disease_bucket = :category] ORDER BY COUNT(*) DESC LIMIT 20.",
   },
   conditionsByCategory: {
     chart: "Condition Share Distribution — expandable subcategory rows",
     sources: [DIAG_TABLE],
     logic:
-      "Every (disease bucket × icd_description) combo with count = SUM(total_diagnosis_records) and patients = " +
+      "Every (disease bucket × icd_description) combo with count = COUNT(*) and patients = " +
       "COUNT(DISTINCT uhid). Keyed by disease bucket; each value is its conditions sorted by count desc.",
-    sql: "GROUP BY disease_bucket, icd_description ORDER BY disease_bucket, SUM(total_diagnosis_records) DESC.",
+    sql: "GROUP BY disease_bucket, icd_description ORDER BY disease_bucket, COUNT(*) DESC.",
   },
   chronicAcute: {
     chart: "Chronic vs Acute split",
     sources: [DIAG_TABLE],
     logic:
-      "Pre-aggregated per uhid: chronic_rows / acute_rows = SUM(total_diagnosis_records) FILTERed by the chronic predicate " +
+      "Pre-aggregated per uhid: chronic_rows / acute_rows = COUNT(*) FILTERed by the chronic predicate " +
       "(LOWER(status) IN ('chronic','acute or chronic')) and its negation; has_chronic/has_acute = BOOL_OR of the same. " +
       "chronicCount/acuteCount = SUM of those row sums; chronicPatients/acutePatients = COUNT of uhids with the flag.",
     sql: "WITH per_uhid AS (... GROUP BY uhid) SELECT SUM(chronic_rows), COUNT(*) FILTER (WHERE has_chronic), ...",
@@ -125,7 +124,7 @@ const PROVENANCE: DashboardProvenance = {
       "Chronic-only (CHRONIC predicate enforced) single-pass CTE keyed by disease bucket — or by icd_description when a " +
       "category/condition is selected. Three UNION-ALL aggregates tagged dim='age'|'gender'|'location': age banded " +
       "(<20/20-35/36-40/41-60/61+), gender normalised (Male/Female/Others), location = facility_mapping ('Unknown' if blank). " +
-      "count = SUM(total_diagnosis_records) per (key × bucket). Split client-side into demoAge / demoGender / demoLocation.",
+      "count = COUNT(*) per (key × bucket). Split client-side into demoAge / demoGender / demoLocation.",
     sql: "WITH base AS (... WHERE CHRONIC) SELECT 'age'|'gender'|'location' dim, key, bucket, SUM(visits) GROUP BY 1,2,3 (UNION ALL x3).",
   },
   coOccurrenceVenn: {
@@ -149,34 +148,34 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Condition Trends (monthly + derived yearly)",
     sources: [DIAG_TABLE],
     logic:
-      "Chronic-only monthly series: GROUP BY date_trunc('month', last_diagnosis_date), count = SUM(total_diagnosis_records), " +
+      "Chronic-only monthly series: GROUP BY date_trunc('month', g_creation_time), count = COUNT(*), " +
       "uniquePatients = COUNT(DISTINCT uhid). Optionally restricted to a selected condition or disease bucket. " +
       "conditionTrendsYearly is rolled up in JS from these monthly buckets (uniquePatients summed across months, an over-count).",
-    sql: "SELECT to_char(month) period, SUM(total_diagnosis_records), COUNT(DISTINCT uhid) WHERE CHRONIC GROUP BY 1 ORDER BY 1.",
+    sql: "SELECT to_char(month) period, COUNT(*), COUNT(DISTINCT uhid) WHERE CHRONIC GROUP BY 1 ORDER BY 1.",
   },
   seasonalData: {
     chart: "Seasonal Split (Mar–Aug vs Sep–Feb)",
     sources: [DIAG_TABLE],
     logic:
-      "Single row: seasonalCount/Patients = SUM(total_diagnosis_records) / COUNT(DISTINCT uhid) FILTERed to months 3–8; " +
-      "nonSeasonal* = the complement (months not in 3–8). Applies the standard request filters; rows need a last_diagnosis_date.",
+      "Single row: seasonalCount/Patients = COUNT(*) / COUNT(DISTINCT uhid) FILTERed to months 3–8; " +
+      "nonSeasonal* = the complement (months not in 3–8). Applies the standard request filters; rows need a g_creation_time.",
     sql: "SELECT SUM(...) FILTER (WHERE MONTH BETWEEN 3 AND 8), COUNT(DISTINCT uhid) FILTER (...), and NOT BETWEEN variants.",
   },
   seasonalTrends: {
     chart: "Monthly Condition Patterns (calendar grid)",
     sources: [DIAG_TABLE],
     logic:
-      "Chronic-only per-disease-bucket monthly series: GROUP BY disease bucket, date_trunc('month', last_diagnosis_date), " +
-      "count = SUM(total_diagnosis_records). Keyed by disease bucket; the page picks the top 3 buckets per month.",
-    sql: "SELECT disease_bucket, to_char(month) period, SUM(total_diagnosis_records) WHERE CHRONIC GROUP BY 1,2 ORDER BY 1,2.",
+      "Chronic-only per-disease-bucket monthly series: GROUP BY disease bucket, date_trunc('month', g_creation_time), " +
+      "count = COUNT(*). Keyed by disease bucket; the page picks the top 3 buckets per month.",
+    sql: "SELECT disease_bucket, to_char(month) period, COUNT(*) WHERE CHRONIC GROUP BY 1,2 ORDER BY 1,2.",
   },
   years: {
     chart: "Year filter options",
     sources: [DIAG_TABLE],
     logic:
-      "EXTRACT(YEAR) from MIN and MAX last_diagnosis_date for the cug; the inclusive integer range between them is generated " +
+      "EXTRACT(YEAR) from MIN and MAX g_creation_time for the cug; the inclusive integer range between them is generated " +
       "client-side. Uses only the cug_code_mapped filter (ignores the other request filters).",
-    sql: "SELECT EXTRACT(YEAR FROM MIN(last_diagnosis_date)), EXTRACT(YEAR FROM MAX(last_diagnosis_date)) WHERE cug_code_mapped = $1.",
+    sql: "SELECT EXTRACT(YEAR FROM MIN(g_creation_time)), EXTRACT(YEAR FROM MAX(g_creation_time)) WHERE cug_code_mapped = $1.",
   },
   facilities: {
     chart: "Facility / location filter options",
@@ -203,15 +202,15 @@ function buildWhere(searchParams: URLSearchParams, cugCode: string) {
   let idx = 2;
 
   if (year && /^\d{4}$/.test(year)) {
-    where.push(`EXTRACT(YEAR FROM d.last_diagnosis_date) = ${Number(year)}`);
+    where.push(`EXTRACT(YEAR FROM d.g_creation_time) = ${Number(year)}`);
   }
   if (dateFrom) {
-    where.push(`d.last_diagnosis_date >= $${idx}::timestamp`);
+    where.push(`d.g_creation_time >= $${idx}::timestamp`);
     params.push(dateFrom);
     idx++;
   }
   if (dateTo) {
-    where.push(`d.last_diagnosis_date <= ($${idx}::date + interval '1 day')::timestamp`);
+    where.push(`d.g_creation_time <= ($${idx}::date + interval '1 day')::timestamp`);
     params.push(dateTo);
     idx++;
   }
@@ -322,7 +321,7 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ category: string; count: string; patients: string }>(
           `SELECT
              ${CATEGORY_CASE} AS category,
-             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
+             COALESCE(COUNT(*), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -338,7 +337,7 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ name: string; count: string; patients: string }>(
           `SELECT
              d.icd_description AS name,
-             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
+             COALESCE(COUNT(*), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -360,7 +359,7 @@ async function handler(request: NextRequest) {
           `SELECT
              ${CATEGORY_CASE} AS category,
              d.icd_description  AS name,
-             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
+             COALESCE(COUNT(*), 0)::bigint AS count,
              COUNT(DISTINCT d.uhid)::bigint AS patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where} AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -380,8 +379,8 @@ async function handler(request: NextRequest) {
           `WITH per_uhid AS (
             SELECT
               d.uhid,
-              COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE ${CHRONIC_CASE}), 0)::bigint AS chronic_rows,
-              COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE NOT ${CHRONIC_CASE}), 0)::bigint AS acute_rows,
+              COALESCE(COUNT(*) FILTER (WHERE ${CHRONIC_CASE}), 0)::bigint AS chronic_rows,
+              COALESCE(COUNT(*) FILTER (WHERE NOT ${CHRONIC_CASE}), 0)::bigint AS acute_rows,
               BOOL_OR(${CHRONIC_CASE}) AS has_chronic,
               BOOL_OR(NOT ${CHRONIC_CASE}) AS has_acute
             FROM ${DIAG_TABLE} d
@@ -413,7 +412,7 @@ async function handler(request: NextRequest) {
               ${GENDER_NORM} AS gender_bucket,
               COALESCE(NULLIF(TRIM(d.facility_mapping), ''), 'Unknown') AS loc_bucket,
               d.age,
-              d.total_diagnosis_records AS visits
+              1 AS visits
             FROM ${DIAG_TABLE} d
             WHERE ${q.where}
               AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
@@ -518,16 +517,16 @@ async function handler(request: NextRequest) {
         ),
         "diseaseCombinations"
       ),
-      // 7) years dropdown — derived from MIN/MAX(last_diagnosis_date) for
+      // 7) years dropdown — derived from MIN/MAX(g_creation_time) for
       //    the cug. MIN/MAX is much cheaper than `SELECT DISTINCT EXTRACT(YEAR ...)`
       //    on the agg_diagnosis fact table.
       safeQuery(
         () => dwQuery<{ min_y: number | null; max_y: number | null }>(
           `SELECT
-             EXTRACT(YEAR FROM MIN(d.last_diagnosis_date))::int AS min_y,
-             EXTRACT(YEAR FROM MAX(d.last_diagnosis_date))::int AS max_y
+             EXTRACT(YEAR FROM MIN(d.g_creation_time))::int AS min_y,
+             EXTRACT(YEAR FROM MAX(d.g_creation_time))::int AS max_y
            FROM ${DIAG_TABLE} d
-           WHERE d.cug_code_mapped = $1 AND d.last_diagnosis_date IS NOT NULL`,
+           WHERE d.cug_code_mapped = $1 AND d.g_creation_time IS NOT NULL`,
           [cugCode],
           HEAVY_OPTS
         ),
@@ -552,8 +551,8 @@ async function handler(request: NextRequest) {
       // these monthly buckets, so a single AND keeps both consistent).
       safeQuery(
         () => dwQuery<{ period: string; count: string; unique_patients: string }>(
-          `SELECT to_char(date_trunc('month', d.last_diagnosis_date), 'YYYY-MM') AS period,
-                  COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count,
+          `SELECT to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
+                  COALESCE(COUNT(*), 0)::bigint AS count,
                   COUNT(DISTINCT d.uhid)::bigint AS unique_patients
            FROM ${DIAG_TABLE} d
            WHERE ${q.where}
@@ -574,12 +573,12 @@ async function handler(request: NextRequest) {
       safeQuery(
         () => dwQuery<{ seasonal_count: string; seasonal_patients: string; non_seasonal_count: string; non_seasonal_patients: string }>(
           `SELECT
-             COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) BETWEEN 3 AND 8), 0)::bigint AS seasonal_count,
-             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) BETWEEN 3 AND 8)::bigint AS seasonal_patients,
-             COALESCE(SUM(d.total_diagnosis_records) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) NOT BETWEEN 3 AND 8), 0)::bigint AS non_seasonal_count,
-             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.last_diagnosis_date) NOT BETWEEN 3 AND 8)::bigint AS non_seasonal_patients
+             COALESCE(COUNT(*) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) BETWEEN 3 AND 8), 0)::bigint AS seasonal_count,
+             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) BETWEEN 3 AND 8)::bigint AS seasonal_patients,
+             COALESCE(COUNT(*) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) NOT BETWEEN 3 AND 8), 0)::bigint AS non_seasonal_count,
+             COUNT(DISTINCT d.uhid) FILTER (WHERE EXTRACT(MONTH FROM d.g_creation_time) NOT BETWEEN 3 AND 8)::bigint AS non_seasonal_patients
            FROM ${DIAG_TABLE} d
-           WHERE ${q.where} AND d.last_diagnosis_date IS NOT NULL`,
+           WHERE ${q.where} AND d.g_creation_time IS NOT NULL`,
           q.params,
           HEAVY_OPTS
         ),
@@ -594,13 +593,13 @@ async function handler(request: NextRequest) {
         () => dwQuery<{ name: string; period: string; count: string }>(
           `SELECT
              ${CATEGORY_CASE} AS name,
-             to_char(date_trunc('month', d.last_diagnosis_date), 'YYYY-MM') AS period,
-             COALESCE(SUM(d.total_diagnosis_records), 0)::bigint AS count
+             to_char(date_trunc('month', d.g_creation_time), 'YYYY-MM') AS period,
+             COALESCE(COUNT(*), 0)::bigint AS count
            FROM ${DIAG_TABLE} d
            WHERE ${q.where}
              AND d.icd_description IS NOT NULL AND TRIM(d.icd_description) <> ''
              AND ${CHRONIC_CASE}
-             AND d.last_diagnosis_date IS NOT NULL
+             AND d.g_creation_time IS NOT NULL
            GROUP BY 1, 2
            ORDER BY 1, 2`,
           q.params,

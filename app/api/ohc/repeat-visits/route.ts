@@ -79,9 +79,9 @@ const PROVENANCE: DashboardProvenance = {
     sources: [KPI_TABLE, DIAG_TABLE],
     logic:
       "agg_diagnosis rows for repeat-patient UHIDs, chronic only (LOWER(status) IN ('chronic','acute or chronic')), " +
-      "grouped by icd_description. patients = COUNT(DISTINCT uhid); occurrences = SUM(total_diagnosis_records). " +
+      "grouped by icd_description. patients = COUNT(DISTINCT uhid); occurrences = COUNT(*). " +
       "Keeps conditions with ≥2 total records, top 40 by patient count.",
-    sql: "GROUP BY d.icd_description HAVING SUM(d.total_diagnosis_records) >= 2 ORDER BY patients DESC LIMIT 40.",
+    sql: "GROUP BY d.icd_description HAVING COUNT(*) >= 2 ORDER BY patients DESC LIMIT 40.",
   },
   demographics: {
     chart: "Demographics (Age Groups · Gender Split · Age×Gender Pyramid · Location Distribution)",
@@ -185,7 +185,7 @@ function readFilters(searchParams: URLSearchParams): FilterShape {
  * Build the WHERE clause + params array for a given source table.
  * `alias` is the table alias (e.g. "a" for agg_kpi, "d" for agg_diagnosis,
  * "v" for vitals). `dateColumn` is the date column on that table to
- * filter by (consult_date / last_diagnosis_date / slotstarttime).
+ * filter by (consult_date / g_creation_time / slotstarttime).
  *
  * Returns a closure that gives the next placeholder index — callers can
  * tack on more conditions later without colliding.
@@ -265,7 +265,7 @@ async function handler(request: NextRequest) {
     // agg_diagnosis carries age but not an age_group column; we apply the
     // same banding via inline CASE.
     const AGE_GROUP_CASE_DIAG = AGE_GROUP_CASE_KPI.replace(/a\.age/g, "d.age");
-    const diagWhere = buildWhere("d", "last_diagnosis_date", cugCode, f, {
+    const diagWhere = buildWhere("d", "g_creation_time", cugCode, f, {
       ageGroupCase: AGE_GROUP_CASE_DIAG,
     });
     // vitals carries age too; same banding.
@@ -457,7 +457,7 @@ async function handler(request: NextRequest) {
           SELECT
             d.icd_description AS condition,
             COUNT(DISTINCT d.uhid)::bigint AS patients,
-            SUM(d.total_diagnosis_records)::bigint AS total_occurrences
+            COUNT(*)::bigint AS total_occurrences
           FROM ${DIAG_TABLE} d
           INNER JOIN repeat_uhids r ON r.uhid = d.uhid
           WHERE ${diagWhere.where}
@@ -465,7 +465,7 @@ async function handler(request: NextRequest) {
             AND d.icd_description IS NOT NULL
             AND TRIM(d.icd_description) <> ''
           GROUP BY d.icd_description
-          HAVING SUM(d.total_diagnosis_records) >= 2
+          HAVING COUNT(*) >= 2
           ORDER BY patients DESC
           LIMIT 40
           `,

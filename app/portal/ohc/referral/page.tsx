@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDateRange } from "@/lib/date-range-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import { Button } from "@/components/ui/button";
@@ -318,10 +319,8 @@ export default function ReferralAnalyticsPage() {
   });
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(2024, 0, 1),
-    to: new Date(2026, 2, 31),
-  });
+  const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
+  useEffect(() => { setDateRange(appliedDateRange); }, [appliedDateRange]);
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[],
     genders: [] as string[],

@@ -5,6 +5,7 @@ import { interpolateHex } from "@/lib/dashboard/render-helpers";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDateRange } from "@/lib/date-range-context";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
@@ -342,9 +343,12 @@ export default function RepeatVisitsPage() {
   // so the refresh button + filters behave the same way on both pages.
   // Default `from` is Jan 1, 2024 so the chronic cohort lines up with
   // Health Insights, which uses the same start date.
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>(() => {
-    return { from: new Date(2024, 0, 1), to: new Date() };
-  });
+  // Applied range is the shared, persisted global date range.
+  const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
+  // Draft range edited by the date inputs; committed to appliedDateRange on Apply.
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(appliedDateRange);
+  // Keep the draft in sync if the global range changes (e.g. from another page).
+  useEffect(() => { setDateRange(appliedDateRange); }, [appliedDateRange]);
   const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
   const [appliedGenders, setAppliedGenders] = useState<string[]>([]);
   const [appliedAgeGroups, setAppliedAgeGroups] = useState<string[]>([]);
@@ -625,15 +629,15 @@ export default function RepeatVisitsPage() {
               <CalendarDays size={13} style={{ color: T.textMuted }} />
               <input
                 type="date"
-                value={format(appliedDateRange.from, "yyyy-MM-dd")}
-                max={format(appliedDateRange.to, "yyyy-MM-dd")}
+                value={format(dateRange.from, "yyyy-MM-dd")}
+                max={format(dateRange.to, "yyyy-MM-dd")}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) return;
                   const d = new Date(v + "T00:00:00");
                   if (isNaN(d.getTime())) return;
-                  const to = d > appliedDateRange.to ? d : appliedDateRange.to;
-                  setAppliedDateRange({ from: d, to });
+                  const to = d > dateRange.to ? d : dateRange.to;
+                  setDateRange({ from: d, to });
                 }}
                 aria-label="Start date"
                 className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
@@ -644,21 +648,30 @@ export default function RepeatVisitsPage() {
             <div className="inline-flex items-center h-9 px-2 rounded-lg border bg-white" style={{ borderColor: T.border }}>
               <input
                 type="date"
-                value={format(appliedDateRange.to, "yyyy-MM-dd")}
-                min={format(appliedDateRange.from, "yyyy-MM-dd")}
+                value={format(dateRange.to, "yyyy-MM-dd")}
+                min={format(dateRange.from, "yyyy-MM-dd")}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) return;
                   const d = new Date(v + "T00:00:00");
                   if (isNaN(d.getTime())) return;
-                  const from = d < appliedDateRange.from ? d : appliedDateRange.from;
-                  setAppliedDateRange({ from, to: d });
+                  const from = d < dateRange.from ? d : dateRange.from;
+                  setDateRange({ from, to: d });
                 }}
                 aria-label="End date"
                 className="h-7 w-[112px] bg-transparent text-[12.5px] font-medium outline-none border-none p-0"
                 style={{ color: T.textPrimary }}
               />
             </div>
+            {(dateRange.from.getTime() !== appliedDateRange.from.getTime() || dateRange.to.getTime() !== appliedDateRange.to.getTime()) && (
+              <button
+                onClick={() => setAppliedDateRange({ ...dateRange })}
+                className="h-9 px-3.5 rounded-lg text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%)" }}
+              >
+                Apply
+              </button>
+            )}
           </div>
           <FilterMultiSelect label="Location" options={filterOptions.locations} selected={appliedLocations} onChange={setAppliedLocations} />
           <FilterMultiSelect label="Gender" options={filterOptions.genders} selected={appliedGenders} onChange={setAppliedGenders} />

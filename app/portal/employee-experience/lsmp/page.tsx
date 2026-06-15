@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 // dynamic import removed — no longer using echarts-for-react
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDateRange } from "@/lib/date-range-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import DataAuditSection from "@/components/audit/DataAuditSection";
@@ -292,10 +293,8 @@ export default function LSMPPage() {
   });
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(2024, 0, 1),
-    to: new Date(2026, 2, 31),
-  });
+  const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
+  useEffect(() => { setDateRange(appliedDateRange); }, [appliedDateRange]);
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[],
     genders: [] as string[],

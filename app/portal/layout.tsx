@@ -3,6 +3,7 @@
 import { AuthProvider } from "@/lib/contexts/auth-context";
 import { ConfigProvider } from "@/lib/contexts/config-context";
 import { FilterProvider } from "@/lib/filter-context";
+import { DateRangeProvider } from "@/lib/date-range-context";
 import { AIPanelProvider } from "@/lib/ai-panel-context";
 import { Sidebar } from "@/components/layout/Sidebar";
 import AskHabitAI from "@/components/ai/AskHabitAI";
@@ -22,6 +23,7 @@ export default function PortalLayout({
       <IdleTimer />
       <ConfigProvider>
       <FilterProvider>
+        <DateRangeProvider>
         <AIPanelProvider>
           <WalkthroughProvider>
             <div className="flex h-screen overflow-hidden">
@@ -33,6 +35,7 @@ export default function PortalLayout({
             <WalkthroughTrigger />
           </WalkthroughProvider>
         </AIPanelProvider>
+        </DateRangeProvider>
       </FilterProvider>
       </ConfigProvider>
     </AuthProvider>

@@ -20,6 +20,7 @@ import { ChartComments } from "@/components/ui/chart-comments";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDateRange } from "@/lib/date-range-context";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
 import {
@@ -456,10 +457,8 @@ export default function OHCUtilizationPage() {
   });
 
   // "applied" state — what's actually sent to the API (only updates on Apply click)
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>(() => {
-    const today = new Date();
-    return { from: new Date(today.getFullYear() - 1, 0, 1), to: today };
-  });
+  const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
+  useEffect(() => { setDateRange(appliedDateRange); }, [appliedDateRange]);
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[],
     genders: [] as string[],
@@ -484,14 +483,15 @@ export default function OHCUtilizationPage() {
       const newTo = toTs < dateMinTs ? floor : prev.to;
       return { from: floor, to: newTo };
     });
-    setAppliedDateRange((prev) => {
-      const fromTs = prev.from.getTime();
-      const toTs = prev.to.getTime();
-      if (fromTs >= dateMinTs && toTs >= dateMinTs) return prev;
-      const floor = new Date(dateMinTs);
-      const newTo = toTs < dateMinTs ? floor : prev.to;
-      return { from: floor, to: newTo };
-    });
+    {
+      const fromTs = appliedDateRange.from.getTime();
+      const toTs = appliedDateRange.to.getTime();
+      if (!(fromTs >= dateMinTs && toTs >= dateMinTs)) {
+        const floor = new Date(dateMinTs);
+        const newTo = toTs < dateMinTs ? floor : appliedDateRange.to;
+        setAppliedDateRange({ from: floor, to: newTo });
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMinTs]);
 

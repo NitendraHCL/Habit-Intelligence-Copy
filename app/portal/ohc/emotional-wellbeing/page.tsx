@@ -4,6 +4,7 @@ import { T } from "@/lib/ui/theme";
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useDateRange } from "@/lib/date-range-context";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { usePageAccess } from "@/lib/hooks/usePageAccess";
 import { useChartVisibility } from "@/lib/hooks/useChartVisibility";
@@ -383,9 +384,8 @@ export default function EmotionalWellbeingPage() {
   });
 
   // "applied" state — what's actually used for aggregation (only updates on Apply click)
-  const [appliedDateRange, setAppliedDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(2024, 0, 1), to: new Date(2026, 2, 31),
-  });
+  const { dateRange: appliedDateRange, setDateRange: setAppliedDateRange } = useDateRange();
+  useEffect(() => { setDateRange(appliedDateRange); }, [appliedDateRange]);
   const [appliedFilters, setAppliedFilters] = useState({
     ageGroups: [] as string[], genders: [] as string[], locations: [] as string[], relations: [] as string[],
   });

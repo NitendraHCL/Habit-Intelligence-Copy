@@ -1137,21 +1137,37 @@ export default function ReferralAnalyticsPage() {
 
               {/* Per-referrer breakdown — referrals + conversion rate by who referred */}
               {hasBreakdown && isOpen && (
-                <div className="px-5 pb-3 pt-1" style={{ backgroundColor: zebra, minWidth: 520 }}>
-                  <div className="ml-9 rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderLight}`, backgroundColor: "#FAFBFD" }}>
-                    <div className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: "1.7fr 1fr 1.1fr", borderBottom: `1px solid ${T.borderLight}` }}>
+                <div className="px-5 pb-3 pt-1 overflow-x-auto" style={{ backgroundColor: zebra, minWidth: 520 }}>
+                  <div className="ml-9 rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderLight}`, backgroundColor: "#FAFBFD", minWidth: 640 }}>
+                    <div className="grid items-center px-3 py-1.5 gap-2" style={{ gridTemplateColumns: "1.6fr 0.8fr 1fr 0.9fr 0.9fr 0.9fr", borderBottom: `1px solid ${T.borderLight}` }}>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em]" style={{ color: T.textMuted }}>Referred by</span>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Referrals</span>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Conversion</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>≤90d</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>90–180d</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>180+d</span>
                     </div>
                     {s.byReferrer.map((b: any) => {
                       const rc = b.rate >= 70 ? T.teal : b.rate > 0 ? T.amber : T.coral;
                       const rbg = b.rate >= 70 ? "#E6F9F5" : b.rate > 0 ? "#FFF6E6" : "#FDE8E8";
+                      const conv = Number(b.conversions) || 0;
+                      const pctOfConv = (n: number) => (conv > 0 ? Math.round((n / conv) * 100) : 0);
+                      const bucket = (n: number) => (
+                        <span className="text-[11px] tabular-nums text-right" style={{ color: T.textPrimary }}>
+                          {formatNum(n)} <span style={{ color: T.textMuted }}>({pctOfConv(n)}%)</span>
+                        </span>
+                      );
                       return (
-                        <div key={b.from} className="grid items-center px-3 py-1.5" style={{ gridTemplateColumns: "1.7fr 1fr 1.1fr", borderTop: `1px solid ${T.borderLight}` }} title={`${formatNum(b.conversions)} of ${formatNum(b.referrals)} converted`}>
-                          <span className="text-[12px] truncate pr-2" style={{ color: T.textSecondary }}>{b.from}</span>
+                        <div key={b.from} className="grid items-center px-3 py-1.5 gap-2" style={{ gridTemplateColumns: "1.6fr 0.8fr 1fr 0.9fr 0.9fr 0.9fr", borderTop: `1px solid ${T.borderLight}` }}>
+                          <span className="text-[12px] truncate pr-1" style={{ color: T.textSecondary }} title={b.from}>{b.from}</span>
                           <span className="text-[12px] font-semibold tabular-nums text-right" style={{ color: T.textPrimary }}>{formatNum(b.referrals)}</span>
-                          <span className="justify-self-end inline-flex items-center justify-center min-w-[44px] h-[20px] px-2 rounded-full text-[11px] font-bold tabular-nums" style={{ backgroundColor: rbg, color: rc }}>{b.rate}%</span>
+                          <span className="justify-self-end inline-flex items-center gap-1 text-[11px] font-bold tabular-nums">
+                            <span style={{ color: T.textPrimary }}>{formatNum(conv)}</span>
+                            <span className="inline-flex items-center justify-center min-w-[40px] h-[20px] px-1.5 rounded-full" style={{ backgroundColor: rbg, color: rc }}>{b.rate}%</span>
+                          </span>
+                          {bucket(Number(b.within90) || 0)}
+                          {bucket(Number(b.mid) || 0)}
+                          {bucket(Number(b.late) || 0)}
                         </div>
                       );
                     })}

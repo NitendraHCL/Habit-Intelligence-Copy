@@ -348,12 +348,15 @@ async function handler(request: NextRequest) {
       ),
       // Per receiving-specialty × referring-specialty: referrals + conversions.
       safeQuery(
-        () => dwQuery<{ to_spec: string; from_spec: string; referrals: string; conversions: string }>(
+        () => dwQuery<{ to_spec: string; from_spec: string; referrals: string; conversions: string; conv_within90: string; conv_90_180: string; conv_180plus: string }>(
           `SELECT
              ${NORM_TO}       AS to_spec,
              ${NORM_FROM}     AS from_spec,
              ${REFERRALS_SUM} AS referrals,
-             ${CONVERTED_SUM} AS conversions
+             ${CONVERTED_SUM} AS conversions,
+             COUNT(*) FILTER (WHERE r.consumption = 'Consumed' AND r.slotstarttime <= r.g_creation_time + INTERVAL '90 days')::bigint AS conv_within90,
+             COUNT(*) FILTER (WHERE r.consumption = 'Consumed' AND r.slotstarttime > r.g_creation_time + INTERVAL '90 days' AND r.slotstarttime <= r.g_creation_time + INTERVAL '180 days')::bigint AS conv_90_180,
+             COUNT(*) FILTER (WHERE r.consumption = 'Consumed' AND r.slotstarttime > r.g_creation_time + INTERVAL '180 days')::bigint AS conv_180plus
            FROM ${BASE_TABLE} r
            WHERE ${q.where}
              AND r.speciality_referred_to   IS NOT NULL AND TRIM(r.speciality_referred_to) <> ''
@@ -414,7 +417,7 @@ async function handler(request: NextRequest) {
     }));
 
     // ── Per receiving-specialty: breakdown by referring specialty ──
-    const byReferrer: Record<string, { from: string; referrals: number; conversions: number; rate: number }[]> = {};
+    const byReferrer: Record<string, { from: string; referrals: number; conversions: number; rate: number; within90: number; mid: number; late: number }[]> = {};
     for (const r of specByRefRows) {
       const referrals = Number(r.referrals), conversions = Number(r.conversions);
       (byReferrer[r.to_spec] ||= []).push({
@@ -422,6 +425,9 @@ async function handler(request: NextRequest) {
         referrals,
         conversions,
         rate: referrals > 0 ? Math.round((conversions / referrals) * 100) : 0,
+        within90: Number(r.conv_within90 || 0),
+        mid: Number(r.conv_90_180 || 0),
+        late: Number(r.conv_180plus || 0),
       });
     }
     Object.values(byReferrer).forEach((arr) => arr.sort((a, b) => b.referrals - a.referrals));

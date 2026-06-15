@@ -590,6 +590,16 @@ const impressionsByBucket: Record<string, Array<{ category: string; count: numbe
   );
   const selectedImpression = activeImpression || IMPRESSION_DETAIL_TABS[0];
 const subcategories: Array<{ subcategory: string; count: number }> = (charts?.impressionSubcategories?.[selectedImpression] || []).map((i: { label?: string; subcategory?: string; count: number }) => ({ subcategory: i.subcategory ?? i.label ?? "Unknown", count: i.count }));
+  // "Top 7" tab — the 7 highest-count sub-categories across ALL categories.
+  const TOP7_TAB = "Top 7";
+  const topSubcategories = useMemo(() => {
+    const all: Array<{ subcategory: string; count: number; category: string }> = [];
+    Object.entries(charts?.impressionSubcategories || {}).forEach(([cat, arr]) => {
+      ((arr as Array<{ label?: string; subcategory?: string; count: number }>) || []).forEach((i) =>
+        all.push({ category: cat, subcategory: i.subcategory ?? i.label ?? "Unknown", count: Number(i.count) || 0 }));
+    });
+    return all.sort((a, b) => b.count - a.count).slice(0, 7);
+  }, [charts?.impressionSubcategories]);
 
   // Scales
   const anxietyScale: Array<{ label: string; count: number }> = charts?.anxietyScale || [];
@@ -1905,6 +1915,15 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
 
         {/* Clickable tabs */}
         <div className="flex flex-wrap gap-2 mb-5 items-center">
+          <button key="top7" onClick={() => setActiveImpression(TOP7_TAB)}
+            className={`px-4 py-2 rounded-lg text-[13px] font-semibold border-2 transition-all ${selectedImpression === TOP7_TAB ? "shadow-sm" : ""}`}
+            style={{
+              borderColor: selectedImpression === TOP7_TAB ? "#4f46e5" : T.border,
+              backgroundColor: selectedImpression === TOP7_TAB ? "#4f46e510" : T.white,
+              color: selectedImpression === TOP7_TAB ? "#4f46e5" : T.textSecondary,
+            }}>
+            Top 7
+          </button>
           {detailImpressions.map((im) => (
             <button key={im.category} onClick={() => setActiveImpression(im.category)}
               className={`px-4 py-2 rounded-lg text-[13px] font-semibold border-2 transition-all ${selectedImpression === im.category ? "shadow-sm" : ""}`}
@@ -1919,30 +1938,35 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
           <ResetFilter visible={activeImpression !== ""} onClick={() => setActiveImpression("")} />
         </div>
 
-        {/* Subcategory horizontal bar */}
-        {selectedImpression && (
-          <div>
-            <h4 className="text-[15px] font-bold mb-1" style={{ color: T.textPrimary }}>{selectedImpression} Impression</h4>
-            <p className="text-[12px] mb-4" style={{ color: T.textSecondary }}>Distribution by major reason categories and sub categories</p>
-            <div className="overflow-y-auto max-h-[400px] space-y-3">
-              {subcategories.map((sub) => {
-                const maxSub = Math.max(...subcategories.map((s) => s.count), 1);
-                return (
-                  <div key={sub.subcategory} className="flex items-center gap-3">
-                    <span className="text-[12px] font-medium w-[160px] text-right truncate shrink-0" style={{ color: T.textPrimary }}>{sub.subcategory}</span>
-                    <div className="flex-1 h-5 rounded overflow-hidden" style={{ backgroundColor: T.borderLight }}>
-                      <div className="h-full rounded" style={{ width: `${(sub.count / maxSub) * 100}%`, backgroundColor: impressionColorMap[selectedImpression] || "#6366f1" }} />
+        {/* Subcategory horizontal bar (per-category, or Top 7 across all) */}
+        {selectedImpression && (() => {
+          const isTop7 = selectedImpression === TOP7_TAB;
+          const list: Array<{ subcategory: string; count: number; category?: string }> = isTop7 ? topSubcategories : subcategories;
+          const maxSub = Math.max(...list.map((s) => s.count), 1);
+          return (
+            <div>
+              <h4 className="text-[15px] font-bold mb-1" style={{ color: T.textPrimary }}>{isTop7 ? "Top 7 sub-categories" : `${selectedImpression} Impression`}</h4>
+              <p className="text-[12px] mb-4" style={{ color: T.textSecondary }}>{isTop7 ? "Highest-count concerns across all categories" : "Distribution by major reason categories and sub categories"}</p>
+              <div className="overflow-y-auto max-h-[400px] space-y-3">
+                {list.map((sub, idx) => {
+                  const color = isTop7 ? (impressionColorMap[sub.category || ""] || "#6366f1") : (impressionColorMap[selectedImpression] || "#6366f1");
+                  return (
+                    <div key={`${sub.subcategory}-${idx}`} className="flex items-center gap-3">
+                      <span className="text-[12px] font-medium w-[160px] text-right truncate shrink-0" style={{ color: T.textPrimary }} title={sub.subcategory}>{sub.subcategory}</span>
+                      <div className="flex-1 h-5 rounded overflow-hidden" style={{ backgroundColor: T.borderLight }}>
+                        <div className="h-full rounded" style={{ width: `${(sub.count / maxSub) * 100}%`, backgroundColor: color }} />
+                      </div>
+                      <span className="text-[11px] font-bold shrink-0 w-[32px] text-right" style={{ color: T.textSecondary }}>{formatNum(sub.count)}</span>
                     </div>
-                    <span className="text-[11px] font-bold shrink-0 w-[32px] text-right" style={{ color: T.textSecondary }}>{formatNum(sub.count)}</span>
-                  </div>
-                );
-              })}
-              {subcategories.length === 0 && (
-                <p className="text-[12px] py-4 text-center" style={{ color: T.textMuted }}>No subcategory data available</p>
-              )}
+                  );
+                })}
+                {list.length === 0 && (
+                  <p className="text-[12px] py-4 text-center" style={{ color: T.textMuted }}>No subcategory data available</p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         <InsightBox text={(() => {
           if (detailImpressions.length === 0 || detailTotal === 0) return "No category data yet for this range.";
           const top = [...detailImpressions].sort((a, b) => b.count - a.count)[0];

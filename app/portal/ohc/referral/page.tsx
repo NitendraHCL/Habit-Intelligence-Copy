@@ -1144,7 +1144,7 @@ export default function ReferralAnalyticsPage() {
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Referrals</span>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>Conversion</span>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>≤90d</span>
-                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>90–180d</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>91–180d</span>
                       <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-right" style={{ color: T.textMuted }}>180+d</span>
                     </div>
                     {s.byReferrer.map((b: any) => {

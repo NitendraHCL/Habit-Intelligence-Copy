@@ -10,6 +10,7 @@ import { ChartComments } from "@/components/ui/chart-comments";
 import { AskAIButton } from "@/components/ai/AskAIButton";
 import { PageGlanceBox } from "@/components/dashboard/PageGlanceBox";
 import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
+import DataAuditSection from "@/components/audit/DataAuditSection";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Info, Maximize2, Minimize2, Table2, BarChart3, RotateCcw } from "lucide-react";
@@ -836,6 +837,9 @@ export default function PastDataPage() {
           <ApptOutcomes data={data?.apptOutcomes} />
         </CVCard>
       )}
+
+      {/* Data Audit — superadmin-only source + extraction logic per chart */}
+      <DataAuditSection provenance={(data as any)?._meta?.provenance} />
     </div>
   );
 }

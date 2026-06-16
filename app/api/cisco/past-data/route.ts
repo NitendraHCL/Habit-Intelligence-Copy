@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, getSessionCugCode } from "@/lib/auth/session";
 import { dwQuery } from "@/lib/db/data-warehouse";
 import { withCache } from "@/lib/cache/middleware";
+import type { DashboardProvenance } from "@/lib/audit/provenance";
+import { withProvenance } from "@/lib/audit/with-provenance";
 
 /* ────────────────────────────────────────────────────────────────────
  * CISCO "Past Data" API — old vs new health progression for CISCO01.
@@ -503,4 +505,62 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const GET = withCache(handler, { endpoint: "cisco/past-data" });
+// ── Data-audit provenance (SUPER_ADMIN only) — one entry per response key ──
+const PROVENANCE: DashboardProvenance = {
+  kpis: {
+    chart: "Summary KPIs",
+    sources: [LAB, VIT],
+    logic:
+      "Patients Tracked (Labs/Vitals) = COUNT of UHIDs having BOTH an 'old' and a 'new' reading in the lab / vitals table. " +
+      "New Members = vitals UHIDs with a 'new' reading but no 'old' (first health check). Conditions Monitored = the 8 " +
+      "clinical conditions compared. Median span = PERCENTILE_CONT(0.5) of (most-recent-new − most-recent-old) per patient in years.",
+    sql: "lab_span: GROUP BY uhid HAVING COUNT(DISTINCT Source)=2; vit_new − vit_cohort for new members.",
+  },
+  conditionJourney: {
+    chart: "Member Health Journey (condition prevalence Then → quarterly → Now)",
+    sources: [LAB, VIT],
+    logic:
+      "Per condition (single-param thresholds, e.g. Diabetes = fasting glucose ≥ 126): Then = % of the both-cohort above the " +
+      "threshold on their most-recent OLD reading; Now = same on most-recent NEW. Quarter points = cohort-average per calendar " +
+      "quarter of the new-period readings (% of members measured that quarter above the threshold), split tracked vs new-only.",
+    sql: "snap(old)/snap(new) for then/now; per-quarter AVG-per-patient then classify GROUP BY quarter, cohort.",
+  },
+  labQuarterly: {
+    chart: "Value Progression — labs (avg value, quarter by quarter)",
+    sources: [LAB],
+    logic:
+      "Per lab parameter: baseline = mean of each patient's most-recent OLD value; then mean value per new-period calendar " +
+      "quarter (cohort-average over patients measured that quarter), split tracked vs new-only. Old/new lab names are mapped to a " +
+      "single canonical parameter. Values kept only if numeric.",
+    sql: "AVG-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
+  },
+  vitalsQuarterly: {
+    chart: "Value Progression — vitals (avg value, quarter by quarter)",
+    sources: [VIT],
+    logic: "Same as labQuarterly but on the vitals table (BMI, BP, Weight, SPO2); vitals parameter names are identical across old/new.",
+    sql: "AVG-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
+  },
+  bandJourney: {
+    chart: "Health Band Distribution (Glycemic / BMI / BP waffle, Then → quarterly)",
+    sources: [LAB, VIT],
+    logic:
+      "Per metric, members are classified into bands (Glycemic via fasting glucose; BMI; BP via systolic). Then = band split of the " +
+      "most-recent-old reading over the both-cohort; each quarter = band split of new-period readings that quarter (cohort-average), " +
+      "split tracked vs new-only.",
+    sql: "classify(most-recent-old) for Then; classify(AVG-per-patient-per-quarter) GROUP BY quarter, cohort, band.",
+  },
+  apptOutcomes: {
+    chart: "Appointment Outcomes (status share by quarter)",
+    sources: [APT],
+    logic:
+      "All appointments bucketed by slotstarttime calendar quarter (last 8 quarters). The 12 raw stages collapse to 4 statuses: " +
+      "Completed (+ Prescription Sent, Re Open), Pending (Rescheduled, Nurse Ack*, Started, Checked In), No Show (No Show + NoShow), " +
+      "Cancelled. Each line = a status's % of that quarter's appointments.",
+    sql: "GROUP BY quarter, CASE(stage) → COUNT(*).",
+  },
+};
+
+export const GET = withProvenance(
+  withCache(handler, { endpoint: "cisco/past-data" }),
+  PROVENANCE
+);

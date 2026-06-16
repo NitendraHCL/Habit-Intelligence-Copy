@@ -1046,10 +1046,37 @@ export default function OHCUtilizationPage() {
   };
 
   const stackSpecialties: string[] = charts?.topSpecialties || [];
-  const locationBySpecialtyData = (charts?.locationBySpecialty || []).map((r: any) => ({
-    ...r,
-    __total: stackSpecialties.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
-  }));
+  // JPM001: roll the chart's clinics up into their master facility (same as the
+  // table), summing the stacked specialties + Other per master.
+  const isJPMUtil = activeClient?.cugCode === "JPM001";
+  const jpmFull = charts?.locationBySpecialtyFull as any[] | undefined;
+  const locationBySpecialtyData: any[] = (() => {
+    if (isJPMUtil && jpmFull?.length && (charts?.allSpecialties as string[] | undefined)?.length) {
+      const allSpecs = charts!.allSpecialties as string[];
+      const top = stackSpecialties.filter((s) => s !== "Other");
+      const rest = allSpecs.filter((s) => !top.includes(s));
+      const groups: Record<string, any[]> = {};
+      for (const r of jpmFull) { const m = JPM_MASTER_MAP[r.location] || r.location; (groups[m] ||= []).push(r); }
+      return Object.entries(groups).map(([master, children]) => {
+        const row: any = { location: master };
+        let total = 0, other = 0, uniq = 0;
+        for (const s of top) row[s] = 0;
+        for (const c of children) {
+          for (const s of top) { const v = Number(c[s]) || 0; row[s] += v; total += v; }
+          for (const s of rest) { const v = Number(c[s]) || 0; other += v; total += v; }
+          uniq += Number(c.uniquePatients) || 0;
+        }
+        if (stackSpecialties.includes("Other")) row["Other"] = other;
+        row.uniquePatients = uniq;
+        row.__total = total;
+        return row;
+      }).sort((a, b) => b.__total - a.__total);
+    }
+    return (charts?.locationBySpecialty || []).map((r: any) => ({
+      ...r,
+      __total: stackSpecialties.reduce((s: number, k: string) => s + (Number(r[k]) || 0), 0),
+    }));
+  })();
   // Real clinic count excludes the synthetic "Others" pseudo-row that bundles
   // long-tail locations on multi-site clients.
   const realClinicCount = locationBySpecialtyData.filter((r: any) => r.location !== "Others").length;

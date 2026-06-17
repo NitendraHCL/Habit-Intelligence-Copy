@@ -141,12 +141,14 @@ function valueQuarterlySQL(opts: { table: string; uhid: string; value: string; d
       FROM ${table} WHERE ${cug ? `cug_code = 'CISCO01'` : `TRUE`} GROUP BY 1
     ),
     ppq AS (
-      SELECT ${normCase} AS param, ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd,
-             AVG(TRIM(${value})::numeric) AS val
-      FROM ${table}
-      WHERE ${cugCond}"Source" = 'new' AND TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})
-        AND ${date} >= ${QWINDOW}
-      GROUP BY 1, 2, 3
+      SELECT param, uhid, qd, val FROM (
+        SELECT ${normCase} AS param, ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd,
+               TRIM(${value})::numeric AS val,
+               ROW_NUMBER() OVER (PARTITION BY ${normCase}, ${uhid}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table}
+        WHERE ${cugCond}"Source" = 'new' AND TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})
+          AND ${date} >= ${QWINDOW}
+      ) t WHERE rn = 1
     )
     SELECT p.param, to_char(p.qd, 'YYYY-"Q"Q') AS quarter,
            CASE WHEN m.has_old THEN 'tracked' ELSE 'new' END AS cohort,
@@ -176,9 +178,11 @@ function conditionQuarterlySQL(def: CondDef) {
   return `
     WITH membership AS (SELECT ${uhid} AS uhid, bool_or("Source" = 'old') AS has_old FROM ${table} WHERE ${cug ? `cug_code = 'CISCO01'` : `TRUE`} GROUP BY 1),
     ppq AS (
-      SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd, AVG(TRIM(${value})::numeric) AS val
-      FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${item} IN (${src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW}
-      GROUP BY 1, 2
+      SELECT uhid, qd, val FROM (
+        SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd, TRIM(${value})::numeric AS val,
+               ROW_NUMBER() OVER (PARTITION BY ${uhid}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${item} IN (${src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW}
+      ) t WHERE rn = 1
     )
     SELECT to_char(p.qd, 'YYYY-"Q"Q') AS quarter, CASE WHEN m.has_old THEN 'tracked' ELSE 'new' END AS cohort,
            COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ${pos.replace(/VAL/g, "p.val")})::int AS positive
@@ -223,8 +227,11 @@ function bandQuarterlySQL(m: BandMetric) {
   const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
   return `
     WITH membership AS (SELECT ${uhid} AS uhid, bool_or("Source" = 'old') AS ho FROM ${table} WHERE ${cug ? `cug_code = 'CISCO01'` : `TRUE`} GROUP BY 1),
-    ppq AS (SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS q, AVG(TRIM(${value})::numeric) AS v
-            FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW} GROUP BY 1, 2)
+    ppq AS (SELECT uhid, q, v FROM (
+              SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS q, TRIM(${value})::numeric AS v,
+                     ROW_NUMBER() OVER (PARTITION BY ${uhid}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
+              FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW}
+            ) t WHERE rn = 1)
     SELECT to_char(p.q, 'YYYY-"Q"Q') AS quarter, CASE WHEN mm.ho THEN 'tracked' ELSE 'new' END AS cohort, ${m.cls.replace(/VAL/g, "p.v")} AS band, COUNT(*)::int AS n
     FROM ppq p JOIN membership mm USING (uhid) GROUP BY 1, 2, 3`;
 }
@@ -236,6 +243,16 @@ function bandThenSQL(m: BandMetric) {
     WITH old_latest AS (SELECT DISTINCT ON (${uhid}) ${uhid} AS uhid, TRIM(${value})::numeric AS v FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${inList} ORDER BY ${uhid}, ${date} DESC),
     new_has AS (SELECT DISTINCT ${uhid} AS uhid FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${inList})
     SELECT ${m.cls.replace(/VAL/g, "o.v")} AS band, COUNT(*)::int AS n FROM old_latest o JOIN new_has nh USING (uhid) GROUP BY 1`;
+}
+// Now band distribution: most-recent NEW reading over the both-cohort.
+function bandNowSQL(m: BandMetric) {
+  const { table, uhid, value, date, cug } = m.base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const inList = `${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}`;
+  return `
+    WITH new_latest AS (SELECT DISTINCT ON (${uhid}) ${uhid} AS uhid, TRIM(${value})::numeric AS v FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${inList} ORDER BY ${uhid}, ${date} DESC),
+    old_has AS (SELECT DISTINCT ${uhid} AS uhid FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${inList})
+    SELECT ${m.cls.replace(/VAL/g, "n.v")} AS band, COUNT(*)::int AS n FROM new_latest n JOIN old_has oh USING (uhid) GROUP BY 1`;
 }
 
 async function handler(request: NextRequest) {
@@ -346,16 +363,18 @@ async function handler(request: NextRequest) {
 
     // Band distribution (Then + quarterly) for the waffle charts.
     const bandThenP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandThenSQL(m), [], HEAVY), `bandThen:${m.key}`));
+    const bandNowP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandNowSQL(m), [], HEAVY), `bandNow:${m.key}`));
     const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandQP]);
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP]);
     const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
     const prevResults = rest.slice(2 * NC, 2 * NC + P) as { cohort: string; then_pos: string; now_pos: string }[][];
     const scatterResults = rest.slice(2 * NC + P, 2 * NC + P + S) as { o: string; n: string }[][];
     const bandThenResults = rest.slice(2 * NC + P + S, 2 * NC + P + S + B) as { band: string; n: string }[][];
-    const bandQResults = rest.slice(2 * NC + P + S + B, 2 * NC + P + S + 2 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
+    const bandNowResults = rest.slice(2 * NC + P + S + B, 2 * NC + P + S + 2 * B) as { band: string; n: string }[][];
+    const bandQResults = rest.slice(2 * NC + P + S + 2 * B, 2 * NC + P + S + 3 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
 
     // ── Shape value progression rows (attach panel + direction + delta). ──
     const ALL = [...LAB_PARAMS, ...VIT_PARAMS];
@@ -404,7 +423,8 @@ async function handler(request: NextRequest) {
           (series[r.cohort as Coh] ||= []).push({ quarter: r.quarter, avg: Number(r.avg), n: Number(r.n) });
         });
         series.tracked.sort(qSort); series.new.sort(qSort);
-        return { param: p.display, panel: p.panel, direction: p.dir, baselineOld: prog.find((x) => x.param === p.display)?.avgOld ?? null, series };
+        const pr = prog.find((x) => x.param === p.display);
+        return { param: p.display, panel: p.panel, direction: p.dir, baselineOld: pr?.avgOld ?? null, baselineNew: pr?.avgNew ?? null, baselineN: pr?.cohort ?? 0, series };
       }).filter((p) => p.series.tracked.length || p.series.new.length);
     const labQuarterly = shapeQuarterly(labQ, LAB_PARAMS, labProgression);
     const vitalsQuarterly = shapeQuarterly(vitQ, VIT_PARAMS, vitalsProgression);
@@ -441,6 +461,9 @@ async function handler(request: NextRequest) {
       const thenCounts = zeros();
       (bandThenResults[i] || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) thenCounts[ix] += Number(r.n); });
       const thenTotal = thenCounts.reduce((a, b) => a + b, 0);
+      const nowCounts = zeros();
+      (bandNowResults[i] || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) nowCounts[ix] += Number(r.n); });
+      const nowTotal = nowCounts.reduce((a, b) => a + b, 0);
       const tQ: Record<string, number[]> = {}, nQ: Record<string, number[]> = {};
       (bandQResults[i] || []).forEach((r) => {
         allQuarters.add(r.quarter);
@@ -451,7 +474,7 @@ async function handler(request: NextRequest) {
       const toPoints = (bucket: Record<string, number[]>) => Object.keys(bucket).sort().map((qk) => ({ label: qk, counts: bucket[qk], total: bucket[qk].reduce((a, b) => a + b, 0) }));
       bandJourney[m.key] = {
         key: m.key, title: m.title, note: m.note, categories: m.categories,
-        tracked: [...(thenTotal > 0 ? [{ label: "Then", counts: thenCounts, total: thenTotal }] : []), ...toPoints(tQ)],
+        tracked: [...(thenTotal > 0 ? [{ label: "Then", counts: thenCounts, total: thenTotal }] : []), ...toPoints(tQ), ...(nowTotal > 0 ? [{ label: "Now", counts: nowCounts, total: nowTotal }] : [])],
         new: toPoints(nQ),
       };
     });
@@ -521,9 +544,10 @@ const PROVENANCE: DashboardProvenance = {
     sources: [LAB, VIT],
     logic:
       "Per condition (single-param thresholds, e.g. Diabetes = fasting glucose ≥ 126): Then = % of the both-cohort above the " +
-      "threshold on their most-recent OLD reading; Now = same on most-recent NEW. Quarter points = cohort-average per calendar " +
-      "quarter of the new-period readings (% of members measured that quarter above the threshold), split tracked vs new-only.",
-    sql: "snap(old)/snap(new) for then/now; per-quarter AVG-per-patient then classify GROUP BY quarter, cohort.",
+      "threshold on their most-recent OLD reading; Now = same on most-recent NEW. Quarter points use the SAME logic as Then — " +
+      "each patient's most-recent reading WITHIN that quarter (not an average), classified against the threshold; " +
+      "% of members measured that quarter, split tracked vs new-only.",
+    sql: "snap(old)/snap(new) for then/now; per-quarter latest-per-patient then classify GROUP BY quarter, cohort.",
   },
   labQuarterly: {
     chart: "Value Progression — labs (avg value, quarter by quarter)",
@@ -532,13 +556,13 @@ const PROVENANCE: DashboardProvenance = {
       "Per lab parameter: baseline = mean of each patient's most-recent OLD value; then mean value per new-period calendar " +
       "quarter (cohort-average over patients measured that quarter), split tracked vs new-only. Old/new lab names are mapped to a " +
       "single canonical parameter. Values kept only if numeric.",
-    sql: "AVG-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
+    sql: "latest-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
   },
   vitalsQuarterly: {
     chart: "Value Progression — vitals (avg value, quarter by quarter)",
     sources: [VIT],
     logic: "Same as labQuarterly but on the vitals table (BMI, BP, Weight, SPO2); vitals parameter names are identical across old/new.",
-    sql: "AVG-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
+    sql: "latest-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
   },
   bandJourney: {
     chart: "Health Band Distribution (Glycemic / BMI / BP waffle, Then → quarterly)",
@@ -547,7 +571,7 @@ const PROVENANCE: DashboardProvenance = {
       "Per metric, members are classified into bands (Glycemic via fasting glucose; BMI; BP via systolic). Then = band split of the " +
       "most-recent-old reading over the both-cohort; each quarter = band split of new-period readings that quarter (cohort-average), " +
       "split tracked vs new-only.",
-    sql: "classify(most-recent-old) for Then; classify(AVG-per-patient-per-quarter) GROUP BY quarter, cohort, band.",
+    sql: "classify(most-recent-old) for Then; classify(latest-per-patient-per-quarter) GROUP BY quarter, cohort, band.",
   },
   apptOutcomes: {
     chart: "Appointment Outcomes (status share by quarter)",

@@ -223,6 +223,8 @@ function JourneyCard({ c, tab, offset }: { c: any; tab: "tracked" | "new"; offse
   const seq: Col[] = [];
   if (tab === "tracked") seq.push({ label: "Then", pct: c.tracked.then.pct, count: c.tracked.then.positive, color: C_BASE, delta: null });
   allQ.forEach((q) => seq.push({ label: shortQ(q.quarter), pct: q.pct, count: q.positive, color: C_BASE, delta: null }));
+  // Now = most-recent-new per patient over the both-cohort (pinned at the end, tracked tab).
+  if (tab === "tracked") seq.push({ label: "Now", pct: c.tracked.now.pct, count: c.tracked.now.positive, color: C_BASE, delta: null });
   seq.forEach((col, i) => {
     if (i === 0) { col.color = C_BASE; col.delta = null; return; }
     const prev = seq[i - 1];
@@ -230,9 +232,14 @@ function JourneyCard({ c, tab, offset }: { c: any; tab: "tracked" | "new"; offse
     col.color = col.pct < prev.pct ? C_DOWN : col.pct > prev.pct ? C_UP : C_FLAT;
   });
 
-  // Visible window: Then (if tracked) pinned + the paged quarter slice.
-  const quartersOnly = tab === "tracked" ? seq.slice(1) : seq;
-  const columns: Col[] = [...(tab === "tracked" ? [seq[0]] : []), ...quartersOnly.slice(offset, offset + QPAGE)];
+  // Visible window: Then + paged quarters + Now, with Then and Now pinned (tracked).
+  const quartersOnly = tab === "tracked" ? seq.slice(1, seq.length - 1) : seq;
+  const nowCol = tab === "tracked" ? seq[seq.length - 1] : null;
+  const columns: Col[] = [
+    ...(tab === "tracked" ? [seq[0]] : []),
+    ...quartersOnly.slice(offset, offset + QPAGE),
+    ...(nowCol ? [nowCol] : []),
+  ];
 
   // Overall headline badge (Then→Now for tracked; first→latest quarter for new).
   const start = tab === "tracked" ? c.tracked.then : allQ[0];
@@ -429,9 +436,13 @@ function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; 
   const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
 
   // Full chronological sequence (Then pinned for tracked), deltas vs previous bar.
+  const hasThen = tab === "tracked" && p.baselineOld != null;
+  const hasNow = tab === "tracked" && p.baselineNew != null;
   const seq: VCol[] = [];
-  if (tab === "tracked" && p.baselineOld != null) seq.push({ label: "Then", value: Number(p.baselineOld), n: 0, color: C_BASE, delta: null });
+  if (hasThen) seq.push({ label: "Then", value: Number(p.baselineOld), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
   allQ.forEach((q) => seq.push({ label: shortQ(q.quarter), value: Number(q.avg), n: Number(q.n), color: C_BASE, delta: null }));
+  // Now = mean of each patient's most-recent NEW value over the both-cohort (pinned at end).
+  if (hasNow) seq.push({ label: "Now", value: Number(p.baselineNew), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
   seq.forEach((col, i) => {
     if (i === 0) { col.color = C_BASE; col.delta = null; return; }
     const change = col.value - seq[i - 1].value;
@@ -439,8 +450,13 @@ function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; 
     col.color = dirColor(change, dir);
   });
 
-  const quartersOnly = tab === "tracked" && p.baselineOld != null ? seq.slice(1) : seq;
-  const columns: VCol[] = [...(tab === "tracked" && p.baselineOld != null ? [seq[0]] : []), ...quartersOnly.slice(offset, offset + QPAGE)];
+  const quartersOnly = seq.slice(hasThen ? 1 : 0, hasNow ? seq.length - 1 : seq.length);
+  const nowCol = hasNow ? seq[seq.length - 1] : null;
+  const columns: VCol[] = [
+    ...(hasThen ? [seq[0]] : []),
+    ...quartersOnly.slice(offset, offset + QPAGE),
+    ...(nowCol ? [nowCol] : []),
+  ];
   const empty = seq.length < (tab === "tracked" ? 2 : 1) || quartersOnly.length === 0;
 
   // Overall first→last badge.
@@ -595,8 +611,13 @@ function Waffle({ point, categories, healthyLabel = "Normal", healthyWord = "nor
 function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "new"; offset: number }) {
   const all: any[] = (tab === "tracked" ? metric.tracked : metric.new) ?? [];
   const isThen = tab === "tracked" && all[0]?.label === "Then";
-  const quarters = isThen ? all.slice(1) : all;
-  const points = [...(isThen ? [all[0]] : []), ...quarters.slice(offset, offset + QPAGE)];
+  const isNow = tab === "tracked" && all[all.length - 1]?.label === "Now";
+  const quarters = all.slice(isThen ? 1 : 0, isNow ? all.length - 1 : all.length);
+  const points = [
+    ...(isThen ? [all[0]] : []),
+    ...quarters.slice(offset, offset + QPAGE),
+    ...(isNow ? [all[all.length - 1]] : []),
+  ];
   return (
     <div>
       <div className="flex items-center gap-2 mb-1.5">
@@ -632,7 +653,9 @@ function BandJourney({ bands }: { bands: any[] }) {
   const current = bands.find((m) => m.key === selected) || bands[0];
   const quartersLen = (m: any) => {
     const all = (tab === "tracked" ? m.tracked : m.new) ?? [];
-    return (tab === "tracked" && all[0]?.label === "Then") ? all.length - 1 : all.length;
+    let n = all.length;
+    if (tab === "tracked") { if (all[0]?.label === "Then") n--; if (all[all.length - 1]?.label === "Now") n--; }
+    return Math.max(0, n);
   };
   const maxQ = current ? quartersLen(current) : 0;
   const canPrev = offset > 0, canNext = offset + QPAGE < maxQ;

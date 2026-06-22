@@ -32,6 +32,22 @@ interface CugOption {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+/** Render a stored (UTC) login timestamp in IST, e.g. "22 Jun 2026, 3:14 pm". */
+function formatLastLoginIST(iso: string | null): string {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export default function UserManagementPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
@@ -185,6 +201,7 @@ export default function UserManagementPage() {
                   {tab === "internal" && (
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Assigned CUGs</th>
                   )}
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-600" title="Most recent sign-in (IST)">Last login (IST)</th>
                   <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-600" title="Email-OTP two-factor authentication">MFA</th>
                   <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-600">Status</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-600">Actions</th>
@@ -212,6 +229,9 @@ export default function UserManagementPage() {
                           : u.role === "KAM" ? "None" : "All"}
                       </td>
                     )}
+                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap" title={u.lastLoginAt ?? undefined}>
+                      {formatLastLoginIST(u.lastLoginAt)}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center">
                         <button

@@ -186,8 +186,9 @@ const C_BASE = "#cbd5e1", C_DOWN = "#0d9488", C_UP = "#dc2626", C_FLAT = "#94a3b
 // Vertical column chart: every bar shows count + %, a vs-previous-bar delta, and is coloured by that comparison.
 function ColumnChart({ columns }: { columns: Col[] }) {
   const max = Math.max(1, ...columns.map((c) => c.pct));
+  const maxW = columns.length <= 2 ? 240 : undefined; // center the 2-bar (Then/Now) view
   return (
-    <div>
+    <div className="mx-auto w-full" style={{ maxWidth: maxW }}>
       <div className="flex justify-around gap-2">
         {columns.map((col, i) => (
           <div key={i} className="flex-1 flex flex-col items-center" title={`${col.label}: ${fmt(col.count)} members (${col.pct}%)`}>
@@ -203,7 +204,7 @@ function ColumnChart({ columns }: { columns: Col[] }) {
             </div>
             {/* bar zone (fixed height) */}
             <div className="w-full flex items-end justify-center" style={{ height: 82 }}>
-              <div className="w-full rounded-t-[2px]" style={{ height: `${Math.max(3, (col.pct / max) * 100)}%`, maxWidth: 40, backgroundColor: col.color }} />
+              <div className="w-full rounded-t-[2px]" style={{ height: `${Math.max(3, (col.pct / max) * 100)}%`, maxWidth: 60, backgroundColor: col.color }} />
             </div>
           </div>
         ))}
@@ -215,37 +216,22 @@ function ColumnChart({ columns }: { columns: Col[] }) {
   );
 }
 
-function JourneyCard({ c, tab, offset }: { c: any; tab: "tracked" | "new"; offset: number }) {
-  const allQ: any[] = (tab === "tracked" ? c.tracked?.quarters : c.new?.quarters) ?? [];
+function JourneyCard({ c, cmp, baselineLabel }: { c: any; cmp: "total" | "window"; baselineLabel: string }) {
+  const d = cmp === "total" ? c.total : c.window;
+  const then = d?.then, now = d?.now;
+  const empty = !then || !now || (then.total === 0 && now.total === 0);
 
-  // Full chronological sequence (Then pinned for tracked), so vs-previous deltas/colours
-  // stay correct even when the visible window is paged forward.
-  const seq: Col[] = [];
-  if (tab === "tracked") seq.push({ label: "Then", pct: c.tracked.then.pct, count: c.tracked.then.positive, color: C_BASE, delta: null });
-  allQ.forEach((q) => seq.push({ label: shortQ(q.quarter), pct: q.pct, count: q.positive, color: C_BASE, delta: null }));
-  // Now = most-recent-new per patient over the both-cohort (pinned at the end, tracked tab).
-  if (tab === "tracked") seq.push({ label: "Now", pct: c.tracked.now.pct, count: c.tracked.now.positive, color: C_BASE, delta: null });
-  seq.forEach((col, i) => {
-    if (i === 0) { col.color = C_BASE; col.delta = null; return; }
-    const prev = seq[i - 1];
-    col.delta = prev.pct > 0 ? ((col.pct - prev.pct) / prev.pct) * 100 : (col.pct > 0 ? 100 : 0);
-    col.color = col.pct < prev.pct ? C_DOWN : col.pct > prev.pct ? C_UP : C_FLAT;
-  });
+  const columns: Col[] = [];
+  if (!empty) {
+    columns.push({ label: baselineLabel, pct: then.pct, count: then.positive, color: C_BASE, delta: null });
+    const col: Col = { label: "Now", pct: now.pct, count: now.positive, color: C_BASE, delta: null };
+    col.delta = then.pct > 0 ? ((now.pct - then.pct) / then.pct) * 100 : (now.pct > 0 ? 100 : 0);
+    col.color = now.pct < then.pct ? C_DOWN : now.pct > then.pct ? C_UP : C_FLAT;
+    columns.push(col);
+  }
 
-  // Visible window: Then + paged quarters + Now, with Then and Now pinned (tracked).
-  const quartersOnly = tab === "tracked" ? seq.slice(1, seq.length - 1) : seq;
-  const nowCol = tab === "tracked" ? seq[seq.length - 1] : null;
-  const columns: Col[] = [
-    ...(tab === "tracked" ? [seq[0]] : []),
-    ...quartersOnly.slice(offset, offset + QPAGE),
-    ...(nowCol ? [nowCol] : []),
-  ];
-
-  // Overall headline badge (Then→Now for tracked; first→latest quarter for new).
-  const start = tab === "tracked" ? c.tracked.then : allQ[0];
-  const end = tab === "tracked" ? c.tracked.now : allQ[allQ.length - 1];
-  const empty = !start || !end || quartersOnly.length === 0;
-  const overall = empty ? 0 : start.positive - end.positive;
+  // Overall headline badge (fewer/more members above the threshold, baseline → Now).
+  const overall = empty ? 0 : then.positive - now.positive;
   const badge = empty ? null : overall === 0 ? { t: "no change", c: T.textMuted, b: "#F1F3F9" } : overall > 0 ? { t: `${fmt(overall)} fewer ✓`, c: "#0f766e", b: "#ecfdf5" } : { t: `${fmt(-overall)} more`, c: "#b91c1c", b: "#fef2f2" };
 
   return (
@@ -257,8 +243,8 @@ function JourneyCard({ c, tab, offset }: { c: any; tab: "tracked" | "new"; offse
         </div>
         {badge && <span className="text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0" style={{ color: badge.c, backgroundColor: badge.b }}>{badge.t}</span>}
       </div>
-      {empty || columns.length === 0 ? (
-        <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No new-member readings yet.</div>
+      {empty ? (
+        <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div>
       ) : (
         <ColumnChart columns={columns} />
       )}
@@ -267,36 +253,27 @@ function JourneyCard({ c, tab, offset }: { c: any; tab: "tracked" | "new"; offse
 }
 
 function MemberJourney({ journey }: { journey: any[] }) {
-  const [tab, setTab] = useState<"tracked" | "new">("tracked");
-  const [offset, setOffset] = useState(0);
+  const [cmp, setCmp] = useState<"total" | "window">("total");
   const list = journey ?? [];
-  const maxQ = Math.max(0, ...list.map((c) => ((tab === "tracked" ? c.tracked?.quarters : c.new?.quarters) ?? []).length));
-  const canPrev = offset > 0;
-  const canNext = offset + QPAGE < maxQ;
+  const baselineLabel = cmp === "total" ? "Then" : "Jun'24–'25";
 
-  const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
-    <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
-  );
-  const PageBtn = ({ dir, disabled, children }: { dir: "prev" | "next"; disabled: boolean; children: React.ReactNode }) => (
-    <button disabled={disabled} onClick={() => setOffset((o) => Math.max(0, o + (dir === "next" ? QPAGE : -QPAGE)))}
-      className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{children}</button>
+  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+    <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <TabBtn id="tracked" label="Then → Now" />
-          <TabBtn id="new" label="New members only" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: T.textMuted }}>{maxQ > QPAGE ? `quarters ${offset + 1}–${Math.min(offset + QPAGE, maxQ)} of ${maxQ}` : "quarterly"}</span>
-          <PageBtn dir="prev" disabled={!canPrev}>◂ Prev</PageBtn>
-          <PageBtn dir="next" disabled={!canNext}>Next ▸</PageBtn>
+          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
-      {tab === "new" && <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>New members have no past baseline — columns show their quarterly progression (oldest first).</p>}
+      <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>
+        {cmp === "total"
+          ? "Then = % above the threshold on each member's most-recent past reading vs Now. Cohort = members with both past and current readings."
+          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now. Cohort = members present in that window and now (so n differs from Then → Now)."}
+      </p>
 
       {/* How to read each bar */}
       <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
@@ -319,24 +296,24 @@ function MemberJourney({ journey }: { journey: any[] }) {
             </tr>
             <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
               <td className="py-2 pr-4"><span className="text-[12px] font-bold" style={{ color: C_DOWN }}>▼12%</span> <span className="text-[12px] font-bold" style={{ color: C_UP }}>▲8%</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}><b>Change vs the previous bar</b> — <span style={{ color: C_DOWN }}>teal ▼ = fewer (better)</span>, <span style={{ color: C_UP }}>red ▲ = more</span>. The bar takes that colour too.</td>
+              <td className="py-2" style={{ color: T.textSecondary }}><b>Change from baseline → Now</b> — <span style={{ color: C_DOWN }}>teal ▼ = fewer (better)</span>, <span style={{ color: C_UP }}>red ▲ = more</span>. The Now bar takes that colour too.</td>
             </tr>
             <tr>
               <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>baseline</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The first <b>"Then"</b> bar (each member's most-recent past reading) — nothing earlier to compare against.</td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The left bar — the starting reading the <b>Now</b> bar is compared against.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {list.map((c) => <JourneyCard key={c.key} c={c} tab={tab} offset={offset} />)}
+        {list.map((c) => <JourneyCard key={c.key} c={c} cmp={cmp} baselineLabel={baselineLabel} />)}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 pt-3 text-[11px]" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderLight}` }}>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#cbd5e1" }} /> baseline</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#0d9488" }} /> ▼ fewer than previous bar (better)</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#dc2626" }} /> ▲ more than previous bar</span>
-        <span>· each bar = members above the threshold (count + %); ▲▼ = change vs the previous bar</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#0d9488" }} /> ▼ fewer now (better)</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#dc2626" }} /> ▲ more now</span>
+        <span>· each bar = members above the threshold (count + %); ▲▼ = change from baseline → Now</span>
       </div>
     </div>
   );
@@ -458,6 +435,14 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
   const oColor = dirColor(oChange, dir);
   const dirChip = dir === "neutral" ? null : dir === "lower" ? "lower is better" : "higher is better";
 
+  // Members outside the normal range — drawn as a line overlaid on the bars, baseline → Now.
+  const hasThr = p.baselineThenAbove != null && !empty;
+  const outThen = Number(p.baselineThenAbove), outNow = Number(p.baselineNowAbove);
+  const outDiff = hasThr ? outThen - outNow : 0;
+  const outColor = outDiff === 0 ? C_FLAT : outDiff > 0 ? C_DOWN : C_UP;
+  const total = Number(p.baselineN) || 0;
+  const opct = (x: number) => (total ? Math.round((x / total) * 1000) / 10 : 0);
+
   return (
     <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
       <div className="flex items-start justify-between gap-2 mb-3">
@@ -474,7 +459,33 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
       {empty || columns.length === 0 ? (
         <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div>
       ) : (
-        <ValueColumnChart columns={columns} normal={meta.normal} normalText={normalText} large={large} />
+        <>
+          <ValueColumnChart columns={columns} normal={meta.normal} normalText={normalText} large={large} />
+          {hasThr && (
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10.5px] font-semibold" style={{ color: T.textSecondary }}>Members outside normal</span>
+                {outDiff !== 0 && <span className="text-[10px] font-bold" style={{ color: outColor }}>{outDiff > 0 ? "▼" : "▲"}{fmt(Math.abs(outDiff))} {outDiff > 0 ? "fewer" : "more"}</span>}
+              </div>
+              <div className="flex items-center gap-2 mb-1 text-[8.5px] font-semibold uppercase tracking-wide" style={{ color: T.textMuted }}>
+                <span className="w-[62px] shrink-0" />
+                <span className="flex-1" />
+                <span className="w-[44px] text-right">count</span>
+                <span className="w-[40px] text-right">%</span>
+              </div>
+              {[{ label: baselineLabel, val: outThen, now: false }, { label: "Now", val: outNow, now: true }].map((r, i) => (
+                <div key={i} className="flex items-center gap-2 mb-1 last:mb-0">
+                  <span className="text-[10px] tabular-nums w-[62px] shrink-0" style={{ color: T.textMuted }}>{r.label}</span>
+                  <div className="flex-1 h-[8px] rounded-full overflow-hidden" style={{ backgroundColor: "#EEF0F4" }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, opct(r.val))}%`, backgroundColor: r.now ? outColor : "#94a3b8" }} />
+                  </div>
+                  <span className="text-[10px] font-semibold tabular-nums w-[44px] text-right" style={{ color: T.textPrimary }}>{fmt(r.val)}</span>
+                  <span className="text-[10px] font-semibold tabular-nums w-[40px] text-right" style={{ color: T.textSecondary }}>{opct(r.val)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -794,7 +805,7 @@ export default function PastDataPage() {
 
       {/* ── Member Health Journey ── */}
       {isChartVisible("conditionPrevalence") && (
-        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="How many members are above each clinical threshold — from their past baseline, through each quarter, to now." tooltipText="Then = each member's most-recent past reading; Now = most-recent current reading; quarters in between show the path. 'New members only' shows the new cohort's progression from their first quarter (they have no past baseline)." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence then → quarterly → now, tracked & new cohorts">
+        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="How many members are above each clinical threshold — past baseline vs now. Thresholds follow the reference workbook." tooltipText="Then = % above the threshold on each member's most-recent past reading; Now = most-recent current reading. A condition can be governed by multiple rules (e.g. Diabetes = FBS ≥126 OR HbA1c ≥6.5) and gender-specific cutoffs (Anaemia). Switch to 'Jun '24 – Jun '25 → Now' to compare the last year specifically." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence — Then vs Now, and Jun'24–Jun'25 vs Now">
           <MemberJourney journey={data?.conditionJourney ?? []} />
         </CVCard>
       )}

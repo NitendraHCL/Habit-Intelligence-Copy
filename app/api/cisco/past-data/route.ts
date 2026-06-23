@@ -79,9 +79,25 @@ const VIT_PARAMS: { display: string; src: string[]; panel: string; dir: Dir }[] 
   { display: "SPO2", src: ["SPO2"], panel: "Vitals", dir: "higher" },
 ];
 
+// Healthy thresholds (mirror of the dashboard's PARAM_META normals, post reference-alignment) —
+// used to count members on the at-risk side of the line at Then vs Now.
+const NORMALS: Record<string, number> = {
+  "HbA1c": 5.7, "Glucose (Fasting)": 100, "Glucose (PP)": 140, "Cholesterol (Total)": 200,
+  "LDL": 130, "HDL": 40, "VLDL": 30, "Triglycerides": 150, "LDL/HDL Ratio": 3.5,
+  "Albumin": 3.5, "Bilirubin (Total)": 1.2, "SGPT / ALT": 50, "SGOT / AST": 50,
+  "Alk. Phosphatase": 120, "GGTP": 85, "Creatinine": 1.2, "Blood Urea": 40, "BUN": 20,
+  "Uric Acid": 7, "Haemoglobin": 12, "BMI": 23, "BP (Systolic)": 120, "BP (Diastolic)": 80, "SPO2": 94,
+};
+// "Outside normal" = value beyond the threshold in the unhealthy direction (per param's dir).
+function aboveCase(params: { display: string; dir?: string }[], col: string) {
+  const cases = params.filter((p) => NORMALS[p.display] != null && p.dir && p.dir !== "neutral")
+    .map((p) => `WHEN param = ${q(p.display)} THEN ${col} ${p.dir === "lower" ? ">" : "<"} ${NORMALS[p.display]}`);
+  return cases.length ? `CASE ${cases.join(" ")} ELSE NULL END` : "NULL";
+}
+
 // Value-progression query: per parameter, mean of most-recent-old vs
 // most-recent-new over the both-cohort. One query for the whole catalogue.
-function valueProgressionSQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[] }[] }) {
+function valueProgressionSQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[]; dir?: string }[] }) {
   const { table, uhid, value, date, item, cug, params } = opts;
   const allSrc = params.flatMap((p) => p.src);
   const normCase = `CASE ${params.map((p) => `WHEN ${item} IN (${p.src.map(q).join(", ")}) THEN ${q(p.display)}`).join(" ")} END`;
@@ -103,14 +119,16 @@ function valueProgressionSQL(opts: { table: string; uhid: string; value: string;
     SELECT param,
       COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::int AS cohort,
       AVG(old_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_old,
-      AVG(new_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_new
+      AVG(new_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_new,
+      COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL AND ${aboveCase(params, "old_val")})::int AS then_above,
+      COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL AND ${aboveCase(params, "new_val")})::int AS now_above
     FROM pivoted GROUP BY param`;
 }
 
 // 1-Year-Ago vs Now: same as valueProgressionSQL but the "old" side is restricted
 // to the date window [from, toExcl); cohort = patients with BOTH a reading inside
 // that window AND a 'new' reading. Window value = most-recent reading in the window.
-function valueWindowSQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[] }[] }, from: string, toExcl: string) {
+function valueWindowSQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[]; dir?: string }[] }, from: string, toExcl: string) {
   const { table, uhid, value, date, item, cug, params } = opts;
   const allSrc = params.flatMap((p) => p.src);
   const normCase = `CASE ${params.map((p) => `WHEN ${item} IN (${p.src.map(q).join(", ")}) THEN ${q(p.display)}`).join(" ")} END`;
@@ -133,7 +151,9 @@ function valueWindowSQL(opts: { table: string; uhid: string; value: string; date
     SELECT param,
       COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::int AS cohort,
       AVG(old_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_old,
-      AVG(new_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_new
+      AVG(new_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_new,
+      COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL AND ${aboveCase(params, "old_val")})::int AS then_above,
+      COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL AND ${aboveCase(params, "new_val")})::int AS now_above
     FROM pivoted GROUP BY param`;
 }
 
@@ -193,33 +213,89 @@ function valueQuarterlySQL(opts: { table: string; uhid: string; value: string; d
 
 // The 8 monitored conditions (single-param thresholds → % of cohort positive).
 // Used for BOTH the then/now baseline (snap) and the quarterly progression.
-type CondDef = { key: string; label: string; threshold: string; base: typeof LAB_S | typeof VIT_S; item: string; src: string[]; pos: string };
+// Each condition is positive if ANY of its rules is met (OR), using the patient's most-recent
+// reading of that rule's parameter. Rule expr uses VAL (the numeric value) and G (lower-cased gender).
+// Thresholds aligned to the reference workbook (Asian-Indian BMI, gender-specific Hb, multi-parameter
+// Diabetes & Hypertension, etc.).
+type Rule = { src: string[]; expr: string };
+type CondDef = { key: string; label: string; threshold: string; base: typeof LAB_S | typeof VIT_S; item: string; rules: Rule[] };
+const FEM = "G LIKE 'f%'"; // gender check: 'female' / 'f' (LOWER); NULL/other → male threshold
 const CONDITIONS: CondDef[] = [
-  { key: "diabetic", label: "Diabetes", threshold: "Fasting glucose ≥ 126 mg/dL", base: LAB_S, item: "service_item_name", src: srcOf("Glucose (Fasting)"), pos: "VAL >= 126" },
-  { key: "highChol", label: "High Cholesterol", threshold: "Total cholesterol ≥ 240 mg/dL", base: LAB_S, item: "service_item_name", src: srcOf("Cholesterol (Total)"), pos: "VAL >= 240" },
-  { key: "lowHDL", label: "Low HDL", threshold: "HDL < 40 mg/dL", base: LAB_S, item: "service_item_name", src: srcOf("HDL"), pos: "VAL < 40" },
-  { key: "highTrig", label: "High Triglycerides", threshold: "Triglycerides ≥ 200 mg/dL", base: LAB_S, item: "service_item_name", src: srcOf("Triglycerides"), pos: "VAL >= 200" },
-  { key: "hypertension", label: "Hypertension", threshold: "Systolic BP ≥ 140 mmHg", base: VIT_S, item: "vital_parameter_name", src: ["BP(Systolic)"], pos: "VAL >= 140" },
-  { key: "obese", label: "Obesity", threshold: "BMI ≥ 30", base: VIT_S, item: "vital_parameter_name", src: ["BMI"], pos: "VAL >= 30" },
-  { key: "hypothyroid", label: "Hypothyroid", threshold: "TSH > 4.5 mIU/L", base: LAB_S, item: "service_item_name", src: srcOf("TSH"), pos: "VAL > 4.5" },
-  { key: "anaemia", label: "Anaemia", threshold: "Haemoglobin < 12 g/dL", base: LAB_S, item: "service_item_name", src: srcOf("Haemoglobin"), pos: "VAL < 12" },
+  { key: "diabetic", label: "Diabetes", threshold: "Fasting glucose ≥ 126 mg/dL or HbA1c ≥ 6.5%", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("Glucose (Fasting)"), expr: "VAL >= 126" }, { src: srcOf("HbA1c"), expr: "VAL >= 6.5" }] },
+  { key: "highChol", label: "High Cholesterol", threshold: "Total cholesterol ≥ 240 mg/dL", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("Cholesterol (Total)"), expr: "VAL >= 240" }] },
+  { key: "lowHDL", label: "Low HDL", threshold: "HDL < 40 mg/dL", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("HDL"), expr: "VAL < 40" }] },
+  { key: "highTrig", label: "High Triglycerides", threshold: "Triglycerides ≥ 150 mg/dL", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("Triglycerides"), expr: "VAL >= 150" }] },
+  { key: "hypertension", label: "Hypertension", threshold: "Systolic BP > 140 or Diastolic BP > 90 mmHg", base: VIT_S, item: "vital_parameter_name",
+    rules: [{ src: ["BP(Systolic)"], expr: "VAL > 140" }, { src: ["BP(Diastolic)"], expr: "VAL > 90" }] },
+  { key: "obese", label: "Obesity", threshold: "BMI ≥ 25 (Asian-Indian)", base: VIT_S, item: "vital_parameter_name",
+    rules: [{ src: ["BMI"], expr: "VAL >= 25" }] },
+  { key: "hypothyroid", label: "Hypothyroid", threshold: "TSH > 5.5 mIU/L", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("TSH"), expr: "VAL > 5.5" }] },
+  { key: "anaemia", label: "Anaemia", threshold: "Haemoglobin < 13 (M) / < 12 (F) g/dL", base: LAB_S, item: "service_item_name",
+    rules: [{ src: srcOf("Haemoglobin"), expr: `(CASE WHEN ${FEM} THEN VAL < 12 ELSE VAL < 13 END)` }] },
 ];
+// Substitute VAL (value column) and G (gender column) into a rule expression.
+const subExpr = (expr: string, valCol: string, gCol: string) => expr.replace(/VAL/g, valCol).replace(/\bG\b/g, gCol);
+// Per-quarter prevalence: a member is positive that quarter if ANY rule is met on their
+// most-recent reading of that rule's parameter within the quarter (multi-rule OR + gender).
 function conditionQuarterlySQL(def: CondDef) {
-  const { base, item, src, pos } = def;
+  const { base, item, rules } = def;
   const { table, uhid, value, date, cug } = base as any;
   const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const allSrc = rules.flatMap((r) => r.src);
+  const ruleCase = `CASE ${rules.map((r, i) => `WHEN ${item} IN (${r.src.map(q).join(", ")}) THEN ${i}`).join(" ")} END`;
+  const ruleCols = rules.map((r, i) => `MAX(val) FILTER (WHERE rule = ${i}) AS r${i}`).join(", ");
+  const posExpr = rules.map((r, i) => `COALESCE(${subExpr(r.expr, `r${i}`, "g")}, false)`).join(" OR ");
   return `
     WITH membership AS (SELECT ${uhid} AS uhid, bool_or("Source" = 'old') AS has_old FROM ${table} WHERE ${cug ? `cug_code = 'CISCO01'` : `TRUE`} GROUP BY 1),
     ppq AS (
-      SELECT uhid, qd, val FROM (
-        SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd, TRIM(${value})::numeric AS val,
-               ROW_NUMBER() OVER (PARTITION BY ${uhid}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
-        FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${item} IN (${src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW}
+      SELECT uhid, qd, g, rule, val FROM (
+        SELECT ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd, LOWER(patient_gender) AS g, ${ruleCase} AS rule, TRIM(${value})::numeric AS val,
+               ROW_NUMBER() OVER (PARTITION BY ${uhid}, ${ruleCase}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table} WHERE ${cugCond}"Source" = 'new' AND ${item} IN (${allSrc.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC} AND ${date} >= ${QWINDOW}
       ) t WHERE rn = 1
-    )
+    ),
+    pq AS (SELECT uhid, qd, MAX(g) AS g, ${ruleCols} FROM ppq GROUP BY uhid, qd),
+    pos AS (SELECT uhid, qd, (${posExpr}) AS positive FROM pq)
     SELECT to_char(p.qd, 'YYYY-"Q"Q') AS quarter, CASE WHEN m.has_old THEN 'tracked' ELSE 'new' END AS cohort,
-           COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ${pos.replace(/VAL/g, "p.val")})::int AS positive
-    FROM ppq p JOIN membership m USING (uhid) GROUP BY 1, 2 ORDER BY 1, 2`;
+           COUNT(*)::int AS total, COUNT(*) FILTER (WHERE p.positive)::int AS positive
+    FROM pos p JOIN membership m USING (uhid) GROUP BY 1, 2 ORDER BY 1, 2`;
+}
+// Then/Now prevalence: positive if ANY rule met on the most-recent OLD (Then) / NEW (Now) reading;
+// cohort = members with at least one of the condition's params measured both old and new.
+// With `win`, the OLD side is restricted to [from, toExcl) (the "1 year ago" window), so cohort =
+// members with a reading in that window AND a new reading.
+function conditionTNSQL(def: CondDef, win?: { from: string; toExcl: string }) {
+  const { base, item, rules } = def;
+  const { table, uhid, value, date, cug } = base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const winCond = win ? ` AND ("Source" = 'new' OR ("Source" = 'old' AND ${date} >= '${win.from}' AND ${date} < '${win.toExcl}'))` : "";
+  const allSrc = rules.flatMap((r) => r.src);
+  const ruleCase = `CASE ${rules.map((r, i) => `WHEN ${item} IN (${r.src.map(q).join(", ")}) THEN ${i}`).join(" ")} END`;
+  const oldCols = rules.map((r, i) => `MAX(v) FILTER (WHERE rule = ${i} AND s = 'old') AS r${i}o`).join(", ");
+  const newCols = rules.map((r, i) => `MAX(v) FILTER (WHERE rule = ${i} AND s = 'new') AS r${i}n`).join(", ");
+  const hasOld = rules.map((r, i) => `r${i}o IS NOT NULL`).join(" OR ");
+  const hasNew = rules.map((r, i) => `r${i}n IS NOT NULL`).join(" OR ");
+  const posOld = rules.map((r, i) => `COALESCE(${subExpr(r.expr, `r${i}o`, "g")}, false)`).join(" OR ");
+  const posNew = rules.map((r, i) => `COALESCE(${subExpr(r.expr, `r${i}n`, "g")}, false)`).join(" OR ");
+  return `
+    WITH src AS (
+      SELECT ${uhid} AS uhid, LOWER(patient_gender) AS g, "Source" AS s, ${ruleCase} AS rule, TRIM(${value})::numeric AS v, ${date} AS dt
+      FROM ${table}
+      WHERE ${cugCond}TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})${winCond}
+    ),
+    ranked AS (SELECT uhid, g, s, rule, v, ROW_NUMBER() OVER (PARTITION BY uhid, rule, (s = 'new') ORDER BY dt DESC) rn FROM src WHERE rule IS NOT NULL),
+    latest AS (SELECT uhid, g, s, rule, v FROM ranked WHERE rn = 1),
+    pat AS (SELECT uhid, MAX(g) AS g, ${oldCols}, ${newCols} FROM latest GROUP BY uhid),
+    ev AS (SELECT (${hasOld}) AS has_old, (${hasNew}) AS has_new, (${posOld}) AS pos_old, (${posNew}) AS pos_new FROM pat)
+    SELECT COUNT(*) FILTER (WHERE has_old AND has_new)::int AS cohort,
+           COUNT(*) FILTER (WHERE has_old AND has_new AND pos_old)::int AS then_pos,
+           COUNT(*) FILTER (WHERE has_old AND has_new AND pos_new)::int AS now_pos
+    FROM ev`;
 }
 const GLUCOSE_CLS = `CASE WHEN VAL < 100 THEN 'Normal' WHEN VAL < 126 THEN 'Pre-diabetic' ELSE 'Diabetic' END`;
 const BMI_CLS = `CASE WHEN VAL < 18.5 THEN 'Underweight' WHEN VAL < 25 THEN 'Normal' WHEN VAL < 30 THEN 'Overweight' ELSE 'Obese' END`;
@@ -399,15 +475,12 @@ async function handler(request: NextRequest) {
       valueQuarterlySQL({ ...VIT_S, item: "vital_parameter_name", params: VIT_PARAMS }), [], HEAVY), "vitQuarterly");
     const condQP = CONDITIONS.map((c) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; total: string; positive: string }>(
       conditionQuarterlySQL(c), [], HEAVY), `cond:${c.key}`));
-    // Per-condition Then/Now baseline (most-recent-old vs most-recent-new over the both-cohort).
-    const condTNP = CONDITIONS.map((c) => {
-      const { oldCte, newCte } = snap({ ...c.base, item: c.item, src: c.src });
-      return safeQuery(() => dwQuery<{ cohort: string; then_pos: string; now_pos: string }>(
-        `WITH oldv AS (${oldCte}), newv AS (${newCte})
-         SELECT COUNT(*)::int AS cohort, COUNT(*) FILTER (WHERE ${c.pos.replace(/VAL/g, "o.val")})::int AS then_pos,
-                COUNT(*) FILTER (WHERE ${c.pos.replace(/VAL/g, "n.val")})::int AS now_pos
-         FROM oldv o JOIN newv n USING (uhid)`, [], HEAVY), `condTN:${c.key}`);
-    });
+    // Per-condition Then/Now baseline (multi-rule OR + gender; cohort = measured both old & new).
+    const condTNP = CONDITIONS.map((c) => safeQuery(() => dwQuery<{ cohort: string; then_pos: string; now_pos: string }>(
+      conditionTNSQL(c), [], HEAVY), `condTN:${c.key}`));
+    // Per-condition Jun'24–Jun'25 → Now (baseline restricted to the window; cohort = window ∩ new).
+    const condWindowP = CONDITIONS.map((c) => safeQuery(() => dwQuery<{ cohort: string; then_pos: string; now_pos: string }>(
+      conditionTNSQL(c, { from: WIN_FROM, toExcl: WIN_TO_EXCL }), [], HEAVY), `condWindow:${c.key}`));
 
     // Appointment outcomes per quarter (all appts by slotstarttime; merge No-show spellings).
     const apptP = safeQuery(() => dwQuery<{ quarter: string; outcome: string; n: string }>(
@@ -426,7 +499,7 @@ async function handler(request: NextRequest) {
     const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
     const bandWindowP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ side: string; band: string; n: string }>(bandWindowSQL(m, WIN_FROM, WIN_TO_EXCL), [], HEAVY), `bandWindow:${m.key}`));
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, labWindowRows, vitWindowRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, labWindowP, vitWindowP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP, ...bandWindowP]);
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, labWindowRows, vitWindowRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, labWindowP, vitWindowP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP, ...bandWindowP, ...condWindowP]);
     const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
@@ -436,26 +509,28 @@ async function handler(request: NextRequest) {
     const bandNowResults = rest.slice(2 * NC + P + S + B, 2 * NC + P + S + 2 * B) as { band: string; n: string }[][];
     const bandQResults = rest.slice(2 * NC + P + S + 2 * B, 2 * NC + P + S + 3 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
     const bandWindowResults = rest.slice(2 * NC + P + S + 3 * B, 2 * NC + P + S + 4 * B) as { side: string; band: string; n: string }[][];
+    const condWindowResults = rest.slice(2 * NC + P + S + 4 * B, 3 * NC + P + S + 4 * B) as { cohort: string; then_pos: string; now_pos: string }[][];
 
     // ── Shape value progression rows (attach panel + direction + delta). ──
     const ALL = [...LAB_PARAMS, ...VIT_PARAMS];
     const metaOf = (display: string) => ALL.find((p) => p.display === display);
-    const shapeProg = (rows: { param: string; cohort: string; avg_old: string; avg_new: string }[], catalogue: typeof LAB_PARAMS) => {
-      const byParam: Record<string, { cohort: number; avgOld: number; avgNew: number }> = {};
-      for (const r of rows) byParam[r.param] = { cohort: Number(r.cohort || 0), avgOld: Number(r.avg_old || 0), avgNew: Number(r.avg_new || 0) };
+    const shapeProg = (rows: { param: string; cohort: string; avg_old: string; avg_new: string; then_above?: string; now_above?: string }[], catalogue: typeof LAB_PARAMS) => {
+      const byParam: Record<string, { cohort: number; avgOld: number; avgNew: number; thenAbove: number; nowAbove: number }> = {};
+      for (const r of rows) byParam[r.param] = { cohort: Number(r.cohort || 0), avgOld: Number(r.avg_old || 0), avgNew: Number(r.avg_new || 0), thenAbove: Number(r.then_above || 0), nowAbove: Number(r.now_above || 0) };
       return catalogue.map((p) => {
-        const v = byParam[p.display] || { cohort: 0, avgOld: 0, avgNew: 0 };
+        const v = byParam[p.display] || { cohort: 0, avgOld: 0, avgNew: 0, thenAbove: 0, nowAbove: 0 };
         const delta = v.avgNew - v.avgOld;
         const pct = v.avgOld !== 0 ? (delta / v.avgOld) * 100 : 0;
         const improved = p.dir === "neutral" ? null : (p.dir === "lower" ? delta < 0 : delta > 0);
-        return { param: p.display, panel: p.panel, direction: p.dir, cohort: v.cohort, avgOld: v.avgOld, avgNew: v.avgNew, delta: Math.round(delta * 100) / 100, pctChange: Math.round(pct * 10) / 10, improved };
+        const hasThreshold = NORMALS[p.display] != null && p.dir !== "neutral";
+        return { param: p.display, panel: p.panel, direction: p.dir, cohort: v.cohort, avgOld: v.avgOld, avgNew: v.avgNew, delta: Math.round(delta * 100) / 100, pctChange: Math.round(pct * 10) / 10, improved, thenAbove: hasThreshold ? v.thenAbove : null, nowAbove: hasThreshold ? v.nowAbove : null };
       }).filter((r) => r.cohort > 0);
     };
     const labProgression = shapeProg(labProg, LAB_PARAMS);
     const vitalsProgression = shapeProg(vitProg, VIT_PARAMS);
     // 1-Year-Ago vs Now: same card shape (baselineOld = window value, baselineNew = now), no quarterly series.
     const shapeWindow = (prog: ReturnType<typeof shapeProg>) =>
-      prog.map((pr) => ({ param: pr.param, panel: pr.panel, direction: pr.direction, baselineOld: pr.avgOld, baselineNew: pr.avgNew, baselineN: pr.cohort }));
+      prog.map((pr) => ({ param: pr.param, panel: pr.panel, direction: pr.direction, baselineOld: pr.avgOld, baselineNew: pr.avgNew, baselineN: pr.cohort, baselineThenAbove: pr.thenAbove, baselineNowAbove: pr.nowAbove }));
     const labWindow = shapeWindow(shapeProg(labWindowRows, LAB_PARAMS));
     const vitalsWindow = shapeWindow(shapeProg(vitWindowRows, VIT_PARAMS));
 
@@ -490,35 +565,25 @@ async function handler(request: NextRequest) {
         });
         series.tracked.sort(qSort); series.new.sort(qSort);
         const pr = prog.find((x) => x.param === p.display);
-        return { param: p.display, panel: p.panel, direction: p.dir, baselineOld: pr?.avgOld ?? null, baselineNew: pr?.avgNew ?? null, baselineN: pr?.cohort ?? 0, series };
+        return { param: p.display, panel: p.panel, direction: p.dir, baselineOld: pr?.avgOld ?? null, baselineNew: pr?.avgNew ?? null, baselineN: pr?.cohort ?? 0, baselineThenAbove: pr?.thenAbove ?? null, baselineNowAbove: pr?.nowAbove ?? null, series };
       }).filter((p) => p.series.tracked.length || p.series.new.length);
     const labQuarterly = shapeQuarterly(labQ, LAB_PARAMS, labProgression);
     const vitalsQuarterly = shapeQuarterly(vitQ, VIT_PARAMS, vitalsProgression);
 
-    // ── Member Health Journey: per condition, Then → quarters → Now, per cohort ──
+    // ── Member Health Journey: per condition, two comparisons (Then → Now, and Jun'24–'25 → Now) ──
     const pctOf = (pos: number, tot: number) => (tot ? Math.round((pos / tot) * 1000) / 10 : 0);
-    const conditionJourney = CONDITIONS.map((c, i) => {
-      const tn = condTNResults[i]?.[0];
-      const cohort = Number(tn?.cohort || 0), thenPos = Number(tn?.then_pos || 0), nowPos = Number(tn?.now_pos || 0);
-      const trackedQ: { quarter: string; positive: number; total: number; pct: number }[] = [];
-      const newQ: { quarter: string; positive: number; total: number; pct: number }[] = [];
-      (condResults[i] || []).forEach((r) => {
-        allQuarters.add(r.quarter);
-        const total = Number(r.total), positive = Number(r.positive);
-        (r.cohort === "tracked" ? trackedQ : newQ).push({ quarter: r.quarter, positive, total, pct: pctOf(positive, total) });
-      });
-      trackedQ.sort(qSort); newQ.sort(qSort);
+    const mkCmp = (r?: { cohort: string; then_pos: string; now_pos: string }) => {
+      const cohort = Number(r?.cohort || 0), thenPos = Number(r?.then_pos || 0), nowPos = Number(r?.now_pos || 0);
       return {
-        key: c.key, label: c.label, threshold: c.threshold,
-        tracked: {
-          cohort,
-          then: { positive: thenPos, total: cohort, pct: pctOf(thenPos, cohort) },
-          now: { positive: nowPos, total: cohort, pct: pctOf(nowPos, cohort) },
-          quarters: trackedQ,
-        },
-        new: { quarters: newQ },
+        then: { positive: thenPos, total: cohort, pct: pctOf(thenPos, cohort) },
+        now: { positive: nowPos, total: cohort, pct: pctOf(nowPos, cohort) },
       };
-    }).sort((a, b) => (b.tracked.then.positive - b.tracked.now.positive) - (a.tracked.then.positive - a.tracked.now.positive));
+    };
+    const conditionJourney = CONDITIONS.map((c, i) => ({
+      key: c.key, label: c.label, threshold: c.threshold,
+      total: mkCmp(condTNResults[i]?.[0]),
+      window: mkCmp(condWindowResults[i]?.[0]),
+    })).sort((a, b) => (b.total.then.positive - b.total.now.positive) - (a.total.then.positive - a.total.now.positive));
     // ── Band distribution journey (waffle charts): Then + quarters, per cohort ──
     const bandJourney: Record<string, any> = {};
     BAND_METRICS.forEach((m, i) => {
@@ -615,11 +680,13 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Member Health Journey (condition prevalence Then → quarterly → Now)",
     sources: [LAB, VIT],
     logic:
-      "Per condition (single-param thresholds, e.g. Diabetes = fasting glucose ≥ 126): Then = % of the both-cohort above the " +
-      "threshold on their most-recent OLD reading; Now = same on most-recent NEW. Quarter points use the SAME logic as Then — " +
-      "each patient's most-recent reading WITHIN that quarter (not an average), classified against the threshold; " +
-      "% of members measured that quarter, split tracked vs new-only.",
-    sql: "snap(old)/snap(new) for then/now; per-quarter latest-per-patient then classify GROUP BY quarter, cohort.",
+      "Thresholds aligned to the reference workbook. A member is positive for a condition if ANY of its rules is met (OR) on their " +
+      "most-recent reading of that rule's parameter. Multi-rule: Diabetes = FBS ≥126 OR HbA1c ≥6.5; Hypertension = SBP >140 OR DBP >90; " +
+      "Anaemia = gender-specific Hb <13 (M) / <12 (F). Others: High Cholesterol ≥240, Low HDL <40, High Triglycerides ≥150, Obesity " +
+      "BMI ≥25 (Asian-Indian), Hypothyroid TSH >5.5. Then = positive on most-recent OLD reading; Now = most-recent NEW; cohort = members " +
+      "with at least one of the condition's params measured both old and new. Quarter points = same OR logic on each member's most-recent " +
+      "reading WITHIN that quarter, % of members measured that quarter, split tracked vs new-only.",
+    sql: "per-rule latest-per-side (ROW_NUMBER PARTITION BY uhid, rule, Source='new'); OR(rule exprs) for then/now; per-quarter per-rule latest then OR GROUP BY quarter, cohort.",
   },
   labQuarterly: {
     chart: "Value Progression — labs (avg value, quarter by quarter)",

@@ -107,6 +107,39 @@ function valueProgressionSQL(opts: { table: string; uhid: string; value: string;
     FROM pivoted GROUP BY param`;
 }
 
+// 1-Year-Ago vs Now: same as valueProgressionSQL but the "old" side is restricted
+// to the date window [from, toExcl); cohort = patients with BOTH a reading inside
+// that window AND a 'new' reading. Window value = most-recent reading in the window.
+function valueWindowSQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[] }[] }, from: string, toExcl: string) {
+  const { table, uhid, value, date, item, cug, params } = opts;
+  const allSrc = params.flatMap((p) => p.src);
+  const normCase = `CASE ${params.map((p) => `WHEN ${item} IN (${p.src.map(q).join(", ")}) THEN ${q(p.display)}`).join(" ")} END`;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  return `
+    WITH base AS (
+      SELECT ${normCase} AS param, ${uhid} AS uhid, "Source" AS src, TRIM(${value})::numeric AS val, ${date} AS dt
+      FROM ${table}
+      WHERE ${cugCond}TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})
+        AND ("Source" = 'new' OR ("Source" = 'old' AND ${date} >= '${from}' AND ${date} < '${toExcl}'))
+    ),
+    ranked AS (SELECT param, uhid, src, val, ROW_NUMBER() OVER (PARTITION BY param, uhid, (src = 'new') ORDER BY dt DESC) rn FROM base),
+    latest AS (SELECT param, uhid, src, val FROM ranked WHERE rn = 1),
+    pivoted AS (
+      SELECT param, uhid,
+        MAX(val) FILTER (WHERE src = 'old') AS old_val,
+        MAX(val) FILTER (WHERE src = 'new') AS new_val
+      FROM latest GROUP BY param, uhid
+    )
+    SELECT param,
+      COUNT(*) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::int AS cohort,
+      AVG(old_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_old,
+      AVG(new_val) FILTER (WHERE old_val IS NOT NULL AND new_val IS NOT NULL)::numeric(12,2) AS avg_new
+    FROM pivoted GROUP BY param`;
+}
+
+// Window for the "1 Year Ago" comparison: mid-Jun-2024 → mid-Jun-2025 (toExcl-exclusive).
+const WIN_FROM = "2024-06-15", WIN_TO_EXCL = "2025-06-16";
+
 // Per-patient most-recent old / new for ONE metric (used by transitions,
 // prevalence, scatter). Returns oldv/newv CTE bodies.
 function snap(opts: { table: string; uhid: string; value: string; date: string; item: string; src: string[]; cug?: boolean }) {
@@ -254,6 +287,27 @@ function bandNowSQL(m: BandMetric) {
     old_has AS (SELECT DISTINCT ${uhid} AS uhid FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${inList})
     SELECT ${m.cls.replace(/VAL/g, "n.v")} AS band, COUNT(*)::int AS n FROM new_latest n JOIN old_has oh USING (uhid) GROUP BY 1`;
 }
+// Band split for the windowed comparison: most-recent reading in [from, toExcl) vs most-recent NEW,
+// over the cohort with BOTH a window reading AND a new reading. Returns (side, band, n).
+function bandWindowSQL(m: BandMetric, from: string, toExcl: string) {
+  const { table, uhid, value, date, cug } = m.base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const inList = `${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}`;
+  return `
+    WITH base AS (
+      SELECT ${uhid} AS uhid, "Source" AS src, TRIM(${value})::numeric AS v, ${date} AS dt
+      FROM ${table}
+      WHERE ${cugCond}${inList}
+        AND ("Source" = 'new' OR ("Source" = 'old' AND ${date} >= '${from}' AND ${date} < '${toExcl}'))
+    ),
+    ranked AS (SELECT uhid, src, v, ROW_NUMBER() OVER (PARTITION BY uhid, (src = 'new') ORDER BY dt DESC) rn FROM base),
+    latest AS (SELECT uhid, src, v FROM ranked WHERE rn = 1),
+    piv AS (SELECT uhid, MAX(v) FILTER (WHERE src = 'old') AS ow, MAX(v) FILTER (WHERE src = 'new') AS nw FROM latest GROUP BY uhid),
+    paired AS (SELECT ow, nw FROM piv WHERE ow IS NOT NULL AND nw IS NOT NULL)
+    SELECT 'window' AS side, ${m.cls.replace(/VAL/g, "ow")} AS band, COUNT(*)::int AS n FROM paired GROUP BY 2
+    UNION ALL
+    SELECT 'now' AS side, ${m.cls.replace(/VAL/g, "nw")} AS band, COUNT(*)::int AS n FROM paired GROUP BY 2`;
+}
 
 async function handler(request: NextRequest) {
   try {
@@ -275,6 +329,11 @@ async function handler(request: NextRequest) {
       valueProgressionSQL({ ...LAB_S, item: "service_item_name", params: LAB_PARAMS }), [], HEAVY), "labProgression");
     const vitProgP = safeQuery(() => dwQuery<{ param: string; cohort: string; avg_old: string; avg_new: string }>(
       valueProgressionSQL({ ...VIT_S, item: "vital_parameter_name", params: VIT_PARAMS }), [], HEAVY), "vitProgression");
+    // 1-Year-Ago (Jun'24–Jun'25) vs Now, for the window∩new cohort.
+    const labWindowP = safeQuery(() => dwQuery<{ param: string; cohort: string; avg_old: string; avg_new: string }>(
+      valueWindowSQL({ ...LAB_S, item: "service_item_name", params: LAB_PARAMS }, WIN_FROM, WIN_TO_EXCL), [], HEAVY), "labWindow");
+    const vitWindowP = safeQuery(() => dwQuery<{ param: string; cohort: string; avg_old: string; avg_new: string }>(
+      valueWindowSQL({ ...VIT_S, item: "vital_parameter_name", params: VIT_PARAMS }, WIN_FROM, WIN_TO_EXCL), [], HEAVY), "vitWindow");
 
     // Band transitions.
     const glyP = safeQuery(() => dwQuery<MatrixRow>(matrixSQL({ ...LAB_S, item: "service_item_name" }, srcOf("Glucose (Fasting)"), GLUCOSE_CLS), [], HEAVY), "glycemicTransition");
@@ -365,8 +424,9 @@ async function handler(request: NextRequest) {
     const bandThenP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandThenSQL(m), [], HEAVY), `bandThen:${m.key}`));
     const bandNowP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ band: string; n: string }>(bandNowSQL(m), [], HEAVY), `bandNow:${m.key}`));
     const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
+    const bandWindowP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ side: string; band: string; n: string }>(bandWindowSQL(m, WIN_FROM, WIN_TO_EXCL), [], HEAVY), `bandWindow:${m.key}`));
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP]);
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, labWindowRows, vitWindowRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, labWindowP, vitWindowP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP, ...bandWindowP]);
     const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
@@ -375,6 +435,7 @@ async function handler(request: NextRequest) {
     const bandThenResults = rest.slice(2 * NC + P + S, 2 * NC + P + S + B) as { band: string; n: string }[][];
     const bandNowResults = rest.slice(2 * NC + P + S + B, 2 * NC + P + S + 2 * B) as { band: string; n: string }[][];
     const bandQResults = rest.slice(2 * NC + P + S + 2 * B, 2 * NC + P + S + 3 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
+    const bandWindowResults = rest.slice(2 * NC + P + S + 3 * B, 2 * NC + P + S + 4 * B) as { side: string; band: string; n: string }[][];
 
     // ── Shape value progression rows (attach panel + direction + delta). ──
     const ALL = [...LAB_PARAMS, ...VIT_PARAMS];
@@ -392,6 +453,11 @@ async function handler(request: NextRequest) {
     };
     const labProgression = shapeProg(labProg, LAB_PARAMS);
     const vitalsProgression = shapeProg(vitProg, VIT_PARAMS);
+    // 1-Year-Ago vs Now: same card shape (baselineOld = window value, baselineNew = now), no quarterly series.
+    const shapeWindow = (prog: ReturnType<typeof shapeProg>) =>
+      prog.map((pr) => ({ param: pr.param, panel: pr.panel, direction: pr.direction, baselineOld: pr.avgOld, baselineNew: pr.avgNew, baselineN: pr.cohort }));
+    const labWindow = shapeWindow(shapeProg(labWindowRows, LAB_PARAMS));
+    const vitalsWindow = shapeWindow(shapeProg(vitWindowRows, VIT_PARAMS));
 
     // ── Matrices ──
     const glycemicMatrix = buildMatrix(glyRows, ["Normal", "Pre-diabetic", "Diabetic"]);
@@ -458,24 +524,28 @@ async function handler(request: NextRequest) {
     BAND_METRICS.forEach((m, i) => {
       const catIdx = Object.fromEntries(m.categories.map((c, ix) => [c, ix]));
       const zeros = () => m.categories.map(() => 0);
-      const thenCounts = zeros();
-      (bandThenResults[i] || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) thenCounts[ix] += Number(r.n); });
-      const thenTotal = thenCounts.reduce((a, b) => a + b, 0);
-      const nowCounts = zeros();
-      (bandNowResults[i] || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) nowCounts[ix] += Number(r.n); });
-      const nowTotal = nowCounts.reduce((a, b) => a + b, 0);
-      const tQ: Record<string, number[]> = {}, nQ: Record<string, number[]> = {};
-      (bandQResults[i] || []).forEach((r) => {
-        allQuarters.add(r.quarter);
-        const bucket = r.cohort === "tracked" ? tQ : nQ;
-        (bucket[r.quarter] ||= zeros());
-        const ix = catIdx[r.band]; if (ix != null) bucket[r.quarter][ix] += Number(r.n);
-      });
-      const toPoints = (bucket: Record<string, number[]>) => Object.keys(bucket).sort().map((qk) => ({ label: qk, counts: bucket[qk], total: bucket[qk].reduce((a, b) => a + b, 0) }));
+      const tally = (rows: { band: string; n: string }[] | undefined) => {
+        const counts = zeros();
+        (rows || []).forEach((r) => { const ix = catIdx[r.band]; if (ix != null) counts[ix] += Number(r.n); });
+        return { counts, total: counts.reduce((a, b) => a + b, 0) };
+      };
+      // Then → Now (Total): most-recent-old vs most-recent-new over the both-cohort.
+      const thenPt = tally(bandThenResults[i]);
+      const nowPt = tally(bandNowResults[i]);
+      // Window comparison: most-recent reading in Jun'24–Jun'25 vs Now, over the window∩new cohort.
+      const wr = bandWindowResults[i] || [];
+      const winThenPt = tally(wr.filter((r) => r.side === "window"));
+      const winNowPt = tally(wr.filter((r) => r.side === "now"));
       bandJourney[m.key] = {
         key: m.key, title: m.title, note: m.note, categories: m.categories,
-        tracked: [...(thenTotal > 0 ? [{ label: "Then", counts: thenCounts, total: thenTotal }] : []), ...toPoints(tQ), ...(nowTotal > 0 ? [{ label: "Now", counts: nowCounts, total: nowTotal }] : [])],
-        new: toPoints(nQ),
+        total: [
+          ...(thenPt.total > 0 ? [{ label: "Then", counts: thenPt.counts, total: thenPt.total }] : []),
+          ...(nowPt.total > 0 ? [{ label: "Now", counts: nowPt.counts, total: nowPt.total }] : []),
+        ],
+        window: [
+          ...(winThenPt.total > 0 ? [{ label: "Jun'24–'25", counts: winThenPt.counts, total: winThenPt.total }] : []),
+          ...(winNowPt.total > 0 ? [{ label: "Now", counts: winNowPt.counts, total: winNowPt.total }] : []),
+        ],
       };
     });
     // ── Appointment outcomes (waffle per quarter) ──
@@ -512,6 +582,8 @@ async function handler(request: NextRequest) {
       vitalsProgression,
       labQuarterly,
       vitalsQuarterly,
+      labWindow,
+      vitalsWindow,
       conditionJourney,
       bandJourney,
       apptOutcomes,
@@ -564,14 +636,30 @@ const PROVENANCE: DashboardProvenance = {
     logic: "Same as labQuarterly but on the vitals table (BMI, BP, Weight, SPO2); vitals parameter names are identical across old/new.",
     sql: "latest-per-patient-per-quarter then AVG across patients GROUP BY param, quarter, cohort.",
   },
+  labWindow: {
+    chart: "Value Progression — labs (1 Year Ago → Now)",
+    sources: [LAB],
+    logic:
+      `Per lab parameter: '1 Year Ago' = mean of each patient's most-recent reading within ${WIN_FROM} → ${WIN_TO_EXCL} (exclusive); ` +
+      "Now = mean of most-recent NEW reading. Cohort = patients with BOTH a reading in that window AND a new reading (smaller than the " +
+      "Then→Now both-cohort). Old/new lab names mapped to one canonical parameter; numeric values only.",
+    sql: "base restricts old to the window; latest-per-side via ROW_NUMBER PARTITION BY (Source='new'); AVG over patients with both.",
+  },
+  vitalsWindow: {
+    chart: "Value Progression — vitals (1 Year Ago → Now)",
+    sources: [VIT],
+    logic: "Same as labWindow but on the vitals table (BMI, BP, Weight, SPO2).",
+    sql: "base restricts old to the window; latest-per-side via ROW_NUMBER PARTITION BY (Source='new'); AVG over patients with both.",
+  },
   bandJourney: {
-    chart: "Health Band Distribution (Glycemic / BMI / BP waffle, Then → quarterly)",
+    chart: "Health Band Distribution (Glycemic / BMI / BP waffle, Then → Now)",
     sources: [LAB, VIT],
     logic:
-      "Per metric, members are classified into bands (Glycemic via fasting glucose; BMI; BP via systolic). Then = band split of the " +
-      "most-recent-old reading over the both-cohort; each quarter = band split of new-period readings that quarter (cohort-average), " +
-      "split tracked vs new-only.",
-    sql: "classify(most-recent-old) for Then; classify(latest-per-patient-per-quarter) GROUP BY quarter, cohort, band.",
+      "Per metric, members are classified into bands (Glycemic via fasting glucose; BMI; BP via systolic). Two comparisons: " +
+      "'total' = band split of most-recent-old vs most-recent-new over the both-cohort (Then → Now); " +
+      `'window' = band split of the most-recent reading in ${WIN_FROM} → ${WIN_TO_EXCL} (exclusive) vs most-recent-new, over the ` +
+      "cohort with BOTH a window reading AND a new reading.",
+    sql: "total: classify(most-recent-old) vs classify(most-recent-new), both-cohort. window: base restricts old to the window; latest-per-side; classify(window) and classify(now) over patients with both.",
   },
   apptOutcomes: {
     chart: "Appointment Outcomes (status share by quarter)",

@@ -350,7 +350,7 @@ const PARAM_META: Record<string, { unit?: string; normal?: number }> = {
   "Glucose (Fasting)": { unit: "mg/dL", normal: 100 },
   "Glucose (PP)": { unit: "mg/dL", normal: 140 },
   "Cholesterol (Total)": { unit: "mg/dL", normal: 200 },
-  "LDL": { unit: "mg/dL", normal: 100 },
+  "LDL": { unit: "mg/dL", normal: 130 },
   "HDL": { unit: "mg/dL", normal: 40 },
   "VLDL": { unit: "mg/dL", normal: 30 },
   "Triglycerides": { unit: "mg/dL", normal: 150 },
@@ -362,21 +362,21 @@ const PARAM_META: Record<string, { unit?: string; normal?: number }> = {
   "Globulin": { unit: "g/dL" },
   "Total Proteins": { unit: "g/dL" },
   "Bilirubin (Total)": { unit: "mg/dL", normal: 1.2 },
-  "SGPT / ALT": { unit: "U/L", normal: 45 },
-  "SGOT / AST": { unit: "U/L", normal: 40 },
+  "SGPT / ALT": { unit: "U/L", normal: 50 },
+  "SGOT / AST": { unit: "U/L", normal: 50 },
   "Alk. Phosphatase": { unit: "U/L", normal: 120 },
-  "GGTP": { unit: "U/L", normal: 55 },
-  "Creatinine": { unit: "mg/dL", normal: 1.3 },
+  "GGTP": { unit: "U/L", normal: 85 },
+  "Creatinine": { unit: "mg/dL", normal: 1.2 },
   "Blood Urea": { unit: "mg/dL", normal: 40 },
   "BUN": { unit: "mg/dL", normal: 20 },
   "Uric Acid": { unit: "mg/dL", normal: 7 },
   "Haemoglobin": { unit: "g/dL", normal: 12 },
   "WBC": { unit: "/µL" },
-  "BMI": { unit: "", normal: 25 },
-  "BP (Systolic)": { unit: "mmHg", normal: 130 },
-  "BP (Diastolic)": { unit: "mmHg", normal: 85 },
+  "BMI": { unit: "", normal: 23 },
+  "BP (Systolic)": { unit: "mmHg", normal: 120 },
+  "BP (Diastolic)": { unit: "mmHg", normal: 80 },
   "Weight": { unit: "kg" },
-  "SPO2": { unit: "%", normal: 95 },
+  "SPO2": { unit: "%", normal: 94 },
 };
 const dirColor = (change: number, dir: string) => {
   if (dir === "neutral" || change === 0) return C_FLAT;
@@ -394,9 +394,11 @@ function ValueColumnChart({ columns, normal, normalText, large }: { columns: VCo
   const pad = Math.max(0.4, (hi0 - lo0) * 0.18);
   const yMin = lo0 - pad, yMax = hi0 + pad;
   const h = (v: number) => Math.max(2, ((v - yMin) / (yMax - yMin)) * 100);
-  const barH = large ? 200 : 80, numH = large ? 52 : 40, maxBarW = large ? 64 : 40;
+  const barH = large ? 200 : 80, numH = large ? 52 : 40, maxBarW = large ? 80 : 60;
+  // With only Then/Now (2 bars), constrain + center so they don't fling to the card edges.
+  const maxW = columns.length <= 2 ? (large ? 320 : 240) : undefined;
   return (
-    <div>
+    <div className="mx-auto w-full" style={{ maxWidth: maxW }}>
       <div className="flex justify-around gap-2">
         {columns.map((col, i) => (
           <div key={i} className="flex-1 flex flex-col items-center justify-end leading-none" style={{ height: numH }}>
@@ -429,19 +431,16 @@ function ValueColumnChart({ columns, normal, normalText, large }: { columns: VCo
   );
 }
 
-function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; offset: number; large?: boolean }) {
-  const allQ: any[] = (tab === "tracked" ? p.series?.tracked : p.series?.new) ?? [];
+function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boolean; baselineLabel?: string }) {
   const dir: string = p.direction || "neutral";
   const meta = PARAM_META[p.param] || {};
   const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
 
-  // Full chronological sequence (Then pinned for tracked), deltas vs previous bar.
-  const hasThen = tab === "tracked" && p.baselineOld != null;
-  const hasNow = tab === "tracked" && p.baselineNew != null;
+  // Two bars only: a baseline value vs Now (each patient's most-recent reading on each side).
+  const hasThen = p.baselineOld != null;
+  const hasNow = p.baselineNew != null;
   const seq: VCol[] = [];
-  if (hasThen) seq.push({ label: "Then", value: Number(p.baselineOld), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
-  allQ.forEach((q) => seq.push({ label: shortQ(q.quarter), value: Number(q.avg), n: Number(q.n), color: C_BASE, delta: null }));
-  // Now = mean of each patient's most-recent NEW value over the both-cohort (pinned at end).
+  if (hasThen) seq.push({ label: baselineLabel, value: Number(p.baselineOld), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
   if (hasNow) seq.push({ label: "Now", value: Number(p.baselineNew), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
   seq.forEach((col, i) => {
     if (i === 0) { col.color = C_BASE; col.delta = null; return; }
@@ -450,14 +449,8 @@ function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; 
     col.color = dirColor(change, dir);
   });
 
-  const quartersOnly = seq.slice(hasThen ? 1 : 0, hasNow ? seq.length - 1 : seq.length);
-  const nowCol = hasNow ? seq[seq.length - 1] : null;
-  const columns: VCol[] = [
-    ...(hasThen ? [seq[0]] : []),
-    ...quartersOnly.slice(offset, offset + QPAGE),
-    ...(nowCol ? [nowCol] : []),
-  ];
-  const empty = seq.length < (tab === "tracked" ? 2 : 1) || quartersOnly.length === 0;
+  const columns: VCol[] = seq;
+  const empty = seq.length < 2;
 
   // Overall first→last badge.
   const first = seq[0], last = seq[seq.length - 1];
@@ -487,45 +480,38 @@ function ValueCard({ p, tab, offset, large }: { p: any; tab: "tracked" | "new"; 
   );
 }
 
-function ValueJourney({ params }: { params: any[] }) {
-  const [tab, setTab] = useState<"tracked" | "new">("tracked");
-  const [offset, setOffset] = useState(0);
+function ValueJourney({ paramsTotal, paramsWindow }: { paramsTotal: any[]; paramsWindow: any[] }) {
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
-  const list = params ?? [];
+  const [cmp, setCmp] = useState<"total" | "window">("total");
+  const list = (cmp === "total" ? paramsTotal : paramsWindow) ?? [];
+  const baselineLabel = cmp === "total" ? "Then" : "Jun'24–'25";
   const byPanel = PANEL_ORDER.map((panel) => ({ panel, items: list.filter((p) => p.panel === panel) })).filter((g) => g.items.length);
   const curPanel = byPanel.find((g) => g.panel === selectedPanel) || byPanel[0];
   const items: any[] = curPanel?.items ?? [];
-  const maxQ = Math.max(0, ...items.map((p) => ((tab === "tracked" ? p.series?.tracked : p.series?.new) ?? []).length));
-  const canPrev = offset > 0;
-  const canNext = offset + QPAGE < maxQ;
 
-  const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
-    <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
-  );
-  const PageBtn = ({ dir, disabled, children }: { dir: "prev" | "next"; disabled: boolean; children: React.ReactNode }) => (
-    <button disabled={disabled} onClick={() => setOffset((o) => Math.max(0, o + (dir === "next" ? QPAGE : -QPAGE)))} className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{children}</button>
+  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+    <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Panel</span>
-          <select value={curPanel?.panel ?? ""} onChange={(e) => { setSelectedPanel(e.target.value); setOffset(0); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
+          <select value={curPanel?.panel ?? ""} onChange={(e) => { setSelectedPanel(e.target.value); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
             {byPanel.map((g) => <option key={g.panel} value={g.panel}>{g.panel} ({g.items.length})</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <TabBtn id="tracked" label="Then → Now" />
-          <TabBtn id="new" label="New members only" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: T.textMuted }}>{maxQ > QPAGE ? `quarters ${offset + 1}–${Math.min(offset + QPAGE, maxQ)} of ${maxQ}` : "quarterly"}</span>
-          <PageBtn dir="prev" disabled={!canPrev}>◂ Prev</PageBtn>
-          <PageBtn dir="next" disabled={!canNext}>Next ▸</PageBtn>
+          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
-      {tab === "new" && <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>New members have no past baseline — columns show their quarterly average (oldest first).</p>}
+      <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>
+        {cmp === "total"
+          ? "Then = each member's most-recent past reading (any prior record) vs Now. Cohort = members with both past and current readings."
+          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now. Cohort = members present in that window and now (so n differs from Then → Now)."}
+      </p>
 
       {/* How to read each bar */}
       <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
@@ -534,11 +520,11 @@ function ValueJourney({ params }: { params: any[] }) {
           <tbody>
             <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
               <td className="py-2 pr-4 w-[120px]"><span className="text-[15px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>5.9</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The <b>average value</b> for that group at that point (e.g. average HbA1c). <span style={{ color: T.textMuted }}>n = members measured.</span></td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The <b>average value</b> at that point — <b>Then</b> (most-recent past reading) or <b>Now</b> (most-recent current reading). <span style={{ color: T.textMuted }}>n = members measured.</span></td>
             </tr>
             <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
               <td className="py-2 pr-4"><span className="text-[12px] font-bold" style={{ color: C_DOWN }}>▼0.2</span> <span className="text-[12px] font-bold" style={{ color: C_UP }}>▲0.3</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}><b>Change vs the previous bar</b>, coloured by the <b>healthy direction</b> for that metric — <span style={{ color: C_DOWN }}>teal = moved the right way</span>, <span style={{ color: C_UP }}>red = wrong way</span>. The bar takes that colour.</td>
+              <td className="py-2" style={{ color: T.textSecondary }}><b>Change from Then → Now</b>, coloured by the <b>healthy direction</b> for that metric — <span style={{ color: C_DOWN }}>teal = moved the right way</span>, <span style={{ color: C_UP }}>red = wrong way</span>. The Now bar takes that colour.</td>
             </tr>
             <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
               <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: "#64748b" }}>- - normal</span></td>
@@ -546,7 +532,7 @@ function ValueJourney({ params }: { params: any[] }) {
             </tr>
             <tr>
               <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>baseline</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The first <b>"Then"</b> bar (each member's most-recent past reading) — nothing earlier to compare against.</td>
+              <td className="py-2" style={{ color: T.textSecondary }}>The <b>"{baselineLabel}"</b> bar — the starting reading the <b>Now</b> bar is compared against.</td>
             </tr>
           </tbody>
         </table>
@@ -555,7 +541,7 @@ function ValueJourney({ params }: { params: any[] }) {
 
       {items.length ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {items.map((p) => <ValueCard key={p.param} p={p} tab={tab} offset={offset} />)}
+          {items.map((p) => <ValueCard key={p.param} p={p} baselineLabel={baselineLabel} />)}
         </div>
       ) : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No parameters available.</div>}
 
@@ -608,16 +594,8 @@ function Waffle({ point, categories, healthyLabel = "Normal", healthyWord = "nor
   );
 }
 
-function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "new"; offset: number }) {
-  const all: any[] = (tab === "tracked" ? metric.tracked : metric.new) ?? [];
-  const isThen = tab === "tracked" && all[0]?.label === "Then";
-  const isNow = tab === "tracked" && all[all.length - 1]?.label === "Now";
-  const quarters = all.slice(isThen ? 1 : 0, isNow ? all.length - 1 : all.length);
-  const points = [
-    ...(isThen ? [all[0]] : []),
-    ...quarters.slice(offset, offset + QPAGE),
-    ...(isNow ? [all[all.length - 1]] : []),
-  ];
+function BandSection({ metric, cmp }: { metric: any; cmp: "total" | "window" }) {
+  const points: any[] = (cmp === "total" ? metric.total : metric.window) ?? [];
   return (
     <div>
       <div className="flex items-center gap-2 mb-1.5">
@@ -632,11 +610,11 @@ function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "n
         ))}
       </div>
       {points.length ? (
-        <div className="flex items-start">
+        <div className="flex items-start justify-center gap-10 sm:gap-16">
           <Waffle point={points[0]} categories={metric.categories} />
           {points.slice(1).map((p, i) => (
-            <div key={i} className="flex items-start flex-1 min-w-[40px]">
-              <div className="flex-1 flex justify-center" style={{ marginTop: 66 }}><span className="text-[18px]" style={{ color: "#cbd5e1" }}>→</span></div>
+            <div key={i} className="flex items-start gap-10 sm:gap-16">
+              <span className="text-[22px]" style={{ color: "#cbd5e1", marginTop: 64 }}>→</span>
               <Waffle point={p} categories={metric.categories} />
             </div>
           ))}
@@ -647,47 +625,33 @@ function BandSection({ metric, tab, offset }: { metric: any; tab: "tracked" | "n
 }
 
 function BandJourney({ bands }: { bands: any[] }) {
-  const [tab, setTab] = useState<"tracked" | "new">("tracked");
-  const [offset, setOffset] = useState(0);
+  const [cmp, setCmp] = useState<"total" | "window">("total");
   const [selected, setSelected] = useState<string | null>(null);
   const current = bands.find((m) => m.key === selected) || bands[0];
-  const quartersLen = (m: any) => {
-    const all = (tab === "tracked" ? m.tracked : m.new) ?? [];
-    let n = all.length;
-    if (tab === "tracked") { if (all[0]?.label === "Then") n--; if (all[all.length - 1]?.label === "Now") n--; }
-    return Math.max(0, n);
-  };
-  const maxQ = current ? quartersLen(current) : 0;
-  const canPrev = offset > 0, canNext = offset + QPAGE < maxQ;
-  const TabBtn = ({ id, label }: { id: "tracked" | "new"; label: string }) => (
-    <button onClick={() => { setTab(id); setOffset(0); }} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={tab === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
-  );
-  const PageBtn = ({ dir, disabled, children }: { dir: "prev" | "next"; disabled: boolean; children: React.ReactNode }) => (
-    <button disabled={disabled} onClick={() => setOffset((o) => Math.max(0, o + (dir === "next" ? QPAGE : -QPAGE)))} className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F1F3F9", color: T.textSecondary }}>{children}</button>
+  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+    <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Metric</span>
-          <select value={current?.key ?? ""} onChange={(e) => { setSelected(e.target.value); setOffset(0); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
+          <select value={current?.key ?? ""} onChange={(e) => { setSelected(e.target.value); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
             {bands.map((m) => <option key={m.key} value={m.key}>{m.title}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <TabBtn id="tracked" label="Then → Now" />
-          <TabBtn id="new" label="New members only" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: T.textMuted }}>{maxQ > QPAGE ? `quarters ${offset + 1}–${Math.min(offset + QPAGE, maxQ)} of ${maxQ}` : "quarterly"}</span>
-          <PageBtn dir="prev" disabled={!canPrev}>◂ Prev</PageBtn>
-          <PageBtn dir="next" disabled={!canNext}>Next ▸</PageBtn>
+          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
       <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
-        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — watch it grow across <b>Then → quarters</b>. Hover a grid for the exact split.
+        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — compare it between the two grids. Hover a grid for the exact split.{" "}
+        {cmp === "total"
+          ? "Then = most-recent past reading vs Now (members with both past & current readings)."
+          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now (members present in that window and now — so n differs)."}
       </div>
-      {current ? <BandSection metric={current} tab={tab} offset={offset} /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
+      {current ? <BandSection metric={current} cmp={cmp} /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
     </div>
   );
 }
@@ -807,11 +771,10 @@ export default function PastDataPage() {
 
       {/* ── KPI tiles ── */}
       {isChartVisible("kpis") && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
             { label: "Patients Tracked (Labs)", value: fmt(kpis?.labCohort || 0), hint: "both past & present lab records", tip: "Members with at least one lab result from before and after — the basis for every then-vs-now lab comparison (glucose, cholesterol, HbA1c, etc.).", color: "#4f46e5" },
             { label: "Patients Tracked (Vitals)", value: fmt(kpis?.vitalsCohort || 0), hint: "both past & present vitals", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check — the basis for the vitals then-vs-now comparison.", color: "#0d9488" },
-            { label: "New Members", value: fmt(kpis?.newMembers || 0), hint: "first health check now", tip: "Members assessed for the first time in the current campaign — no past record yet, so this visit sets their baseline. Counted on vitals (broadest reach).", color: "#6366f1" },
             { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions, then → now", tip: `Conditions compared past vs present: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
@@ -838,14 +801,17 @@ export default function PastDataPage() {
 
       {/* ── Value Progression (quarter-by-quarter, by panel) ── */}
       {(isChartVisible("labProgression") || isChartVisible("vitalsProgression")) && (
-        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values, quarter by quarter, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = most-recent past reading; then one bar per quarter. Bars are zoomed to show movement; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Quarter-by-quarter average lab & vital values, tracked & new cohorts">
-          <ValueJourney params={[...(isChartVisible("labProgression") ? (data?.labQuarterly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsQuarterly ?? []) : [])]} />
+        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values — past baseline vs now, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = mean of each member's most-recent past reading; 'Now' = mean of their most-recent current reading (both over the tracked cohort). Bars are zoomed to show movement; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Then vs now average lab & vital values, tracked cohort">
+          <ValueJourney
+            paramsTotal={[...(isChartVisible("labProgression") ? (data?.labQuarterly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsQuarterly ?? []) : [])]}
+            paramsWindow={[...(isChartVisible("labProgression") ? (data?.labWindow ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsWindow ?? []) : [])]}
+          />
         </CVCard>
       )}
 
       {/* ── Health Band Distribution (waffle grids, Then → quarterly) ── */}
       {(isChartVisible("glycemicTransition") || isChartVisible("bmiTransition") || isChartVisible("bpTransition")) && (
-        <CVCard accentColor="#0d9488" title="Health Band Distribution — Then → Now" subtitle="Share of members in each health band, quarter by quarter. Each grid is 100 members; the green block is the healthy share." tooltipText="Each dot = 1% of the members measured at that point, coloured by band. Watch the green (normal) block grow across Then → quarters. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP band share over Then and quarters">
+        <CVCard accentColor="#0d9488" title="Health Band Distribution — Then → Now" subtitle="Share of members in each health band — past baseline vs now. Each grid is 100 members; the green block is the healthy share." tooltipText="Each dot = 1% of the members measured at that point, coloured by band. Compare the green (normal) block between the two grids. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP band share — Then vs Now, and Jun'24–Jun'25 vs Now">
           <BandJourney bands={[
             isChartVisible("glycemicTransition") && data?.bandJourney?.glycemic,
             isChartVisible("bmiTransition") && data?.bandJourney?.bmi,

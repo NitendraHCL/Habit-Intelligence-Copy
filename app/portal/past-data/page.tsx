@@ -667,32 +667,40 @@ function BandJourney({ bands }: { bands: any[] }) {
   );
 }
 
-// ─── Appointment Outcomes: 100% stacked-area "outcome flow" over quarters ───
+// ─── Appointment Outcomes: absolute stacked columns per quarter + Total Booked line ───
 function ApptOutcomes({ data }: { data: any }) {
   const cats: string[] = data?.categories ?? [];
   const quarters: any[] = data?.quarters ?? [];
   if (!quarters.length) return <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No appointment data.</div>;
   const xLabels = quarters.map((q) => q.label);
-  const pct = (ci: number) => quarters.map((q) => (q.total ? Math.round((q.counts[ci] / q.total) * 1000) / 10 : 0));
-  const series = cats.map((cat, ci) => ({
-    name: cat, type: "line", smooth: true, symbol: "circle", symbolSize: 5,
-    lineStyle: { width: cat === "Completed" ? 3 : 2 }, itemStyle: { color: BAND_COLOR[cat] || "#cbd5e1" },
-    emphasis: { focus: "series" }, data: pct(ci),
+  const totals = quarters.map((q) => q.total);
+  const barSeries = cats.map((cat, ci) => ({
+    name: cat, type: "bar", stack: "appt", barMaxWidth: 46,
+    itemStyle: { color: BAND_COLOR[cat] || "#cbd5e1" }, emphasis: { focus: "series" },
+    data: quarters.map((q) => q.counts[ci]),
   }));
+  const totalSeries = {
+    name: "Total Booked", type: "line", data: totals, z: 5, symbol: "circle", symbolSize: 6, smooth: false,
+    lineStyle: { width: 2, color: "#4f46e5" }, itemStyle: { color: "#4f46e5" },
+    label: { show: true, position: "top", fontSize: 11, fontWeight: "bold", color: "#4f46e5", formatter: (p: any) => fmt(p.value) },
+    tooltip: { valueFormatter: (v: number) => fmt(v) },
+  };
   const option = {
-    tooltip: { trigger: "axis", valueFormatter: (v: number) => `${v}%` },
-    legend: { data: cats, bottom: 0, icon: "circle", itemWidth: 9, itemHeight: 9, textStyle: { fontSize: 11, color: T.textSecondary } },
-    grid: { left: 42, right: 18, top: 14, bottom: 44 },
-    xAxis: { type: "category", boundaryGap: false, data: xLabels, axisLabel: { fontSize: 11, color: T.textSecondary }, axisLine: { lineStyle: { color: T.border } } },
-    yAxis: { type: "value", min: 0, axisLabel: { formatter: "{value}%", fontSize: 11, color: T.textSecondary }, splitLine: { lineStyle: { color: T.borderLight } } },
-    series,
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "shadow" },
+      valueFormatter: (v: number) => fmt(v),
+    },
+    legend: { data: [...cats, "Total Booked"], bottom: 0, icon: "circle", itemWidth: 9, itemHeight: 9, textStyle: { fontSize: 11, color: T.textSecondary } },
+    grid: { left: 52, right: 18, top: 22, bottom: 44 },
+    xAxis: { type: "category", data: xLabels, axisLabel: { fontSize: 11, color: T.textSecondary }, axisLine: { lineStyle: { color: T.border } } },
+    yAxis: { type: "value", min: 0, name: "appointments", nameTextStyle: { fontSize: 10, color: T.textMuted, align: "left" }, axisLabel: { fontSize: 11, color: T.textSecondary }, splitLine: { lineStyle: { color: T.borderLight } } },
+    series: [...barSeries, totalSeries],
   };
   const latest = quarters[quarters.length - 1];
-  const latestShow = latest?.total ? Math.round((latest.counts[0] / latest.total) * 100) : 0;
   return (
     <div>
       <div className="rounded-xl p-3.5 mb-4 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
-        <b style={{ color: T.textPrimary }}>How to read:</b> each line is an outcome's <b>share of appointments</b> that quarter. The <span style={{ color: "#059669", fontWeight: 700 }}>green Completed</span> line is the <b>show-up rate</b> — latest <b>{latestShow}%</b>. Hover any quarter for the full split.
+        <b style={{ color: T.textPrimary }}>How to read:</b> each column is a quarter's appointments split by outcome — <b>absolute counts</b>, so the column height is that quarter's <b>Total Booked</b> (also shown as the <span style={{ color: "#4f46e5", fontWeight: 700 }}>indigo line</span> + number on top). Latest quarter: <b>{fmt(latest?.total || 0)}</b> booked, <span style={{ color: "#059669", fontWeight: 700 }}>{fmt(latest?.counts?.[0] || 0)} completed</span>. Hover a quarter for the full split.
       </div>
       <div style={{ height: 340 }}><ReactECharts option={option} style={{ height: "100%", width: "100%" }} /></div>
     </div>
@@ -833,7 +841,7 @@ export default function PastDataPage() {
 
       {/* ── Appointment Outcomes (waffle per quarter) ── */}
       {isChartVisible("apptOutcomes") && (
-        <CVCard accentColor="#6366f1" title="Appointment Outcomes — by quarter" subtitle="Share of appointments by outcome each quarter — the green Completed line is the show-up rate." tooltipText="Each line is a status's share of that quarter's appointments. The 12 raw stages collapse to 4: Completed (+ Prescription Sent, Re Open), Pending (Rescheduled, Nurse Ack*, Started, Checked In), No Show (No Show + NoShow), Cancelled. Note: the newer scheduling system logs No-shows more, so the mix shifts partly for that reason." chartId="apptOutcomes" chartData={data?.apptOutcomes} chartTitle="Appointment Outcomes" chartDescription="Quarterly appointment outcome distribution (show-up rate)">
+        <CVCard accentColor="#6366f1" title="Appointment Outcomes — by quarter" subtitle="Appointments by outcome each quarter — absolute counts; column height = Total Booked that quarter." tooltipText="Each stacked column is a quarter's appointments by outcome (absolute counts); the indigo line + number on top is the quarter's Total Booked. The 12 raw stages collapse to 4: Completed (+ Prescription Sent, Re Open), Pending (Rescheduled, Nurse Ack*, Started, Checked In), No Show (No Show + NoShow), Cancelled. Note: the newer scheduling system logs No-shows more, so the mix shifts partly for that reason." chartId="apptOutcomes" chartData={data?.apptOutcomes} chartTitle="Appointment Outcomes" chartDescription="Quarterly appointment outcomes — absolute counts + Total Booked">
           <ApptOutcomes data={data?.apptOutcomes} />
         </CVCard>
       )}

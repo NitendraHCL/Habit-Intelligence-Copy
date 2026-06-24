@@ -781,8 +781,8 @@ export default function PastDataPage() {
         kpis={kpis || {}}
         fallbackSummary={`${fmt(kpis?.labCohort || 0)} members have both past and present lab records and ${fmt(kpis?.vitalsCohort || 0)} have both for vitals — the basis for the then→now comparison. A further ${fmt(kpis?.newMembers || 0)} new members completed their first health check now, setting a baseline. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are tracked across the cohort.`}
         fallbackChips={[
-          { label: "Tracked (Labs)", value: fmt(kpis?.labCohort || 0) },
-          { label: "Tracked (Vitals)", value: fmt(kpis?.vitalsCohort || 0) },
+          { label: "Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}` },
+          { label: "Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}` },
           { label: "New Members", value: fmt(kpis?.newMembers || 0) },
           { label: "Conditions", value: fmt(kpis?.conditionsMonitored || 0) },
         ]}
@@ -792,8 +792,8 @@ export default function PastDataPage() {
       {isChartVisible("kpis") && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
-            { label: "Patients Tracked (Labs)", value: fmt(kpis?.labCohort || 0), hint: "both past & present lab records", tip: "Members with at least one lab result from before and after — the basis for every then-vs-now lab comparison (glucose, cholesterol, HbA1c, etc.).", color: "#4f46e5" },
-            { label: "Patients Tracked (Vitals)", value: fmt(kpis?.vitalsCohort || 0), hint: "both past & present vitals", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check — the basis for the vitals then-vs-now comparison.", color: "#0d9488" },
+            { label: "Patients Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}`, hint: "tracked of total lab patients", tip: "Members with at least one lab result from before and after (the basis for every then-vs-now lab comparison) out of the total lab patient base.", color: "#4f46e5" },
+            { label: "Patients Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}`, hint: "tracked of total vitals patients", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check, out of the total vitals patient base.", color: "#0d9488" },
             { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions, then → now", tip: `Conditions compared past vs present: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>

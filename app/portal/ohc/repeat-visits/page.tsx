@@ -774,7 +774,7 @@ export default function RepeatVisitsPage() {
 
         <PageGlanceBox
           pageTitle="Repeat Visit Patterns"
-          pageSubtitle="Track repeat patient patterns, condition transitions, and satisfaction across visits. Repeat patients are employees who have availed any OHC service at least twice within the selected date range."
+          pageSubtitle="Track repeat patient patterns, condition transitions, and satisfaction across visits. Repeat patients are employees who visited OHC on at least two different days within the selected date range (multiple services on the same day count as one visit)."
           kpis={kpis || {}}
           fallbackSummary={`${formatNum(kpis?.totalRepeatPatients || 0)} employees came back to OHC at least twice, a ${kpis?.repeatRate || 0}% repeat rate. Average visits per patient: ${kpis?.avgFrequency || "0"}. ${formatNum(kpis?.frequentRepeaters || 0)} patients have made 5 or more visits.`}
           fallbackChips={[
@@ -794,8 +794,8 @@ export default function RepeatVisitsPage() {
               sub={`Employees with ≥ ${minVisits} OHC visits in selected date range`}
               icon={<Users size={16} />}
               trend={{ value: 15, label: "vs last" }}
-              tooltip={`Distinct employees with at least ${minVisits} OHC consultations in the selected period`}
-              insight={`Employees who returned ${minVisits}+ times for any OHC service — a strong signal for ongoing care needs`}
+              tooltip={`Distinct employees who visited OHC on at least ${minVisits} different days in the selected period (same-day multi-service counts as one visit)`}
+              insight={`Employees who came back on ${minVisits}+ separate days — a strong signal for ongoing care needs`}
             />
             <StatCard
               label="Avg Visit Frequency"
@@ -804,7 +804,7 @@ export default function RepeatVisitsPage() {
               sub="visits per repeater"
               icon={<TrendingUp size={16} />}
               trend={{ value: 8, label: "vs last" }}
-              tooltip="Average number of OHC consultations per repeat patient"
+              tooltip="Average number of distinct visit days per repeat patient"
               insight="Higher frequency typically reflects chronic management or active treatment plans"
             />
             <StatCard

@@ -10,7 +10,8 @@ import { withProvenance } from "@/lib/audit/with-provenance";
  *
  *   • aggregated_table.agg_kpi        — the same source the Utilization
  *     page reads. Per-(uhid × consult_date × specialty) consult counts.
- *     We derive the repeat-patient cohort (SUM(total_consult_count)>=2)
+ *     We derive the repeat-patient cohort (COUNT(DISTINCT visit day)>=2 —
+ *     a visit = one calendar day, so same-day multi-service counts once)
  *     and every demographics / specialty / tenure / visit-frequency
  *     aggregate from this table.
  *
@@ -52,18 +53,21 @@ const VITALS_TABLE = "aggregated_table.vitals";
  *
  * Common cohort across every chart: the "repeat patient" set is the
  * UHIDs from agg_kpi (stage = 'Completed', within the filter window)
- * whose SUM(total_consult_count) >= the Min Visits filter (default 2).
+ * who visited on >= Min Visits distinct DAYS (default 2). A "visit" is one
+ * calendar day at the clinic, regardless of how many services/consults
+ * (nurse, GP, Diet, etc.) are taken that day — so same-day multi-service
+ * does NOT make someone a repeat patient.
  * ──────────────────────────────────────────────────────────────────── */
 const PROVENANCE: DashboardProvenance = {
   kpis: {
     chart: "Headline KPIs (Repeat Patients · Total Consults · Avg Frequency · Frequent Repeaters)",
     sources: [KPI_TABLE],
     logic:
-      "From the repeat-patient cohort (agg_kpi, stage='Completed', SUM(total_consult_count) ≥ Min Visits, grouped by uhid): " +
-      "Total Repeat Patients = COUNT(uhid); Total Consults by Repeat = SUM(total_consult_count); " +
-      "Avg Visit Frequency = AVG(consults per uhid); Frequent Repeaters = COUNT(uhid with ≥5 consults), " +
-      "a fixed ≥5 bar independent of the Min Visits filter.",
-    sql: "GROUP BY a.uhid HAVING SUM(a.total_consult_count) >= :minVisits → COUNT / SUM / AVG; FILTER (WHERE vc >= 5) for frequent repeaters.",
+      "From the repeat-patient cohort (agg_kpi, stage='Completed', grouped by uhid, qualifying = COUNT(DISTINCT visit day) ≥ Min Visits): " +
+      "Total Repeat Patients = COUNT(uhid); Total Consults by Repeat = SUM(total_consult_count) (true consult volume); " +
+      "Avg Visit Frequency = AVG(distinct visit days per uhid); Frequent Repeaters = COUNT(uhid with ≥5 visit days), " +
+      "a fixed ≥5 bar independent of the Min Visits filter. A visit = one calendar day; same-day multi-service counts once.",
+    sql: "GROUP BY a.uhid HAVING COUNT(DISTINCT DATE(a.consult_date)) >= :minVisits; vc = COUNT(DISTINCT DATE(consult_date)); consults = SUM(total_consult_count).",
   },
   chronicVsAcute: {
     chart: "Chronic Repeat Patients",
@@ -96,18 +100,18 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Repeat Visit Frequency (Same vs Different Specialty)",
     sources: [KPI_TABLE],
     logic:
-      "Repeat-patient UHIDs bucketed by total consults into 2-4 / 5-9 / 10+. Within each bucket, sameSpecialty = " +
+      "Repeat-patient UHIDs bucketed by number of distinct visit days into 2-4 / 5-9 / 10+. Within each bucket, sameSpecialty = " +
       "patients touching ≤1 distinct speciality_name, differentSpecialty = patients touching ≥2.",
-    sql: "COUNT(*) per visit-count bucket, split by COUNT(DISTINCT speciality_name) <= 1 vs >= 2.",
+    sql: "COUNT(*) per visit-day bucket (vc = distinct DATE(consult_date)), split by COUNT(DISTINCT speciality_name) <= 1 vs >= 2.",
   },
   repeatUserSegments: {
     chart: "Repeat User Segments by Tenure",
     sources: [KPI_TABLE, DIAG_TABLE],
     logic:
       "Tenure per UHID = MAX(consult_date) − MIN(consult_date), banded into 1 year / 2 years / 3+ years. Per band: " +
-      "patients = COUNT(uhid); visitsPerYear = SUM(consults)/patients/tenure; chronic share = % of band's UHIDs in " +
+      "patients = COUNT(uhid); visitsPerYear = SUM(distinct visit days)/patients/tenure; chronic share = % of band's UHIDs in " +
       "the chronic set (agg_diagnosis).",
-    sql: "GROUP BY tenure band || chronic flag; visits summed per band.",
+    sql: "GROUP BY tenure band || chronic flag; visit days (vc) summed per band.",
   },
   specialtyTreemap: {
     chart: "Specialty Treemap (by year)",
@@ -121,9 +125,9 @@ const PROVENANCE: DashboardProvenance = {
     chart: "Same Cohort Progression — Visit Frequency by Year",
     sources: [KPI_TABLE],
     logic:
-      "For each consult year, count repeat-patient UHIDs whose consults in that year clear each threshold (3+, 4+, 5+, 6+). " +
-      "A patient contributes to a year's '5+' bucket if they had ≥5 consults in that year.",
-    sql: "per_uhid_year (SUM consults per uhid per year) → COUNT(*) WHERE vc_year >= N for N in 3,4,5,6.",
+      "For each consult year, count repeat-patient UHIDs whose distinct visit days in that year clear each threshold (3+, 4+, 5+, 6+). " +
+      "A patient contributes to a year's '5+' bucket if they visited on ≥5 distinct days that year.",
+    sql: "per_uhid_year (COUNT(DISTINCT DATE(consult_date)) per uhid per year) → COUNT(*) WHERE vc_year >= N for N in 3,4,5,6.",
   },
   sankeyFlow: {
     chart: "Same Cohort Progression — BMI Sankey (Visit 1→2→3)",
@@ -287,7 +291,8 @@ async function handler(request: NextRequest) {
           WITH repeat_base AS (
             SELECT
               a.uhid,
-              SUM(a.total_consult_count)::int AS vc,
+              COUNT(DISTINCT DATE(a.consult_date))::int AS vc,
+              SUM(a.total_consult_count)::int AS consults,
               MAX(a.age) AS age_years,
               MAX(a.patient_gender) AS gender,
               MAX(a.facility_mapping) AS facility,
@@ -297,7 +302,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           ),
           chronic_uhids AS (
             SELECT DISTINCT d.uhid
@@ -312,7 +317,7 @@ async function handler(request: NextRequest) {
           )
           SELECT 'kpi' AS kind, 'totalRepeatPatients' AS bucket, COUNT(*)::bigint AS n FROM per_uhid
           UNION ALL
-          SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(vc), 0)::bigint FROM per_uhid
+          SELECT 'kpi', 'totalConsultsByRepeat', COALESCE(SUM(consults), 0)::bigint FROM per_uhid
           UNION ALL
           SELECT 'kpi', 'avgVisitFrequencyX10', ROUND(COALESCE(AVG(vc), 0) * 10)::bigint FROM per_uhid
           UNION ALL
@@ -420,7 +425,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           ),
           chronic_uhids AS (
             SELECT DISTINCT d.uhid
@@ -452,7 +457,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           )
           SELECT
             d.icd_description AS condition,
@@ -486,7 +491,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           )
           SELECT
             COALESCE(NULLIF(TRIM(a.speciality_name), ''), 'Unknown') AS speciality,
@@ -517,13 +522,13 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           ),
           per_uhid_year AS (
             SELECT
               EXTRACT(YEAR FROM a.consult_date)::int::text AS year,
               a.uhid,
-              SUM(a.total_consult_count)::int AS vc_year
+              COUNT(DISTINCT DATE(a.consult_date))::int AS vc_year
             FROM ${KPI_TABLE} a
             INNER JOIN repeat_uhids r ON r.uhid = a.uhid
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
@@ -557,7 +562,7 @@ async function handler(request: NextRequest) {
             FROM ${KPI_TABLE} a
             WHERE ${kpiWhere.where} AND a.stage = 'Completed'
             GROUP BY a.uhid
-            HAVING SUM(a.total_consult_count) >= ${f.minVisits}
+            HAVING COUNT(DISTINCT DATE(a.consult_date)) >= ${f.minVisits}
           ),
           bmi_series AS (
             SELECT

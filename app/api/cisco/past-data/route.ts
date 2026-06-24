@@ -11,7 +11,7 @@ import { withProvenance } from "@/lib/audit/with-provenance";
  * Sources (CISCO-specific, both CISCO-only tables — old/new cleanly time-split,
  * no overlap: old ends 2025-06-16, new starts 2025-08/12):
  *   • aggregated_table.cisco__lab_compilled        — lab results
- *     ("uhId", service_item_name, value (text), verification_date_time,
+ *     (uhid, service_item_name, value (text), verification_date_time,
  *      "Source" = 'old' | 'new'). No cug_code (all CISCO).
  *   • aggregated_table.cisco_vitals_compilled_data — vitals
  *     (uhid, vital_parameter_name, vital_value (text),
@@ -28,7 +28,7 @@ import { withProvenance } from "@/lib/audit/with-provenance";
  * ──────────────────────────────────────────────────────────────────── */
 
 const APT = "aggregated_table.cisco__apt_compilled"; // appointments (CISCO-only); old/new effectively time-split, no dupes
-const LAB = "aggregated_table.cisco__lab_compilled";
+const LAB = "aggregated_table.cisco__lab_compilled"; // uhId column was lowercased to uhid; Source/patient_gender unchanged
 const VIT = "aggregated_table.cisco_vitals_compilled_data";
 const NUMERIC = `~ '^-?[0-9]+(\\.[0-9]+)?$'`;
 const HBA1C_NAMES = ["HbA1c", "Hba 1 C (Dcct/Ngsp)", "Glycohemoglobin (HbA1c )"];
@@ -174,7 +174,7 @@ function snap(opts: { table: string; uhid: string; value: string; date: string; 
   return { oldCte: mk("old"), newCte: mk("new") };
 }
 
-const LAB_S = { table: LAB, uhid: `"uhId"`, value: "value", date: "verification_date_time", cug: false };
+const LAB_S = { table: LAB, uhid: "uhid", value: "value", date: "verification_date_time", cug: false };
 const VIT_S = { table: VIT, uhid: "uhid", value: "vital_value", date: "clinical_type_creation_time" };
 
 // ── Quarterly progression (cohort-average per quarter, last 8 quarters) ──
@@ -459,7 +459,7 @@ async function handler(request: NextRequest) {
     // KPIs.
     const kpiP = safeQuery(() => dwQuery<{ lab_cohort: string; vit_cohort: string; vit_new_only: string; median_years: string }>(
       `WITH lab_span AS (
-         SELECT "uhId" AS uhid, EXTRACT(EPOCH FROM (MAX(verification_date_time) FILTER (WHERE "Source"='new') - MAX(verification_date_time) FILTER (WHERE "Source"='old'))) / (365.25*86400) AS years
+         SELECT uhid, EXTRACT(EPOCH FROM (MAX(verification_date_time) FILTER (WHERE "Source"='new') - MAX(verification_date_time) FILTER (WHERE "Source"='old'))) / (365.25*86400) AS years
          FROM ${LAB} GROUP BY 1 HAVING COUNT(DISTINCT "Source") = 2),
        vit_cohort AS (SELECT uhid FROM ${VIT} GROUP BY 1 HAVING COUNT(DISTINCT "Source") = 2),
        vit_new AS (SELECT uhid FROM ${VIT} WHERE "Source" = 'new' GROUP BY 1)

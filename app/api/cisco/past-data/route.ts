@@ -104,7 +104,9 @@ function valueProgressionSQL(opts: { table: string; uhid: string; value: string;
   const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
   return `
     WITH base AS (
-      SELECT ${normCase} AS param, ${uhid} AS uhid, "Source" AS src, TRIM(${value})::numeric AS val, ${date} AS dt
+      SELECT ${normCase} AS param, ${uhid} AS uhid, "Source" AS src,
+             CASE WHEN ${item} = 'Weight' AND "Source" = 'old' THEN TRIM(${value})::numeric / 2.20462 ELSE TRIM(${value})::numeric END AS val,
+             ${date} AS dt
       FROM ${table}
       WHERE ${cugCond}TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})
     ),
@@ -135,7 +137,9 @@ function valueWindowSQL(opts: { table: string; uhid: string; value: string; date
   const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
   return `
     WITH base AS (
-      SELECT ${normCase} AS param, ${uhid} AS uhid, "Source" AS src, TRIM(${value})::numeric AS val, ${date} AS dt
+      SELECT ${normCase} AS param, ${uhid} AS uhid, "Source" AS src,
+             CASE WHEN ${item} = 'Weight' AND "Source" = 'old' THEN TRIM(${value})::numeric / 2.20462 ELSE TRIM(${value})::numeric END AS val,
+             ${date} AS dt
       FROM ${table}
       WHERE ${cugCond}TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})
         AND ("Source" = 'new' OR ("Source" = 'old' AND ${date} >= '${from}' AND ${date} < '${toExcl}'))
@@ -196,7 +200,7 @@ function valueQuarterlySQL(opts: { table: string; uhid: string; value: string; d
     ppq AS (
       SELECT param, uhid, qd, val FROM (
         SELECT ${normCase} AS param, ${uhid} AS uhid, date_trunc('quarter', ${date}) AS qd,
-               TRIM(${value})::numeric AS val,
+               CASE WHEN ${item} = 'Weight' AND "Source" = 'old' THEN TRIM(${value})::numeric / 2.20462 ELSE TRIM(${value})::numeric END AS val,
                ROW_NUMBER() OVER (PARTITION BY ${normCase}, ${uhid}, date_trunc('quarter', ${date}) ORDER BY ${date} DESC) AS rn
         FROM ${table}
         WHERE ${cugCond}"Source" = 'new' AND TRIM(${value}) ${NUMERIC} AND ${item} IN (${allSrc.map(q).join(", ")})

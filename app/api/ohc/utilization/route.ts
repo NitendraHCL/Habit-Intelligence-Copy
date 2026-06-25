@@ -150,15 +150,6 @@ const PROVENANCE: DashboardProvenance = {
       "male/female; malePercent = male/total. Top 10 specialities by total (key bubbleSpecialties).",
     sql: "GROUP BY speciality_name, facility_mapping, age_group, patient_gender → SUM(total_consult_count).",
   },
-  repeatTrends: {
-    chart: "Repeat Visit Trends over time",
-    sources: [BASE_TABLE],
-    logic:
-      "Completed agg_kpi rows bucketed by period (day if range ≤31 days, else month) then aggregated to one row per " +
-      "(period, uhid). repeatVisits = SUM(total_consult_count) − COUNT(*) (extra visits beyond the first); " +
-      "repeatPatients = COUNT(uhid with ≥2 source rows in that period).",
-    sql: "WITH per_period_uhid AS (GROUP BY period, a.uhid) SELECT SUM(consult_count) - COUNT(*), COUNT(*) FILTER (WHERE row_count >= 2).",
-  },
   capacityBookedCompleted: {
     chart: "Capacity vs Booked vs Completed (by specialty)",
     sources: [CAPACITY_TABLE],
@@ -469,33 +460,6 @@ async function handler(request: NextRequest) {
       q.params
     ), "trendYearUnique");
 
-    // ── BATCH 4: Repeat trends ──
-    // per_period_uhid aggregates Completed rows to one row per (period, uhid)
-    // repeat_visits = SUM(consult_count) − COUNT(*)  (true_repeat_visits)
-    // repeat_patients = uhids with ≥2 completed rows within the period
-    const repeatPromise = safeQuery(() => dwQuery<{
-      period: string; repeat_visits: string; repeat_patients: string;
-    }>(
-      `WITH per_period_uhid AS (
-        SELECT
-          to_char(a.consult_date, '${periodFormat}') AS period,
-          a.uhid,
-          COUNT(*) AS row_count,
-          SUM(a.total_consult_count) AS consult_count
-        FROM ${BASE_TABLE} a
-        WHERE ${q.currentWhere}
-        GROUP BY period, a.uhid
-      )
-      SELECT
-        period,
-        (COALESCE(SUM(consult_count), 0) - COUNT(*))::bigint AS repeat_visits,
-        (COUNT(*) FILTER (WHERE row_count >= 2))::bigint AS repeat_patients
-      FROM per_period_uhid
-      GROUP BY period
-      ORDER BY period`,
-      q.params
-    ), "repeatTrends");
-
     // ── Bubble chart: specialty × location × ageGroup × gender ──
     const bubblePromise = safeQuery(() => dwQuery<{
       specialty: string; location: string; age_group: string; gender: string; total: string;
@@ -644,10 +608,10 @@ async function handler(request: NextRequest) {
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, trendYearUniqueRows, repeatRows, bubbleRows, svcRows, svcLineRows, capacityRows,
+      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, trendYearUniqueRows, bubbleRows, svcRows, svcLineRows, capacityRows,
     ] = await Promise.all([
       filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise, locUniquePromise,
-      demoPromise, peakPromise, trendPromise, trendYearUniquePromise, repeatPromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
+      demoPromise, peakPromise, trendPromise, trendYearUniquePromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
     ]);
 
     // Shape into the grouped-bar payload (top 15 specialties by capacity).
@@ -800,13 +764,6 @@ async function handler(request: NextRequest) {
     const avgConsults = visitTrends.length > 0
       ? Math.round(visitTrends.reduce((s, v) => s + v.completed, 0) / visitTrends.length)
       : 0;
-
-    // ── Repeat trends ──
-    const repeatTrends = repeatRows.map((r) => ({
-      label: r.period,
-      repeatVisits: Number(r.repeat_visits),
-      repeatPatients: Number(r.repeat_patients),
-    }));
 
     // ── Specialty treemap ──
     const specialtyTreemap = specRows.map((r) => ({ name: r.name, value: Number(r.value), uniquePatients: Number(r.unique_patients || 0) }));
@@ -1014,7 +971,6 @@ async function handler(request: NextRequest) {
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
         serviceCategories, serviceCategoryLineItems, bubbleBySpecialty, bubbleSpecialties,
-        repeatTrends,
         capacityBookedCompleted,
       },
       lastUpdated: new Date().toISOString(),

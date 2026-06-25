@@ -385,10 +385,9 @@ type VCol = { label: string; value: number; n: number; color: string; delta: num
 
 function ValueColumnChart({ columns, normal, normalText, large }: { columns: VCol[]; normal?: number; normalText?: string; large?: boolean }) {
   const vals = columns.map((c) => c.value);
-  const lo0 = Math.min(...vals, normal ?? Infinity);
-  const hi0 = Math.max(...vals, normal ?? -Infinity);
-  const pad = Math.max(0.4, (hi0 - lo0) * 0.18);
-  const yMin = lo0 - pad, yMax = hi0 + pad;
+  // Bars start from 0 so heights show true proportion (no zoomed/exaggerated scale).
+  const hi0 = Math.max(...vals, normal ?? 0);
+  const yMin = 0, yMax = Math.max(1, hi0 * 1.12); // 12% headroom above the tallest bar / normal line
   const h = (v: number) => Math.max(2, ((v - yMin) / (yMax - yMin)) * 100);
   const barH = large ? 200 : 80, numH = large ? 52 : 40, maxBarW = large ? 80 : 60;
   // With only Then/Now (2 bars), constrain + center so they don't fling to the card edges.
@@ -562,7 +561,7 @@ function ValueJourney({ paramsTotal, paramsWindow }: { paramsTotal: any[]; param
             </tr>
           </tbody>
         </table>
-        <p className="text-[10.5px] mt-2" style={{ color: T.textMuted }}>Bars are zoomed to show movement (the value labels are exact); the normal line keeps the scale honest.</p>
+        <p className="text-[10.5px] mt-2" style={{ color: T.textMuted }}>Bars start from zero, so their heights show the true proportion; the exact value sits above each bar and the dashed line marks the normal threshold.</p>
       </div>
 
       {items.length ? (
@@ -833,7 +832,7 @@ export default function PastDataPage() {
 
       {/* ── Value Progression (quarter-by-quarter, by panel) ── */}
       {(isChartVisible("labProgression") || isChartVisible("vitalsProgression")) && (
-        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values — past baseline vs now, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = mean of each member's most-recent past reading; 'Now' = mean of their most-recent current reading (both over the tracked cohort). Bars are zoomed to show movement; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Then vs now average lab & vital values, tracked cohort">
+        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values — past baseline vs now, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = mean of each member's most-recent past reading; 'Now' = mean of their most-recent current reading (both over the tracked cohort). Bars start from zero so heights show true proportion; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Then vs now average lab & vital values, tracked cohort">
           <ValueJourney
             paramsTotal={[...(isChartVisible("labProgression") ? (data?.labQuarterly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsQuarterly ?? []) : [])]}
             paramsWindow={[...(isChartVisible("labProgression") ? (data?.labWindow ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsWindow ?? []) : [])]}

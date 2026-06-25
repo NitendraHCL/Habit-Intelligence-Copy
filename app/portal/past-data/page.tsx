@@ -183,6 +183,29 @@ type Col = { label: string; pct: number; count: number; color: string; delta: nu
 
 const C_BASE = "#cbd5e1", C_DOWN = "#0d9488", C_UP = "#dc2626", C_FLAT = "#94a3b8";
 
+// Plain-English definition of Then vs Now, shown on every then-vs-now chart. Key terms in solid black for legibility.
+function ThenNowDefn({ cmp }: { cmp: "total" | "window" }) {
+  const bk = { color: "#000" } as const;
+  return (
+    <div className="rounded-xl px-4 py-3 mb-4" style={{ backgroundColor: "#EEF2FF", border: "1px solid #dfe3fb" }}>
+      <p className="text-[12.5px] leading-[1.65]" style={{ color: "#1f2937" }}>
+        {cmp === "total" ? (
+          <>
+            <b style={bk}>Then</b> = each member&apos;s most-recent reading from their <b style={bk}>past records</b> (their older check-ups, up to about <b style={bk}>June 2025</b>).{" "}
+            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b> (the recent re-check, after June 2025).
+          </>
+        ) : (
+          <>
+            <b style={bk}>Jun &apos;24 – Jun &apos;25</b> = each member&apos;s most-recent reading inside that <b style={bk}>one-year window</b> (15 Jun 2024 – 15 Jun 2025).{" "}
+            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b>.
+          </>
+        )}{" "}
+        We only count <b style={bk}>members who have a reading in BOTH periods</b> (matched by their unique UHID) — so we compare the <b style={bk}>same people</b> over time, not different groups.
+      </p>
+    </div>
+  );
+}
+
 // Vertical column chart: every bar shows count + %, a vs-previous-bar delta, and is coloured by that comparison.
 function ColumnChart({ columns }: { columns: Col[] }) {
   const max = Math.max(1, ...columns.map((c) => c.pct));
@@ -269,11 +292,7 @@ function MemberJourney({ journey }: { journey: any[] }) {
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
-      <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>
-        {cmp === "total"
-          ? "Then = % above the threshold on each member's most-recent past reading vs Now. Cohort = members with both past and current readings."
-          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now. Cohort = members present in that window and now (so n differs from Then → Now)."}
-      </p>
+      <ThenNowDefn cmp={cmp} />
 
       {/* How to read each bar */}
       <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
@@ -518,11 +537,7 @@ function ValueJourney({ paramsTotal, paramsWindow }: { paramsTotal: any[]; param
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
-      <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>
-        {cmp === "total"
-          ? "Then = each member's most-recent past reading (any prior record) vs Now. Cohort = members with both past and current readings."
-          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now. Cohort = members present in that window and now (so n differs from Then → Now)."}
-      </p>
+      <ThenNowDefn cmp={cmp} />
 
       {/* How to read each bar */}
       <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
@@ -656,11 +671,9 @@ function BandJourney({ bands }: { bands: any[] }) {
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
+      <ThenNowDefn cmp={cmp} />
       <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
-        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — compare it between the two grids. Hover a grid for the exact split.{" "}
-        {cmp === "total"
-          ? "Then = most-recent past reading vs Now (members with both past & current readings)."
-          : "Jun '24 – Jun '25 = most-recent reading in that window (15 Jun 2024 – 15 Jun 2025) vs Now (members present in that window and now — so n differs)."}
+        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — compare it between the two grids. Hover a grid for the exact split.
       </div>
       {current ? <BandSection metric={current} cmp={cmp} /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
     </div>
@@ -792,8 +805,8 @@ export default function PastDataPage() {
       {isChartVisible("kpis") && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
-            { label: "Patients Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}`, hint: "tracked of total lab patients", tip: "Members with at least one lab result from before and after (the basis for every then-vs-now lab comparison) out of the total lab patient base.", color: "#4f46e5" },
-            { label: "Patients Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}`, hint: "tracked of total vitals patients", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check, out of the total vitals patient base.", color: "#0d9488" },
+            { label: "Members Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}`, hint: "tracked of total lab members", tip: "Members with at least one lab result from before and after (the basis for every then-vs-now lab comparison) out of the total lab member base.", color: "#4f46e5" },
+            { label: "Members Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}`, hint: "tracked of total vitals members", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check, out of the total vitals member base.", color: "#0d9488" },
             { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions, then → now", tip: `Conditions compared past vs present: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>

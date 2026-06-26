@@ -179,7 +179,7 @@ function TransitionBody({ m }: { m: any }) {
 // ─── Member Health Journey: column mini-charts per condition, paged quarters ───
 const QPAGE = 3; // quarters shown per page (oldest first); "Then" stays pinned
 const shortQ = (q: string) => { const [y, qq] = (q || "").split("-"); return qq ? `${qq}'${y.slice(2)}` : q; }; // 2026-Q1 → Q1'26
-type Col = { label: string; pct: number; count: number; color: string; delta: number | null }; // delta = relative % vs previous bar
+type Col = { label: string; pct: number; count: number; n: number; color: string; delta: number | null }; // delta = relative % vs previous bar; n = cohort measured
 
 const C_BASE = "#cbd5e1", C_DOWN = "#0d9488", C_UP = "#dc2626", C_FLAT = "#94a3b8";
 
@@ -214,15 +214,10 @@ function ColumnChart({ columns }: { columns: Col[] }) {
       <div className="flex justify-around gap-2">
         {columns.map((col, i) => (
           <div key={i} className="flex-1 flex flex-col items-center" title={`${col.label}: ${fmt(col.count)} members (${col.pct}%)`}>
-            {/* numbers block (fixed height so bars align) */}
+            {/* numbers block (fixed height so bars align): % above threshold + n only */}
             <div className="h-[40px] flex flex-col items-center justify-end leading-none">
-              {col.delta != null ? (
-                <span className="text-[10px] font-bold mb-1" style={{ color: col.delta < 0 ? C_DOWN : col.delta > 0 ? C_UP : C_FLAT }}>
-                  {col.delta < 0 ? "▼" : col.delta > 0 ? "▲" : ""}{Math.abs(Math.round(col.delta))}%
-                </span>
-              ) : <span className="text-[9px] mb-1" style={{ color: T.textMuted }}>baseline</span>}
-              <span className="text-[13px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>{fmt(col.count)}</span>
-              <span className="text-[9.5px] tabular-nums" style={{ color: T.textMuted }}>{col.pct}%</span>
+              <span className="text-[15px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>{col.pct}%</span>
+              <span className="text-[9.5px] tabular-nums mt-1" style={{ color: T.textMuted }}>n={fmt(col.n)}</span>
             </div>
             {/* bar zone (fixed height) */}
             <div className="w-full flex items-end justify-center" style={{ height: 82 }}>
@@ -245,8 +240,8 @@ function JourneyCard({ c, cmp, baselineLabel }: { c: any; cmp: "total" | "window
 
   const columns: Col[] = [];
   if (!empty) {
-    columns.push({ label: baselineLabel, pct: then.pct, count: then.positive, color: C_BASE, delta: null });
-    const col: Col = { label: "Now", pct: now.pct, count: now.positive, color: C_BASE, delta: null };
+    columns.push({ label: baselineLabel, pct: then.pct, count: then.positive, n: then.total, color: C_BASE, delta: null });
+    const col: Col = { label: "Now", pct: now.pct, count: now.positive, n: now.total, color: C_BASE, delta: null };
     col.delta = then.pct > 0 ? ((now.pct - then.pct) / then.pct) * 100 : (now.pct > 0 ? 100 : 0);
     col.color = now.pct < then.pct ? C_DOWN : now.pct > then.pct ? C_UP : C_FLAT;
     columns.push(col);
@@ -472,82 +467,54 @@ function ValueColumnChart({ columns, normal, normalText, large }: { columns: VCo
 function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boolean; baselineLabel?: string }) {
   const dir: string = p.direction || "neutral";
   const meta = PARAM_META[p.param] || {};
-  const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
-
-  // Two bars only: a baseline value vs Now (each patient's most-recent reading on each side).
-  const hasThen = p.baselineOld != null;
-  const hasNow = p.baselineNew != null;
-  const seq: VCol[] = [];
-  if (hasThen) seq.push({ label: baselineLabel, value: Number(p.baselineOld), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
-  if (hasNow) seq.push({ label: "Now", value: Number(p.baselineNew), n: Number(p.baselineN) || 0, color: C_BASE, delta: null });
-  seq.forEach((col, i) => {
-    if (i === 0) { col.color = C_BASE; col.delta = null; return; }
-    const change = col.value - seq[i - 1].value;
-    col.delta = change;
-    col.color = dirColor(change, dir);
-  });
-
-  const columns: VCol[] = seq;
-  const empty = seq.length < 2;
-
-  // Overall first→last badge.
-  const first = seq[0], last = seq[seq.length - 1];
-  const oChange = empty ? 0 : last.value - first.value;
-  const oColor = dirColor(oChange, dir);
-  const dirChip = dir === "neutral" ? null : dir === "lower" ? "lower is better" : "higher is better";
-
-  // Members outside the normal range — drawn as a line overlaid on the bars, baseline → Now.
-  const hasThr = p.baselineThenAbove != null && !empty;
-  const outThen = Number(p.baselineThenAbove), outNow = Number(p.baselineNowAbove);
-  const outDiff = hasThr ? outThen - outNow : 0;
-  const outColor = outDiff === 0 ? C_FLAT : outDiff > 0 ? C_DOWN : C_UP;
   const total = Number(p.baselineN) || 0;
-  const opct = (x: number) => (total ? Math.round((x / total) * 1000) / 10 : 0);
+  const titleEl = (
+    <div className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{p.param} {meta.unit ? <span className="text-[10.5px] font-medium" style={{ color: T.textMuted }}>· {meta.unit}</span> : null}</div>
+  );
+  const hasThr = p.baselineThenAbove != null && p.baselineOld != null && p.baselineNew != null;
 
+  // Thresholded params: % of members above the threshold (outside normal) + n — same as Member Health Journey.
+  if (hasThr) {
+    const outThen = Number(p.baselineThenAbove), outNow = Number(p.baselineNowAbove);
+    const opct = (x: number) => (total ? Math.round((x / total) * 1000) / 10 : 0);
+    const outColor = outThen === outNow ? C_FLAT : outThen > outNow ? C_DOWN : C_UP; // fewer outside now = better
+    const cols: Col[] = [
+      { label: baselineLabel, pct: opct(outThen), count: outThen, n: total, color: C_BASE, delta: null },
+      { label: "Now", pct: opct(outNow), count: outNow, n: total, color: outColor, delta: null },
+    ];
+    const outDiff = outThen - outNow;
+    const badge = outDiff === 0 ? { t: "no change", c: T.textMuted, b: "#F1F3F9" } : outDiff > 0 ? { t: `${fmt(outDiff)} fewer ✓`, c: "#0f766e", b: "#ecfdf5" } : { t: `${fmt(-outDiff)} more`, c: "#b91c1c", b: "#fef2f2" };
+    const atRisk = meta.normal == null ? null : `outside normal: ${dir === "higher" ? "<" : ">"} ${num1(meta.normal)}${meta.unit ? " " + meta.unit : ""}`;
+    return (
+      <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="min-w-0">
+            {titleEl}
+            {atRisk && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 tabular-nums" style={{ color: "#4338ca", backgroundColor: "#EEF2FF" }}>{atRisk}</span>}
+          </div>
+          {total > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0" style={{ color: badge.c, backgroundColor: badge.b }}>{badge.t}</span>}
+        </div>
+        {total === 0 ? <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div> : <ColumnChart columns={cols} />}
+      </div>
+    );
+  }
+
+  // No-threshold params (TSH, WBC, Weight…): % above threshold doesn't apply, so show the average value + n.
+  const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
+  const seq: VCol[] = [];
+  if (p.baselineOld != null) seq.push({ label: baselineLabel, value: Number(p.baselineOld), n: total, color: C_BASE, delta: null });
+  if (p.baselineNew != null) seq.push({ label: "Now", value: Number(p.baselineNew), n: total, color: C_BASE, delta: null });
+  seq.forEach((col, i) => { if (i > 0) { const change = col.value - seq[i - 1].value; col.delta = change; col.color = dirColor(change, dir); } });
+  const empty = seq.length < 2;
   return (
     <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
-          <div className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{p.param} {meta.unit ? <span className="text-[10.5px] font-medium" style={{ color: T.textMuted }}>· {meta.unit}</span> : null}</div>
-          {dirChip && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mt-1" style={{ color: "#4338ca", backgroundColor: "#EEF2FF" }}>{dirChip}</span>}
+          {titleEl}
+          <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded mt-1" style={{ color: T.textSecondary, backgroundColor: "#F1F3F9" }}>average · no threshold</span>
         </div>
-        {!empty && oChange !== 0 && dir !== "neutral" && (
-          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0" style={{ color: oColor === C_DOWN ? "#0f766e" : "#b91c1c", backgroundColor: oColor === C_DOWN ? "#ecfdf5" : "#fef2f2" }}>
-            {oChange < 0 ? "▼" : "▲"}{num1(Math.abs(oChange))} {oColor === C_DOWN ? "better" : "worse"}
-          </span>
-        )}
       </div>
-      {empty || columns.length === 0 ? (
-        <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div>
-      ) : (
-        <>
-          <ValueColumnChart columns={columns} normal={meta.normal} normalText={normalText} large={large} />
-          {hasThr && (
-            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${T.borderLight}` }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10.5px] font-semibold" style={{ color: T.textSecondary }}>Members outside normal</span>
-                {outDiff !== 0 && <span className="text-[10px] font-bold" style={{ color: outColor }}>{outDiff > 0 ? "▼" : "▲"}{fmt(Math.abs(outDiff))} {outDiff > 0 ? "fewer" : "more"}</span>}
-              </div>
-              <div className="flex items-center gap-2 mb-1 text-[8.5px] font-semibold uppercase tracking-wide" style={{ color: T.textMuted }}>
-                <span className="w-[62px] shrink-0" />
-                <span className="flex-1" />
-                <span className="w-[44px] text-right">count</span>
-                <span className="w-[40px] text-right">%</span>
-              </div>
-              {[{ label: baselineLabel, val: outThen, now: false }, { label: "Now", val: outNow, now: true }].map((r, i) => (
-                <div key={i} className="flex items-center gap-2 mb-1 last:mb-0">
-                  <span className="text-[10px] tabular-nums w-[62px] shrink-0" style={{ color: T.textMuted }}>{r.label}</span>
-                  <div className="flex-1 h-[8px] rounded-full overflow-hidden" style={{ backgroundColor: "#EEF0F4" }}>
-                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, opct(r.val))}%`, backgroundColor: r.now ? outColor : "#94a3b8" }} />
-                  </div>
-                  <span className="text-[10px] font-semibold tabular-nums w-[44px] text-right" style={{ color: T.textPrimary }}>{fmt(r.val)}</span>
-                  <span className="text-[10px] font-semibold tabular-nums w-[40px] text-right" style={{ color: T.textSecondary }}>{opct(r.val)}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      {empty ? <div className="text-[12px] py-6 text-center" style={{ color: T.textMuted }}>No data yet.</div> : <ValueColumnChart columns={seq} normal={meta.normal} normalText={normalText} large={large} />}
     </div>
   );
 }

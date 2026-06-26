@@ -330,9 +330,9 @@ function buildMatrix(rows: MatrixRow[], order: string[]) {
 // BP uses systolic-only thresholds here (single-param, quarter-friendly).
 const BP_SYS_CLS = `CASE WHEN VAL >= 140 THEN 'Hypertension' WHEN VAL >= 130 THEN 'Elevated' ELSE 'Normal' END`;
 const BAND_METRICS = [
-  { key: "glycemic", title: "Glycemic Status", note: "by fasting glucose", base: LAB_S, item: "service_item_name", src: srcOf("Glucose (Fasting)"), cls: GLUCOSE_CLS, categories: ["Normal", "Pre-diabetic", "Diabetic"] },
-  { key: "bmi", title: "BMI Band", note: "by BMI", base: VIT_S, item: "vital_parameter_name", src: ["BMI"], cls: BMI_CLS, categories: ["Underweight", "Normal", "Overweight", "Obese"] },
-  { key: "bp", title: "Blood Pressure Stage", note: "by systolic BP", base: VIT_S, item: "vital_parameter_name", src: ["BP(Systolic)"], cls: BP_SYS_CLS, categories: ["Normal", "Elevated", "Hypertension"] },
+  { key: "glycemic", title: "Glycemic Status", note: "by fasting glucose", base: LAB_S, item: "service_item_name", src: srcOf("Glucose (Fasting)"), cls: GLUCOSE_CLS, categories: ["Normal", "Pre-diabetic", "Diabetic"], above: ["Pre-diabetic", "Diabetic"] },
+  { key: "bmi", title: "BMI Band", note: "by BMI", base: VIT_S, item: "vital_parameter_name", src: ["BMI"], cls: BMI_CLS, categories: ["Underweight", "Normal", "Overweight", "Obese"], above: ["Overweight", "Obese"] },
+  { key: "bp", title: "Blood Pressure Stage", note: "by systolic BP", base: VIT_S, item: "vital_parameter_name", src: ["BP(Systolic)"], cls: BP_SYS_CLS, categories: ["Normal", "Elevated", "Hypertension"], above: ["Elevated", "Hypertension"] },
 ];
 type BandMetric = (typeof BAND_METRICS)[number];
 function bandQuarterlySQL(m: BandMetric) {
@@ -387,6 +387,72 @@ function bandWindowSQL(m: BandMetric, from: string, toExcl: string) {
     SELECT 'window' AS side, ${m.cls.replace(/VAL/g, "ow")} AS band, COUNT(*)::int AS n FROM paired GROUP BY 2
     UNION ALL
     SELECT 'now' AS side, ${m.cls.replace(/VAL/g, "nw")} AS band, COUNT(*)::int AS n FROM paired GROUP BY 2`;
+}
+
+// ── Yearly trend over OLD data: per year, % of that year's measured members above the threshold.
+// Each year has a different population (members measured that year), so we report total + above and
+// the frontend plots above/total as a percentage. Uses the most-recent reading per member per year.
+
+// Conditions (multi-rule OR + gender): { condition key } → rows {year, total, positive}.
+function conditionYearlySQL(def: CondDef) {
+  const { base, item, rules } = def;
+  const { table, uhid, value, date, cug } = base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  const allSrc = rules.flatMap((r) => r.src);
+  const ruleCase = `CASE ${rules.map((r, i) => `WHEN ${item} IN (${r.src.map(q).join(", ")}) THEN ${i}`).join(" ")} END`;
+  const ruleCols = rules.map((r, i) => `MAX(val) FILTER (WHERE rule = ${i}) AS r${i}`).join(", ");
+  const posExpr = rules.map((r, i) => `COALESCE(${subExpr(r.expr, `r${i}`, "g")}, false)`).join(" OR ");
+  return `
+    WITH ppy AS (
+      SELECT uhid, yr, g, rule, val FROM (
+        SELECT ${uhid} AS uhid, EXTRACT(YEAR FROM ${date})::int AS yr, LOWER(patient_gender) AS g, ${ruleCase} AS rule, TRIM(${value})::numeric AS val,
+               ROW_NUMBER() OVER (PARTITION BY ${uhid}, ${ruleCase}, EXTRACT(YEAR FROM ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${item} IN (${allSrc.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}
+      ) t WHERE rn = 1
+    ),
+    py AS (SELECT uhid, yr, MAX(g) AS g, ${ruleCols} FROM ppy GROUP BY uhid, yr),
+    pos AS (SELECT uhid, yr, (${posExpr}) AS positive FROM py)
+    SELECT yr::text AS year, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE positive)::int AS positive
+    FROM pos GROUP BY yr ORDER BY yr`;
+}
+
+// Value parameters: per (param, year) → total measured, above-threshold count, and yearly average.
+function valueYearlySQL(opts: { table: string; uhid: string; value: string; date: string; item: string; cug?: boolean; params: { display: string; src: string[]; dir?: string }[] }) {
+  const { table, uhid, value, date, item, cug, params } = opts;
+  const allSrc = params.flatMap((p) => p.src);
+  const normCase = `CASE ${params.map((p) => `WHEN ${item} IN (${p.src.map(q).join(", ")}) THEN ${q(p.display)}`).join(" ")} END`;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  // Old Weight is in lbs → convert to kg (all old here).
+  const valExpr = `CASE WHEN ${item} = 'Weight' THEN TRIM(${value})::numeric / 2.20462 ELSE TRIM(${value})::numeric END`;
+  return `
+    WITH ppy AS (
+      SELECT param, uhid, yr, val FROM (
+        SELECT ${normCase} AS param, ${uhid} AS uhid, EXTRACT(YEAR FROM ${date})::int AS yr, ${valExpr} AS val,
+               ROW_NUMBER() OVER (PARTITION BY ${normCase}, ${uhid}, EXTRACT(YEAR FROM ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${item} IN (${allSrc.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}
+      ) t WHERE rn = 1
+    )
+    SELECT param, yr::text AS year, COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE ${aboveCase(params, "val")})::int AS above,
+           ROUND(AVG(val)::numeric, 2) AS avg
+    FROM ppy WHERE param IS NOT NULL GROUP BY param, yr ORDER BY param, yr`;
+}
+
+// Band metrics: per year → total measured and count in the "above" bands (abnormal, excluding under-healthy).
+function bandYearlySQL(m: BandMetric) {
+  const { table, uhid, value, date, cug } = m.base as any;
+  const cugCond = cug ? `cug_code = 'CISCO01' AND ` : "";
+  return `
+    WITH ppy AS (
+      SELECT uhid, yr, v FROM (
+        SELECT ${uhid} AS uhid, EXTRACT(YEAR FROM ${date})::int AS yr, TRIM(${value})::numeric AS v,
+               ROW_NUMBER() OVER (PARTITION BY ${uhid}, EXTRACT(YEAR FROM ${date}) ORDER BY ${date} DESC) AS rn
+        FROM ${table} WHERE ${cugCond}"Source" = 'old' AND ${m.item} IN (${m.src.map(q).join(", ")}) AND TRIM(${value}) ${NUMERIC}
+      ) t WHERE rn = 1
+    )
+    SELECT yr::text AS year, COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE ${m.cls.replace(/VAL/g, "v")} IN (${m.above.map(q).join(", ")}))::int AS above
+    FROM ppy GROUP BY yr ORDER BY yr`;
 }
 
 async function handler(request: NextRequest) {
@@ -503,7 +569,17 @@ async function handler(request: NextRequest) {
     const bandQP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ quarter: string; cohort: string; band: string; n: string }>(bandQuarterlySQL(m), [], HEAVY), `bandQ:${m.key}`));
     const bandWindowP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ side: string; band: string; n: string }>(bandWindowSQL(m, WIN_FROM, WIN_TO_EXCL), [], HEAVY), `bandWindow:${m.key}`));
 
-    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, labWindowRows, vitWindowRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, labWindowP, vitWindowP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP, ...bandWindowP, ...condWindowP]);
+    // Yearly trend (% above threshold per year, over OLD data).
+    const labYearlyP = safeQuery(() => dwQuery<{ param: string; year: string; total: string; above: string; avg: string }>(
+      valueYearlySQL({ ...LAB_S, item: "service_item_name", params: LAB_PARAMS }), [], HEAVY), "labYearly");
+    const vitYearlyP = safeQuery(() => dwQuery<{ param: string; year: string; total: string; above: string; avg: string }>(
+      valueYearlySQL({ ...VIT_S, item: "vital_parameter_name", params: VIT_PARAMS }), [], HEAVY), "vitYearly");
+    const condYearlyP = CONDITIONS.map((c) => safeQuery(() => dwQuery<{ year: string; total: string; positive: string }>(
+      conditionYearlySQL(c), [], HEAVY), `condYearly:${c.key}`));
+    const bandYearlyP = BAND_METRICS.map((m) => safeQuery(() => dwQuery<{ year: string; total: string; above: string }>(
+      bandYearlySQL(m), [], HEAVY), `bandYearly:${m.key}`));
+
+    const [labProg, vitProg, glyRows, bmiRows, bpRows, kpiRows, labQ, vitQ, apptRows, labWindowRows, vitWindowRows, labYearlyRows, vitYearlyRows, ...rest] = await Promise.all([labProgP, vitProgP, glyP, bmiP, bpP, kpiP, labQP, vitQP, apptP, labWindowP, vitWindowP, labYearlyP, vitYearlyP, ...condQP, ...condTNP, ...prevP, ...scatterP, ...bandThenP, ...bandNowP, ...bandQP, ...bandWindowP, ...condWindowP, ...condYearlyP, ...bandYearlyP]);
     const NC = CONDITIONS.length, P = prevDefs.length, S = SCATTER.length, B = BAND_METRICS.length;
     const condResults = rest.slice(0, NC) as { quarter: string; cohort: string; total: string; positive: string }[][];
     const condTNResults = rest.slice(NC, 2 * NC) as { cohort: string; then_pos: string; now_pos: string }[][];
@@ -514,6 +590,8 @@ async function handler(request: NextRequest) {
     const bandQResults = rest.slice(2 * NC + P + S + 2 * B, 2 * NC + P + S + 3 * B) as { quarter: string; cohort: string; band: string; n: string }[][];
     const bandWindowResults = rest.slice(2 * NC + P + S + 3 * B, 2 * NC + P + S + 4 * B) as { side: string; band: string; n: string }[][];
     const condWindowResults = rest.slice(2 * NC + P + S + 4 * B, 3 * NC + P + S + 4 * B) as { cohort: string; then_pos: string; now_pos: string }[][];
+    const condYearlyResults = rest.slice(3 * NC + P + S + 4 * B, 4 * NC + P + S + 4 * B) as { year: string; total: string; positive: string }[][];
+    const bandYearlyResults = rest.slice(4 * NC + P + S + 4 * B, 4 * NC + P + S + 5 * B) as { year: string; total: string; above: string }[][];
 
     // ── Shape value progression rows (attach panel + direction + delta). ──
     const ALL = [...LAB_PARAMS, ...VIT_PARAMS];
@@ -587,7 +665,18 @@ async function handler(request: NextRequest) {
       key: c.key, label: c.label, threshold: c.threshold,
       total: mkCmp(condTNResults[i]?.[0]),
       window: mkCmp(condWindowResults[i]?.[0]),
+      yearly: (condYearlyResults[i] || []).map((r) => ({ year: r.year, total: Number(r.total), positive: Number(r.positive), pct: pctOf(Number(r.positive), Number(r.total)) })),
     })).sort((a, b) => (b.total.then.positive - b.total.now.positive) - (a.total.then.positive - a.total.now.positive));
+    // ── Value Progression yearly trend: per param, % above threshold per OLD-data year (avg for neutral params) ──
+    const shapeYearly = (rows: { param: string; year: string; total: string; above: string; avg: string }[], catalogue: typeof LAB_PARAMS) =>
+      catalogue.map((p) => {
+        const years = rows.filter((r) => r.param === p.display)
+          .map((r) => ({ year: r.year, total: Number(r.total), above: Number(r.above), avg: r.avg == null ? null : Number(r.avg), pct: pctOf(Number(r.above), Number(r.total)) }))
+          .sort((a, b) => a.year.localeCompare(b.year));
+        return { param: p.display, panel: p.panel, direction: p.dir, hasThreshold: NORMALS[p.display] != null && p.dir !== "neutral", normal: NORMALS[p.display] ?? null, years };
+      }).filter((p) => p.years.length);
+    const labYearly = shapeYearly(labYearlyRows, LAB_PARAMS);
+    const vitalsYearly = shapeYearly(vitYearlyRows, VIT_PARAMS);
     // ── Band distribution journey (waffle charts): Then + quarters, per cohort ──
     const bandJourney: Record<string, any> = {};
     BAND_METRICS.forEach((m, i) => {
@@ -607,6 +696,7 @@ async function handler(request: NextRequest) {
       const winNowPt = tally(wr.filter((r) => r.side === "now"));
       bandJourney[m.key] = {
         key: m.key, title: m.title, note: m.note, categories: m.categories,
+        yearly: (bandYearlyResults[i] || []).map((r) => ({ year: r.year, total: Number(r.total), above: Number(r.above), pct: pctOf(Number(r.above), Number(r.total)) })),
         total: [
           ...(thenPt.total > 0 ? [{ label: "Then", counts: thenPt.counts, total: thenPt.total }] : []),
           ...(nowPt.total > 0 ? [{ label: "Now", counts: nowPt.counts, total: nowPt.total }] : []),
@@ -653,6 +743,8 @@ async function handler(request: NextRequest) {
       vitalsQuarterly,
       labWindow,
       vitalsWindow,
+      labYearly,
+      vitalsYearly,
       conditionJourney,
       bandJourney,
       apptOutcomes,

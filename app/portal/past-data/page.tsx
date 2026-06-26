@@ -184,23 +184,22 @@ type Col = { label: string; pct: number; count: number; color: string; delta: nu
 const C_BASE = "#cbd5e1", C_DOWN = "#0d9488", C_UP = "#dc2626", C_FLAT = "#94a3b8";
 
 // Plain-English definition of Then vs Now, shown on every then-vs-now chart. Key terms in solid black for legibility.
-function ThenNowDefn({ cmp }: { cmp: "total" | "window" }) {
+function ThenNowDefn({ cmp }: { cmp: "yearly" | "window" }) {
   const bk = { color: "#000" } as const;
   return (
     <div className="rounded-xl px-4 py-3 mb-4" style={{ backgroundColor: "#EEF2FF", border: "1px solid #dfe3fb" }}>
       <p className="text-[12.5px] leading-[1.65]" style={{ color: "#1f2937" }}>
-        {cmp === "total" ? (
+        {cmp === "yearly" ? (
           <>
-            <b style={bk}>Then</b> = each member&apos;s most-recent reading from their <b style={bk}>past records</b> (their older check-ups, up to about <b style={bk}>June 2025</b>).{" "}
-            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b> (the recent re-check, after June 2025).
+            Each line shows, for one parameter, the <b style={bk}>% of that year&apos;s measured members who are above the threshold</b> (e.g. % diabetic, % obese), across the years of the <b style={bk}>past (old) data</b>.{" "}
+            Every year has a <b style={bk}>different population</b>, so we use a <b style={bk}>percentage</b> (not raw counts) to compare years fairly. <b style={bk}>Hover any point</b> to see that year&apos;s member count (n).
           </>
         ) : (
           <>
             <b style={bk}>Jun &apos;24 – Jun &apos;25</b> = each member&apos;s most-recent reading inside that <b style={bk}>one-year window</b> (15 Jun 2024 – 15 Jun 2025).{" "}
-            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b>.
+            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b>. We only count <b style={bk}>members with a reading in BOTH periods</b> (matched by UHID) — the <b style={bk}>same people</b> over time.
           </>
-        )}{" "}
-        We only count <b style={bk}>members who have a reading in BOTH periods</b> (matched by their unique UHID) — so we compare the <b style={bk}>same people</b> over time, not different groups.
+        )}
       </p>
     </div>
   );
@@ -275,12 +274,83 @@ function JourneyCard({ c, cmp, baselineLabel }: { c: any; cmp: "total" | "window
   );
 }
 
-function MemberJourney({ journey }: { journey: any[] }) {
-  const [cmp, setCmp] = useState<"total" | "window">("total");
-  const list = journey ?? [];
-  const baselineLabel = cmp === "total" ? "Then" : "Jun'24–'25";
+// One parameter/condition's yearly trend: a compact % (or avg) line across OLD-data years, with n.
+function YearlyTrendCard({ title, threshold, points, isPct, suffix = "", color = "#8e9bc4" }: {
+  title: string; threshold?: string;
+  points: { year: string; value: number; n: number }[]; isPct: boolean; suffix?: string; color?: string;
+}) {
+  const empty = points.length === 0;
+  const vals = points.map((p) => p.value);
+  const vmax = (Math.max(isPct ? 1 : 0, ...vals) || 1) * 1.05; // bars from 0, small headroom
+  const h = (v: number) => Math.max(2, (v / vmax) * 100);
+  const fmtV = (v: number) => (isPct ? `${Math.round(v * 10) / 10}%` : num1(v));
+  return (
+    <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
+      <div className="mb-2">
+        <div className="text-[13px] font-bold" style={{ color: T.textPrimary }}>{title}{suffix ? <span className="text-[10.5px] font-medium" style={{ color: T.textMuted }}> · {suffix}</span> : null}</div>
+        {threshold && <span className="inline-block text-[10.5px] font-bold px-1.5 py-0.5 rounded mt-1 tabular-nums" style={{ color: "#4338ca", backgroundColor: "#EEF2FF" }}>{threshold}</span>}
+      </div>
+      {empty ? <div className="text-[12px] py-8 text-center" style={{ color: T.textMuted }}>No data.</div> : (
+        <>
+          {/* % + n above each bar */}
+          <div className="flex gap-1">
+            {points.map((p, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center justify-end leading-tight" style={{ height: 32 }}>
+                <span className="text-[10px] font-bold tabular-nums" style={{ color: T.textPrimary }}>{fmtV(p.value)}</span>
+                <span className="text-[8px] tabular-nums" style={{ color: T.textMuted }}>n={fmt(p.n)}</span>
+              </div>
+            ))}
+          </div>
+          {/* bars (from zero) */}
+          <div className="flex items-end gap-1" style={{ height: 84 }}>
+            {points.map((p, i) => (
+              <div key={i} className="flex-1 flex items-end justify-center h-full" title={`${p.year}: ${fmtV(p.value)} (n=${fmt(p.n)})`}>
+                <div className="w-full rounded-t-[2px]" style={{ height: `${h(p.value)}%`, maxWidth: 26, backgroundColor: color }} />
+              </div>
+            ))}
+          </div>
+          {/* full-year labels */}
+          <div className="flex gap-1 mt-1.5 pt-1.5" style={{ borderTop: `1px solid ${T.border}` }}>
+            {points.map((p, i) => (
+              <span key={i} className="flex-1 text-center text-[9px] font-semibold tabular-nums" style={{ color: T.textSecondary }}>{p.year}</span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
-  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+// "How to read" for the yearly bar charts (shown once above each yearly grid).
+function YearlyHowToRead({ color = "#8e9bc4" }: { color?: string }) {
+  return (
+    <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
+      <div className="text-[12px] font-bold mb-2.5" style={{ color: T.textPrimary }}>How to read</div>
+      <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+        <tbody>
+          <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+            <td className="py-2 pr-4 w-[120px]"><span className="inline-block w-3.5 h-5 rounded-sm align-middle" style={{ backgroundColor: color }} /> <span className="text-[12px] font-bold align-middle" style={{ color: T.textPrimary }}>21.5%</span></td>
+            <td className="py-2" style={{ color: T.textSecondary }}>Each <b>bar = one year</b> of past data. Its height and the bold number = <b>% of that year&apos;s measured members above the threshold</b> (e.g. % diabetic). For parameters with no threshold, the bar shows the <b>yearly average</b> instead.</td>
+          </tr>
+          <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+            <td className="py-2 pr-4"><span className="text-[11px] font-semibold tabular-nums" style={{ color: T.textMuted }}>n=209</span></td>
+            <td className="py-2" style={{ color: T.textSecondary }}>The small number under each bar = <b>n</b>, how many members were measured that year — the base the % is calculated from.</td>
+          </tr>
+          <tr>
+            <td className="py-2 pr-4"><span className="text-[11px] font-semibold tabular-nums" style={{ color: T.textSecondary }}>2021 → 2025</span></td>
+            <td className="py-2" style={{ color: T.textSecondary }}>Years run <b>left → right</b>. Each year had a <b>different population</b>, so we compare a <b>%</b> (not raw counts) to keep the years fair.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MemberJourney({ journey }: { journey: any[] }) {
+  const [cmp, setCmp] = useState<"yearly" | "window">("yearly");
+  const list = journey ?? [];
+
+  const CmpBtn = ({ id, label }: { id: "yearly" | "window"; label: string }) => (
     <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
 
@@ -288,52 +358,25 @@ function MemberJourney({ journey }: { journey: any[] }) {
     <div>
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="yearly" label="Yearly trend" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
+      {cmp === "yearly" && <YearlyHowToRead />}
 
-      {/* How to read each bar */}
-      <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
-        <div className="text-[12px] font-bold mb-2.5" style={{ color: T.textPrimary }}>How to read each bar</div>
-        <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-              <th className="text-left font-semibold py-1.5 pr-4 w-[120px]" style={{ color: T.textSecondary }}>What you see</th>
-              <th className="text-left font-semibold py-1.5" style={{ color: T.textSecondary }}>Means</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4"><span className="text-[15px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>175</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The <b>number of members</b> above the threshold (i.e. who have the condition) at that point.</td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4"><span className="text-[13px] font-bold tabular-nums" style={{ color: T.textMuted }}>16.3%</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>That count as a <b>share of the members measured</b> (e.g. 175 of 1,075 tracked = 16.3%). The bar height tracks this.</td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4"><span className="text-[12px] font-bold" style={{ color: C_DOWN }}>▼12%</span> <span className="text-[12px] font-bold" style={{ color: C_UP }}>▲8%</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}><b>Change from baseline → Now</b> — <span style={{ color: C_DOWN }}>teal ▼ = fewer (better)</span>, <span style={{ color: C_UP }}>red ▲ = more</span>. The Now bar takes that colour too.</td>
-            </tr>
-            <tr>
-              <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>baseline</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The left bar — the starting reading the <b>Now</b> bar is compared against.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {list.map((c) => <JourneyCard key={c.key} c={c} cmp={cmp} baselineLabel={baselineLabel} />)}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 pt-3 text-[11px]" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderLight}` }}>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#cbd5e1" }} /> baseline</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#0d9488" }} /> ▼ fewer now (better)</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#dc2626" }} /> ▲ more now</span>
-        <span>· each bar = members above the threshold (count + %); ▲▼ = change from baseline → Now</span>
-      </div>
+      {cmp === "yearly" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {list.map((c) => (
+            <YearlyTrendCard key={c.key} title={c.label} threshold={c.threshold} isPct
+              points={(c.yearly ?? []).map((y: any) => ({ year: y.year, value: y.pct, n: y.total }))} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {list.map((c) => <JourneyCard key={c.key} c={c} cmp="window" baselineLabel="Jun'24–'25" />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -509,16 +552,15 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
   );
 }
 
-function ValueJourney({ paramsTotal, paramsWindow }: { paramsTotal: any[]; paramsWindow: any[] }) {
+function ValueJourney({ paramsWindow, paramsYearly }: { paramsWindow: any[]; paramsYearly: any[] }) {
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
-  const [cmp, setCmp] = useState<"total" | "window">("total");
-  const list = (cmp === "total" ? paramsTotal : paramsWindow) ?? [];
-  const baselineLabel = cmp === "total" ? "Then" : "Jun'24–'25";
+  const [cmp, setCmp] = useState<"yearly" | "window">("yearly");
+  const list = (cmp === "yearly" ? paramsYearly : paramsWindow) ?? [];
   const byPanel = PANEL_ORDER.map((panel) => ({ panel, items: list.filter((p) => p.panel === panel) })).filter((g) => g.items.length);
   const curPanel = byPanel.find((g) => g.panel === selectedPanel) || byPanel[0];
   const items: any[] = curPanel?.items ?? [];
 
-  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+  const CmpBtn = ({ id, label }: { id: "yearly" | "window"; label: string }) => (
     <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
 
@@ -532,50 +574,22 @@ function ValueJourney({ paramsTotal, paramsWindow }: { paramsTotal: any[]; param
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="yearly" label="Yearly trend" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
-
-      {/* How to read each bar */}
-      <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}` }}>
-        <div className="text-[12px] font-bold mb-2.5" style={{ color: T.textPrimary }}>How to read each bar</div>
-        <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-          <tbody>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4 w-[120px]"><span className="text-[15px] font-extrabold tabular-nums" style={{ color: T.textPrimary }}>5.9</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The <b>average value</b> at that point — <b>Then</b> (most-recent past reading) or <b>Now</b> (most-recent current reading). <span style={{ color: T.textMuted }}>n = members measured.</span></td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4"><span className="text-[12px] font-bold" style={{ color: C_DOWN }}>▼0.2</span> <span className="text-[12px] font-bold" style={{ color: C_UP }}>▲0.3</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}><b>Change from Then → Now</b>, coloured by the <b>healthy direction</b> for that metric — <span style={{ color: C_DOWN }}>teal = moved the right way</span>, <span style={{ color: C_UP }}>red = wrong way</span>. The Now bar takes that colour.</td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: "#64748b" }}>- - normal</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The <b>healthy threshold</b> line — bars on the at-risk side of it are outside the normal range.</td>
-            </tr>
-            <tr>
-              <td className="py-2 pr-4"><span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>baseline</span></td>
-              <td className="py-2" style={{ color: T.textSecondary }}>The <b>"{baselineLabel}"</b> bar — the starting reading the <b>Now</b> bar is compared against.</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="text-[10.5px] mt-2" style={{ color: T.textMuted }}>Bars start from zero, so their heights show the true proportion; the exact value sits above each bar and the dashed line marks the normal threshold.</p>
-      </div>
+      {cmp === "yearly" && <YearlyHowToRead color="#5fa3a0" />}
 
       {items.length ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {items.map((p) => <ValueCard key={p.param} p={p} baselineLabel={baselineLabel} />)}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {items.map((p) => cmp === "yearly"
+            ? <YearlyTrendCard key={p.param} title={p.param} isPct={p.hasThreshold} suffix={PARAM_META[p.param]?.unit ?? ""} color="#5fa3a0"
+                threshold={p.hasThreshold ? `normal ${p.direction === "higher" ? "≥" : "≤"} ${num1(Number(p.normal))} ${PARAM_META[p.param]?.unit ?? ""}`.trim() : undefined}
+                points={(p.years ?? []).map((y: any) => ({ year: y.year, value: p.hasThreshold ? y.pct : (y.avg ?? 0), n: y.total }))} />
+            : <ValueCard key={p.param} p={p} baselineLabel="Jun'24–'25" />)}
         </div>
       ) : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No parameters available.</div>}
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 pt-3 text-[11px]" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderLight}` }}>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#cbd5e1" }} /> baseline</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#0d9488" }} /> moved the healthy way</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#dc2626" }} /> moved the wrong way</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "#94a3b8" }} /> neutral metric</span>
-      </div>
     </div>
   );
 }
@@ -649,32 +663,49 @@ function BandSection({ metric, cmp }: { metric: any; cmp: "total" | "window" }) 
   );
 }
 
+// Friendly "abnormal" label per band metric (the categories that count as above the healthy band).
+const BAND_ABNORMAL: Record<string, string> = { glycemic: "% not normal (pre-diabetic + diabetic)", bmi: "% overweight + obese", bp: "% elevated + hypertension" };
+
 function BandJourney({ bands }: { bands: any[] }) {
-  const [cmp, setCmp] = useState<"total" | "window">("total");
+  const [cmp, setCmp] = useState<"yearly" | "window">("yearly");
   const [selected, setSelected] = useState<string | null>(null);
   const current = bands.find((m) => m.key === selected) || bands[0];
-  const CmpBtn = ({ id, label }: { id: "total" | "window"; label: string }) => (
+  const CmpBtn = ({ id, label }: { id: "yearly" | "window"; label: string }) => (
     <button onClick={() => setCmp(id)} className="px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors" style={cmp === id ? { backgroundColor: "#4f46e5", color: "#fff" } : { backgroundColor: "#F1F3F9", color: T.textSecondary }}>{label}</button>
   );
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        {cmp === "window" ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Metric</span>
+            <select value={current?.key ?? ""} onChange={(e) => { setSelected(e.target.value); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
+              {bands.map((m) => <option key={m.key} value={m.key}>{m.title}</option>)}
+            </select>
+          </div>
+        ) : <div />}
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Metric</span>
-          <select value={current?.key ?? ""} onChange={(e) => { setSelected(e.target.value); }} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 190 }}>
-            {bands.map((m) => <option key={m.key} value={m.key}>{m.title}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <CmpBtn id="total" label="Then → Now" />
+          <CmpBtn id="yearly" label="Yearly trend" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
-      <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
-        <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — compare it between the two grids. Hover a grid for the exact split.
-      </div>
-      {current ? <BandSection metric={current} cmp={cmp} /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
+      {cmp === "yearly" && <YearlyHowToRead color="#b08fc0" />}
+      {cmp === "yearly" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {bands.map((m) => (
+            <YearlyTrendCard key={m.key} title={m.title} threshold={BAND_ABNORMAL[m.key]} isPct color="#b08fc0"
+              points={(m.yearly ?? []).map((y: any) => ({ year: y.year, value: y.pct, n: y.total }))} />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="rounded-xl p-3.5 mb-5 text-[12px]" style={{ backgroundColor: "#F8FAFC", border: `1px solid ${T.border}`, color: T.textSecondary }}>
+            <b style={{ color: T.textPrimary }}>How to read:</b> each grid = <b>100 members</b> at that point; each dot = <b>1%</b>, coloured by band. The green block is the healthy share — compare it between the two grids. Hover a grid for the exact split.
+          </div>
+          {current ? <BandSection metric={current} cmp="window" /> : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No metric available.</div>}
+        </>
+      )}
     </div>
   );
 }
@@ -825,16 +856,16 @@ export default function PastDataPage() {
 
       {/* ── Member Health Journey ── */}
       {isChartVisible("conditionPrevalence") && (
-        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="How many members are above each clinical threshold — past baseline vs now. Thresholds follow the reference workbook." tooltipText="Then = % above the threshold on each member's most-recent past reading; Now = most-recent current reading. A condition can be governed by multiple rules (e.g. Diabetes = FBS ≥126 OR HbA1c ≥6.5) and gender-specific cutoffs (Anaemia). Switch to 'Jun '24 – Jun '25 → Now' to compare the last year specifically." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence — Then vs Now, and Jun'24–Jun'25 vs Now">
+        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="% of each year's measured members above each clinical threshold, year by year. Thresholds follow the reference workbook." tooltipText="Yearly trend: for each condition, the % of that year's measured members above the threshold (e.g. % diabetic), across the past-data years. Each year has a different population, so % keeps years comparable; hover a point for n. A condition can be governed by multiple rules (Diabetes = FBS ≥126 OR HbA1c ≥6.5) and gender-specific cutoffs (Anaemia). Switch to 'Jun '24 – Jun '25 → Now' for the last-year-vs-now comparison." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence — yearly % above threshold, and Jun'24–Jun'25 vs Now">
           <MemberJourney journey={data?.conditionJourney ?? []} />
         </CVCard>
       )}
 
       {/* ── Value Progression (quarter-by-quarter, by panel) ── */}
       {(isChartVisible("labProgression") || isChartVisible("vitalsProgression")) && (
-        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="Average lab & vital values — past baseline vs now, grouped by clinical panel." tooltipText="Each card is one parameter: 'Then' = mean of each member's most-recent past reading; 'Now' = mean of their most-recent current reading (both over the tracked cohort). Bars start from zero so heights show true proportion; colour follows the healthy direction for that metric." chartId="labProgression" chartData={{ labQuarterly: data?.labQuarterly, vitalsQuarterly: data?.vitalsQuarterly }} chartTitle="Value Progression" chartDescription="Then vs now average lab & vital values, tracked cohort">
+        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="% of each year's members outside the normal range, year by year, grouped by clinical panel." tooltipText="Yearly trend: for each parameter, the % of that year's measured members outside the normal range (above/below the threshold), across the past-data years; hover a point for n. Parameters with no threshold (TSH, WBC, Weight…) show the yearly average instead. Switch to 'Jun '24 – Jun '25 → Now' for the last-year-vs-now bars." chartId="labProgression" chartData={{ labYearly: data?.labYearly, vitalsYearly: data?.vitalsYearly }} chartTitle="Value Progression" chartDescription="Yearly % above threshold per parameter, and Jun'24–Jun'25 vs Now">
           <ValueJourney
-            paramsTotal={[...(isChartVisible("labProgression") ? (data?.labQuarterly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsQuarterly ?? []) : [])]}
+            paramsYearly={[...(isChartVisible("labProgression") ? (data?.labYearly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsYearly ?? []) : [])]}
             paramsWindow={[...(isChartVisible("labProgression") ? (data?.labWindow ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsWindow ?? []) : [])]}
           />
         </CVCard>
@@ -842,7 +873,7 @@ export default function PastDataPage() {
 
       {/* ── Health Band Distribution (waffle grids, Then → quarterly) ── */}
       {(isChartVisible("glycemicTransition") || isChartVisible("bmiTransition") || isChartVisible("bpTransition")) && (
-        <CVCard accentColor="#0d9488" title="Health Band Distribution — Then → Now" subtitle="Share of members in each health band — past baseline vs now. Each grid is 100 members; the green block is the healthy share." tooltipText="Each dot = 1% of the members measured at that point, coloured by band. Compare the green (normal) block between the two grids. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP band share — Then vs Now, and Jun'24–Jun'25 vs Now">
+        <CVCard accentColor="#0d9488" title="Health Band Distribution" subtitle="% of each year's members in the abnormal band, year by year (Glycemic / BMI / BP)." tooltipText="Yearly trend: for each metric, the % of that year's measured members in the abnormal bands (e.g. pre-diabetic + diabetic, overweight + obese, elevated + hypertension), across the past-data years; hover a point for n. Switch to 'Jun '24 – Jun '25 → Now' for the waffle-grid comparison. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP yearly % abnormal, and Jun'24–Jun'25 vs Now">
           <BandJourney bands={[
             isChartVisible("glycemicTransition") && data?.bandJourney?.glycemic,
             isChartVisible("bmiTransition") && data?.bandJourney?.bmi,

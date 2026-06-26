@@ -353,7 +353,7 @@ function MemberJourney({ journey }: { journey: any[] }) {
     <div>
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <CmpBtn id="yearly" label="Yearly trend" />
+          <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
@@ -541,7 +541,7 @@ function ValueJourney({ paramsWindow, paramsYearly }: { paramsWindow: any[]; par
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <CmpBtn id="yearly" label="Yearly trend" />
+          <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>
@@ -652,7 +652,7 @@ function BandJourney({ bands }: { bands: any[] }) {
           </div>
         ) : <div />}
         <div className="flex items-center gap-2">
-          <CmpBtn id="yearly" label="Yearly trend" />
+          <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
           <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
         </div>
       </div>

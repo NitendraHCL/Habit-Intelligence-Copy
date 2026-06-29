@@ -791,8 +791,8 @@ export default function PastDataPage() {
         kpis={kpis || {}}
         fallbackSummary={`For the Jun '24 – Jun '25 → Now comparison, ${fmt(kpis?.labWindowTracked || 0)} members have lab data in both the window and the current check, and ${fmt(kpis?.vitalsWindowTracked || 0)} have vitals in both. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are monitored.`}
         fallbackChips={[
-          { label: "Tracked (Labs)", value: fmt(kpis?.labWindowTracked || 0) },
-          { label: "Tracked (Vitals)", value: fmt(kpis?.vitalsWindowTracked || 0) },
+          { label: "Tracked (Labs)", value: `${fmt(kpis?.labWindowTracked || 0)} / ${fmt(4162)}` },
+          { label: "Tracked (Vitals)", value: `${fmt(kpis?.vitalsWindowTracked || 0)} / ${fmt(7460)}` },
           { label: "Conditions", value: fmt(kpis?.conditionsMonitored || 0) },
         ]}
       />
@@ -801,8 +801,8 @@ export default function PastDataPage() {
       {isChartVisible("kpis") && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
-            { label: "Members Tracked (Labs) · Jun '24–'25 → Now", value: fmt(kpis?.labWindowTracked || 0), hint: "members with labs in the window and now", tip: "Members who have a lab reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new). Denominator pending.", color: "#4f46e5" },
-            { label: "Members Tracked (Vitals) · Jun '24–'25 → Now", value: fmt(kpis?.vitalsWindowTracked || 0), hint: "members with vitals in the window and now", tip: "Members who have a vitals reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new). Denominator pending.", color: "#0d9488" },
+            { label: "Members Tracked (Labs) · Jun '24–'25 → Now", value: `${fmt(kpis?.labWindowTracked || 0)} / ${fmt(4162)}`, hint: "tracked of unique lab members in the window", tip: "Members who have a lab reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new), out of the 4,162 unique members with labs in that window.", color: "#4f46e5" },
+            { label: "Members Tracked (Vitals) · Jun '24–'25 → Now", value: `${fmt(kpis?.vitalsWindowTracked || 0)} / ${fmt(7460)}`, hint: "tracked of unique vitals members in the window", tip: "Members who have a vitals reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new), out of the 7,460 unique members with vitals in that window.", color: "#0d9488" },
             { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions tracked", tip: `Conditions tracked across the page: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>

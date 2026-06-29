@@ -789,22 +789,21 @@ export default function PastDataPage() {
         pageTitle="Past Data — Health Progression"
         pageSubtitle="How CISCO employees' labs & vitals changed from their earlier records to now"
         kpis={kpis || {}}
-        fallbackSummary={`${fmt(kpis?.labCohort || 0)} members have both past and present lab records and ${fmt(kpis?.vitalsCohort || 0)} have both for vitals — the basis for the then→now comparison. A further ${fmt(kpis?.newMembers || 0)} new members completed their first health check now, setting a baseline. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are tracked across the cohort.`}
+        fallbackSummary={`For the Jun '24 – Jun '25 → Now comparison, ${fmt(kpis?.labWindowTracked || 0)} members have lab data in both the window and the current check, and ${fmt(kpis?.vitalsWindowTracked || 0)} have vitals in both. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are monitored.`}
         fallbackChips={[
-          { label: "Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}` },
-          { label: "Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}` },
-          { label: "New Members", value: fmt(kpis?.newMembers || 0) },
+          { label: "Tracked (Labs)", value: fmt(kpis?.labWindowTracked || 0) },
+          { label: "Tracked (Vitals)", value: fmt(kpis?.vitalsWindowTracked || 0) },
           { label: "Conditions", value: fmt(kpis?.conditionsMonitored || 0) },
         ]}
       />
 
-      {/* ── KPI tiles ── */}
+      {/* ── KPI tiles (Jun'24–Jun'25 → Now) ── */}
       {isChartVisible("kpis") && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
-            { label: "Members Tracked (Labs)", value: `${fmt(kpis?.labCohort || 0)} / ${fmt(13985)}`, hint: "tracked of total lab members", tip: "Members with at least one lab result from before and after (the basis for every then-vs-now lab comparison) out of the total lab member base.", color: "#4f46e5" },
-            { label: "Members Tracked (Vitals)", value: `${fmt(kpis?.vitalsCohort || 0)} / ${fmt(37133)}`, hint: "tracked of total vitals members", tip: "Members with BMI, blood-pressure or weight captured both in the past and in the current health check, out of the total vitals member base.", color: "#0d9488" },
-            { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions, then → now", tip: `Conditions compared past vs present: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
+            { label: "Members Tracked (Labs) · Jun '24–'25 → Now", value: fmt(kpis?.labWindowTracked || 0), hint: "members with labs in the window and now", tip: "Members who have a lab reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new). Denominator pending.", color: "#4f46e5" },
+            { label: "Members Tracked (Vitals) · Jun '24–'25 → Now", value: fmt(kpis?.vitalsWindowTracked || 0), hint: "members with vitals in the window and now", tip: "Members who have a vitals reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new). Denominator pending.", color: "#0d9488" },
+            { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions tracked", tip: `Conditions tracked across the page: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
               <div className="flex items-center gap-1">

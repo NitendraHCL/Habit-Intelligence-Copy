@@ -527,7 +527,7 @@ async function handler(request: NextRequest) {
     });
 
     // KPIs.
-    const kpiP = safeQuery(() => dwQuery<{ lab_cohort: string; vit_cohort: string; vit_new_only: string; median_years: string }>(
+    const kpiP = safeQuery(() => dwQuery<{ lab_cohort: string; vit_cohort: string; vit_new_only: string; median_years: string; lab_window_tracked: string; vit_window_tracked: string }>(
       `WITH lab_span AS (
          SELECT uhid, EXTRACT(EPOCH FROM (MAX(verification_date_time) FILTER (WHERE "Source"='new') - MAX(verification_date_time) FILTER (WHERE "Source"='old'))) / (365.25*86400) AS years
          FROM ${LAB} GROUP BY 1 HAVING COUNT(DISTINCT "Source") = 2),
@@ -535,7 +535,15 @@ async function handler(request: NextRequest) {
        vit_new AS (SELECT uhid FROM ${VIT} WHERE "Source" = 'new' GROUP BY 1)
        SELECT (SELECT COUNT(*) FROM lab_span)::bigint AS lab_cohort, (SELECT COUNT(*) FROM vit_cohort)::bigint AS vit_cohort,
               ((SELECT COUNT(*) FROM vit_new) - (SELECT COUNT(*) FROM vit_cohort))::bigint AS vit_new_only,
-              COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY years), 0)::numeric(6,1) AS median_years FROM lab_span`,
+              COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY years), 0)::numeric(6,1) AS median_years,
+              -- Jun'24–Jun'25 → Now: members present in BOTH the window (old) and new, per source.
+              (SELECT COUNT(*) FROM (
+                 SELECT uhid FROM ${LAB} WHERE "Source" = 'old' AND verification_date_time >= '${WIN_FROM}' AND verification_date_time < '${WIN_TO_EXCL}'
+                 INTERSECT SELECT uhid FROM ${LAB} WHERE "Source" = 'new') z)::bigint AS lab_window_tracked,
+              (SELECT COUNT(*) FROM (
+                 SELECT uhid FROM ${VIT} WHERE "Source" = 'old' AND clinical_type_creation_time >= '${WIN_FROM}' AND clinical_type_creation_time < '${WIN_TO_EXCL}'
+                 INTERSECT SELECT uhid FROM ${VIT} WHERE "Source" = 'new') z)::bigint AS vit_window_tracked
+       FROM lab_span`,
       [], HEAVY), "kpis");
 
     // ── Quarterly progression (value averages + condition rates) ──
@@ -730,6 +738,9 @@ async function handler(request: NextRequest) {
         labCohort: Number(kpi?.lab_cohort || 0),
         vitalsCohort: Number(kpi?.vit_cohort || 0),
         newMembers: Number(kpi?.vit_new_only || 0),
+        // Jun'24–Jun'25 → Now: members with data in both the window (old) and new, per source.
+        labWindowTracked: Number(kpi?.lab_window_tracked || 0),
+        vitalsWindowTracked: Number(kpi?.vit_window_tracked || 0),
         // Distinct clinical conditions compared then→now (see CONDITIONS_MONITORED).
         conditionsMonitored: CONDITIONS_MONITORED.length,
         conditionsList: CONDITIONS_MONITORED,

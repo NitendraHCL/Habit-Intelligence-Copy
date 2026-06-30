@@ -484,7 +484,7 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
     ];
     const outDiff = outThen - outNow;
     const badge = outDiff === 0 ? { t: "no change", c: T.textMuted, b: "#F1F3F9" } : outDiff > 0 ? { t: `${fmt(outDiff)} fewer ✓`, c: "#0f766e", b: "#ecfdf5" } : { t: `${fmt(-outDiff)} more`, c: "#b91c1c", b: "#fef2f2" };
-    const atRisk = meta.normal == null ? null : `outside normal: ${dir === "higher" ? "<" : ">"} ${num1(meta.normal)}${meta.unit ? " " + meta.unit : ""}`;
+    const atRisk = meta.normal == null ? null : `at risk: ${dir === "higher" ? "≤" : "≥"} ${num1(meta.normal)}${meta.unit ? " " + meta.unit : ""}`;
     return (
       <div className="rounded-xl p-4 flex flex-col" style={{ border: `1px solid ${T.border}`, backgroundColor: "#fff" }}>
         <div className="flex items-start justify-between gap-2 mb-3">
@@ -552,7 +552,7 @@ function ValueJourney({ paramsWindow, paramsYearly }: { paramsWindow: any[]; par
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {items.map((p) => cmp === "yearly"
             ? <YearlyTrendCard key={p.param} title={p.param} isPct={p.hasThreshold} suffix={PARAM_META[p.param]?.unit ?? ""} color="#5fa3a0"
-                threshold={p.hasThreshold ? `normal ${p.direction === "higher" ? "≥" : "≤"} ${num1(Number(p.normal))} ${PARAM_META[p.param]?.unit ?? ""}`.trim() : undefined}
+                threshold={p.hasThreshold ? `at risk ${p.direction === "higher" ? "≤" : "≥"} ${num1(Number(p.normal))} ${PARAM_META[p.param]?.unit ?? ""}`.trim() : undefined}
                 points={(p.years ?? []).map((y: any) => ({ year: y.year, value: p.hasThreshold ? y.pct : (y.avg ?? 0), n: y.total }))} />
             : <ValueCard key={p.param} p={p} baselineLabel="Jun'24–Jul'25" />)}
         </div>

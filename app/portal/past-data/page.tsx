@@ -196,8 +196,8 @@ function ThenNowDefn({ cmp }: { cmp: "yearly" | "window" }) {
           </>
         ) : (
           <>
-            <b style={bk}>Jun &apos;24 – Jun &apos;25</b> = each member&apos;s most-recent reading inside that <b style={bk}>one-year window</b> (15 Jun 2024 – 15 Jun 2025).{" "}
-            <b style={bk}>Now</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b>. We only count <b style={bk}>members with a reading in BOTH periods</b> (matched by UHID) — the <b style={bk}>same people</b> over time.
+            <b style={bk}>Jun &apos;24 – July &apos;25</b> = each member&apos;s most-recent reading inside that <b style={bk}>window</b> (15 Jun 2024 – 31 Jul 2025).{" "}
+            <b style={bk}>Aug &apos;25 onwards</b> = the <b style={bk}>same</b> member&apos;s most-recent reading from the <b style={bk}>current health check</b>. We only count <b style={bk}>members with a reading in BOTH periods</b> (matched by UHID) — the <b style={bk}>same people</b> over time.
           </>
         )}
       </p>
@@ -241,7 +241,7 @@ function JourneyCard({ c, cmp, baselineLabel }: { c: any; cmp: "total" | "window
   const columns: Col[] = [];
   if (!empty) {
     columns.push({ label: baselineLabel, pct: then.pct, count: then.positive, n: then.total, color: C_BASE, delta: null });
-    const col: Col = { label: "Now", pct: now.pct, count: now.positive, n: now.total, color: C_BASE, delta: null };
+    const col: Col = { label: "Aug'25 onwards", pct: now.pct, count: now.positive, n: now.total, color: C_BASE, delta: null };
     col.delta = then.pct > 0 ? ((now.pct - then.pct) / then.pct) * 100 : (now.pct > 0 ? 100 : 0);
     col.color = now.pct < then.pct ? C_DOWN : now.pct > then.pct ? C_UP : C_FLAT;
     columns.push(col);
@@ -354,7 +354,7 @@ function MemberJourney({ journey }: { journey: any[] }) {
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
           <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
-          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
+          <CmpBtn id="window" label="Jun '24 – July '25 → Aug '25 onwards" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
@@ -369,7 +369,7 @@ function MemberJourney({ journey }: { journey: any[] }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          {list.map((c) => <JourneyCard key={c.key} c={c} cmp="window" baselineLabel="Jun'24–'25" />)}
+          {list.map((c) => <JourneyCard key={c.key} c={c} cmp="window" baselineLabel="Jun'24–Jul'25" />)}
         </div>
       )}
     </div>
@@ -480,7 +480,7 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
     const outColor = outThen === outNow ? C_FLAT : outThen > outNow ? C_DOWN : C_UP; // fewer outside now = better
     const cols: Col[] = [
       { label: baselineLabel, pct: opct(outThen), count: outThen, n: total, color: C_BASE, delta: null },
-      { label: "Now", pct: opct(outNow), count: outNow, n: total, color: outColor, delta: null },
+      { label: "Aug'25 onwards", pct: opct(outNow), count: outNow, n: total, color: outColor, delta: null },
     ];
     const outDiff = outThen - outNow;
     const badge = outDiff === 0 ? { t: "no change", c: T.textMuted, b: "#F1F3F9" } : outDiff > 0 ? { t: `${fmt(outDiff)} fewer ✓`, c: "#0f766e", b: "#ecfdf5" } : { t: `${fmt(-outDiff)} more`, c: "#b91c1c", b: "#fef2f2" };
@@ -503,7 +503,7 @@ function ValueCard({ p, large, baselineLabel = "Then" }: { p: any; large?: boole
   const normalText = meta.normal == null ? undefined : `${dir === "higher" ? "≥" : "≤"} ${num1(meta.normal)}`;
   const seq: VCol[] = [];
   if (p.baselineOld != null) seq.push({ label: baselineLabel, value: Number(p.baselineOld), n: total, color: C_BASE, delta: null });
-  if (p.baselineNew != null) seq.push({ label: "Now", value: Number(p.baselineNew), n: total, color: C_BASE, delta: null });
+  if (p.baselineNew != null) seq.push({ label: "Aug'25 onwards", value: Number(p.baselineNew), n: total, color: C_BASE, delta: null });
   seq.forEach((col, i) => { if (i > 0) { const change = col.value - seq[i - 1].value; col.delta = change; col.color = dirColor(change, dir); } });
   const empty = seq.length < 2;
   return (
@@ -542,7 +542,7 @@ function ValueJourney({ paramsWindow, paramsYearly }: { paramsWindow: any[]; par
         </div>
         <div className="flex items-center gap-2">
           <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
-          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
+          <CmpBtn id="window" label="Jun '24 – July '25 → Aug '25 onwards" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
@@ -554,7 +554,7 @@ function ValueJourney({ paramsWindow, paramsYearly }: { paramsWindow: any[]; par
             ? <YearlyTrendCard key={p.param} title={p.param} isPct={p.hasThreshold} suffix={PARAM_META[p.param]?.unit ?? ""} color="#5fa3a0"
                 threshold={p.hasThreshold ? `normal ${p.direction === "higher" ? "≥" : "≤"} ${num1(Number(p.normal))} ${PARAM_META[p.param]?.unit ?? ""}`.trim() : undefined}
                 points={(p.years ?? []).map((y: any) => ({ year: y.year, value: p.hasThreshold ? y.pct : (y.avg ?? 0), n: y.total }))} />
-            : <ValueCard key={p.param} p={p} baselineLabel="Jun'24–'25" />)}
+            : <ValueCard key={p.param} p={p} baselineLabel="Jun'24–Jul'25" />)}
         </div>
       ) : <div className="text-[13px] py-8 text-center" style={{ color: T.textMuted }}>No parameters available.</div>}
     </div>
@@ -653,7 +653,7 @@ function BandJourney({ bands }: { bands: any[] }) {
         ) : <div />}
         <div className="flex items-center gap-2">
           <CmpBtn id="yearly" label="Yearly Trend (Old Data)" />
-          <CmpBtn id="window" label="Jun '24 – Jun '25 → Now" />
+          <CmpBtn id="window" label="Jun '24 – July '25 → Aug '25 onwards" />
         </div>
       </div>
       <ThenNowDefn cmp={cmp} />
@@ -789,7 +789,7 @@ export default function PastDataPage() {
         pageTitle="Past Data — Health Progression"
         pageSubtitle="How CISCO employees' labs & vitals changed from their earlier records to now"
         kpis={kpis || {}}
-        fallbackSummary={`For the Jun '24 – Jun '25 → Now comparison, ${fmt(kpis?.labWindowTracked || 0)} members have lab data in both the window and the current check, and ${fmt(kpis?.vitalsWindowTracked || 0)} have vitals in both. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are monitored.`}
+        fallbackSummary={`For the Jun '24 – July '25 → Aug '25 onwards comparison, ${fmt(kpis?.labWindowTracked || 0)} members have lab data in both the window and the current check, and ${fmt(kpis?.vitalsWindowTracked || 0)} have vitals in both. ${fmt(kpis?.conditionsMonitored || 0)} clinical conditions are monitored.`}
         fallbackChips={[
           { label: "Tracked (Labs)", value: `${fmt(kpis?.labWindowTracked || 0)} / ${fmt(4162)}` },
           { label: "Tracked (Vitals)", value: `${fmt(kpis?.vitalsWindowTracked || 0)} / ${fmt(7460)}` },
@@ -797,12 +797,12 @@ export default function PastDataPage() {
         ]}
       />
 
-      {/* ── KPI tiles (Jun'24–Jun'25 → Now) ── */}
+      {/* ── KPI tiles (Jun'24–Jul'25 → Aug'25 onwards) ── */}
       {isChartVisible("kpis") && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
-            { label: "Members Tracked (Labs) · Jun '24–'25 → Now", value: `${fmt(kpis?.labWindowTracked || 0)} / ${fmt(4162)}`, hint: "tracked of unique lab members in the window", tip: "Members who have a lab reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new), out of the 4,162 unique members with labs in that window.", color: "#4f46e5" },
-            { label: "Members Tracked (Vitals) · Jun '24–'25 → Now", value: `${fmt(kpis?.vitalsWindowTracked || 0)} / ${fmt(7460)}`, hint: "tracked of unique vitals members in the window", tip: "Members who have a vitals reading in both the Jun '24 – Jun '25 window and the current health check (present in old and new), out of the 7,460 unique members with vitals in that window.", color: "#0d9488" },
+            { label: "Members Tracked (Labs) · Jun '24–Jul '25 → Aug '25 onwards", value: `${fmt(kpis?.labWindowTracked || 0)} / ${fmt(4162)}`, hint: "tracked of unique lab members in the window", tip: "Members who have a lab reading in both the Jun '24 – July '25 window and the current health check (present in old and new), out of the 4,162 unique members with labs in that window.", color: "#4f46e5" },
+            { label: "Members Tracked (Vitals) · Jun '24–Jul '25 → Aug '25 onwards", value: `${fmt(kpis?.vitalsWindowTracked || 0)} / ${fmt(7460)}`, hint: "tracked of unique vitals members in the window", tip: "Members who have a vitals reading in both the Jun '24 – July '25 window and the current health check (present in old and new), out of the 7,460 unique members with vitals in that window.", color: "#0d9488" },
             { label: "Conditions Monitored", value: fmt(kpis?.conditionsMonitored || 0), hint: "clinical conditions tracked", tip: `Conditions tracked across the page: ${(kpis?.conditionsList ?? []).join(" · ")}.`, color: "#f59e0b" },
           ].map((k) => (
             <div key={k.label} className="bg-white rounded-2xl px-5 py-4" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
@@ -822,14 +822,14 @@ export default function PastDataPage() {
 
       {/* ── Member Health Journey ── */}
       {isChartVisible("conditionPrevalence") && (
-        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="% of each year's measured members above each clinical threshold, year by year. Thresholds follow the reference workbook." tooltipText="Yearly trend: for each condition, the % of that year's measured members above the threshold (e.g. % diabetic), across the past-data years. Each year has a different population, so % keeps years comparable; hover a point for n. A condition can be governed by multiple rules (Diabetes = FBS ≥126 OR HbA1c ≥6.5) and gender-specific cutoffs (Anaemia). Switch to 'Jun '24 – Jun '25 → Now' for the last-year-vs-now comparison." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence — yearly % above threshold, and Jun'24–Jun'25 vs Now">
+        <CVCard accentColor="#4f46e5" title="Member Health Journey" subtitle="% of each year's measured members above each clinical threshold, year by year. Thresholds follow the reference workbook." tooltipText="Yearly trend: for each condition, the % of that year's measured members above the threshold (e.g. % diabetic), across the past-data years. Each year has a different population, so % keeps years comparable; hover a point for n. A condition can be governed by multiple rules (Diabetes = FBS ≥126 OR HbA1c ≥6.5) and gender-specific cutoffs (Anaemia). Switch to 'Jun '24 – July '25 → Aug '25 onwards' for the last-window-vs-after comparison." chartId="conditionPrevalence" chartData={data?.conditionJourney} chartTitle="Member Health Journey" chartDescription="Condition prevalence — yearly % above threshold, and Jun'24–Jul'25 vs Aug'25 onwards">
           <MemberJourney journey={data?.conditionJourney ?? []} />
         </CVCard>
       )}
 
       {/* ── Value Progression (quarter-by-quarter, by panel) ── */}
       {(isChartVisible("labProgression") || isChartVisible("vitalsProgression")) && (
-        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="% of each year's members outside the normal range, year by year, grouped by clinical panel." tooltipText="Yearly trend: for each parameter, the % of that year's measured members outside the normal range (above/below the threshold), across the past-data years; hover a point for n. Parameters with no threshold (TSH, WBC, Weight…) show the yearly average instead. Switch to 'Jun '24 – Jun '25 → Now' for the last-year-vs-now bars." chartId="labProgression" chartData={{ labYearly: data?.labYearly, vitalsYearly: data?.vitalsYearly }} chartTitle="Value Progression" chartDescription="Yearly % above threshold per parameter, and Jun'24–Jun'25 vs Now">
+        <CVCard accentColor="#4f46e5" title="Value Progression" subtitle="% of each year's members outside the normal range, year by year, grouped by clinical panel." tooltipText="Yearly trend: for each parameter, the % of that year's measured members outside the normal range (above/below the threshold), across the past-data years; hover a point for n. Parameters with no threshold (TSH, WBC, Weight…) show the yearly average instead. Switch to 'Jun '24 – July '25 → Aug '25 onwards' for the last-window-vs-after bars." chartId="labProgression" chartData={{ labYearly: data?.labYearly, vitalsYearly: data?.vitalsYearly }} chartTitle="Value Progression" chartDescription="Yearly % above threshold per parameter, and Jun'24–Jul'25 vs Aug'25 onwards">
           <ValueJourney
             paramsYearly={[...(isChartVisible("labProgression") ? (data?.labYearly ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsYearly ?? []) : [])]}
             paramsWindow={[...(isChartVisible("labProgression") ? (data?.labWindow ?? []) : []), ...(isChartVisible("vitalsProgression") ? (data?.vitalsWindow ?? []) : [])]}
@@ -839,7 +839,7 @@ export default function PastDataPage() {
 
       {/* ── Health Band Distribution (waffle grids, Then → quarterly) ── */}
       {(isChartVisible("glycemicTransition") || isChartVisible("bmiTransition") || isChartVisible("bpTransition")) && (
-        <CVCard accentColor="#0d9488" title="Health Band Distribution" subtitle="% of each year's members in the abnormal band, year by year (Glycemic / BMI / BP)." tooltipText="Yearly trend: for each metric, the % of that year's measured members in the abnormal bands (e.g. pre-diabetic + diabetic, overweight + obese, elevated + hypertension), across the past-data years; hover a point for n. Switch to 'Jun '24 – Jun '25 → Now' for the waffle-grid comparison. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP yearly % abnormal, and Jun'24–Jun'25 vs Now">
+        <CVCard accentColor="#0d9488" title="Health Band Distribution" subtitle="% of each year's members in the abnormal band, year by year (Glycemic / BMI / BP)." tooltipText="Yearly trend: for each metric, the % of that year's measured members in the abnormal bands (e.g. pre-diabetic + diabetic, overweight + obese, elevated + hypertension), across the past-data years; hover a point for n. Switch to 'Jun '24 – July '25 → Aug '25 onwards' for the waffle-grid comparison. BP band uses systolic thresholds." chartId="glycemicTransition" chartData={data?.bandJourney} chartTitle="Health Band Distribution" chartDescription="Glycemic / BMI / BP yearly % abnormal, and Jun'24–Jul'25 vs Aug'25 onwards">
           <BandJourney bands={[
             isChartVisible("glycemicTransition") && data?.bandJourney?.glycemic,
             isChartVisible("bmiTransition") && data?.bandJourney?.bmi,

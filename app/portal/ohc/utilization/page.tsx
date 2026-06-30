@@ -1519,7 +1519,7 @@ export default function OHCUtilizationPage() {
           pageSlug="/portal/ohc/utilization"
           pageTitle="OHC Utilisation"
           charts={[
-            { id: "totalBooked", label: "Total Booked KPI" },
+            { id: "totalBooked", label: "Total Footfall KPI" },
             { id: "totalConsults", label: "Total Completed Consults KPI" },
             { id: "uniquePatients", label: "Unique Patients KPI" },
             { id: "repeatPatients", label: "Repeat Patients KPI" },
@@ -1845,7 +1845,7 @@ export default function OHCUtilizationPage() {
         {isChartVisible("totalBooked") && <div className="bg-white rounded-2xl overflow-hidden transition-all hover:-translate-y-px h-full flex flex-col" style={{ border: `1px solid ${T.border}`, boxShadow: T.cardShadow }}>
           <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Booked</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Footfall</p>
               <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Appointments booked in the selected range — Completed, No Show and Pending. Cancelled appointments are excluded. Counts appointment rows (not consult volume).</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalBooked || 0)}</p>

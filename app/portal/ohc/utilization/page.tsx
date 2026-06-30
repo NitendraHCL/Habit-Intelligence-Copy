@@ -1525,7 +1525,7 @@ export default function OHCUtilizationPage() {
             { id: "repeatPatients", label: "Repeat Patients KPI" },
             { id: "demographicBreakdown", label: "Demographic Consult Breakdown" },
             { id: "locationBySpecialty", label: "Clinic Utilization by Location & Specialty" },
-            { id: "visitTrends", label: "Visit Trends" },
+            { id: "visitTrends", label: "Provider Visit Trend" },
             { id: "specialtyDonut", label: "Visits by Specialty" },
             { id: "bubbleChart", label: "Consult Distribution by Specialty & Location" },
             { id: "categoryRadar", label: "Category Radar" },
@@ -1725,7 +1725,7 @@ export default function OHCUtilizationPage() {
             </CVCard>
           ),
           visitTrends: (
-            <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle="Month-wise consultation trends" chartId="visitTrends" chartData={visitTrends} chartTitle="Visit Trends" chartDescription="Trend lines" dataPoints={visitTrends.map((v: { period: string }) => v.period)}>
+            <CVCard accentColor="#4f46e5" title="Provider Visit Trend" subtitle="Month-wise consultation trends" chartId="visitTrends" chartData={visitTrends} chartTitle="Provider Visit Trend" chartDescription="Trend lines" dataPoints={visitTrends.map((v: { period: string }) => v.period)}>
               <div style={{ height: 340 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={visitTrends} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
@@ -2496,7 +2496,7 @@ export default function OHCUtilizationPage() {
 
       {/* ── Section: Trends + Specialty ── */}
       {(isChartVisible("visitTrends") || isChartVisible("specialtyDonut")) && <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${[isChartVisible("visitTrends"), isChartVisible("specialtyDonut")].filter(Boolean).length || 1}, 1fr)` }}>
-        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Visit Trends" subtitle={trendView === "monthly" ? (isDailyView ? "Each day shows completed, cancelled, and no-show consults alongside unique patients." : "Each month shows completed, cancelled, and no-show consults alongside unique patients.") : "Each year shows completed, cancelled, and no-show consults with the year-over-year change."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Visit Trends" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)} tableData={visitTrendsTable}>
+        {isChartVisible("visitTrends") && <CVCard accentColor="#4f46e5" title="Provider Visit Trend" subtitle={trendView === "monthly" ? (isDailyView ? "Each day shows completed, cancelled, and no-show consults alongside unique patients." : "Each month shows completed, cancelled, and no-show consults alongside unique patients.") : "Each year shows completed, cancelled, and no-show consults with the year-over-year change."} tooltipText="Completed, Cancelled, No-Show, and Unique Patients per period. The grey dashed line marks the average Completed across the visible range." chartId="visitTrends" chartData={trendView === "yearly" ? yearlyTrends : visitTrends} chartTitle="Provider Visit Trend" chartDescription={`${trendView} view of consultation trends over time`} dataPoints={(trendView === "yearly" ? yearlyTrends : visitTrends).map((v: { period: string }) => v.period)} tableData={visitTrendsTable}>
           <div className="flex justify-end mb-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: T.borderLight }}>
               {(["monthly", "yearly"] as const).map((v) => (

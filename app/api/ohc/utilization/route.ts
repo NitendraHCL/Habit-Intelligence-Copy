@@ -442,6 +442,7 @@ async function handler(request: NextRequest) {
         END AS unique_pats
       FROM ${BASE_TABLE} a
       WHERE ${q.allStageWhere}
+        AND COALESCE(TRIM(a.speciality_name), '') <> 'Care Coordinator'
       GROUP BY period, a.stage
       ORDER BY period`,
       q.params
@@ -456,6 +457,7 @@ async function handler(request: NextRequest) {
               COUNT(DISTINCT a.uhid)::bigint AS unique_patients
       FROM ${BASE_TABLE} a
       WHERE ${q.currentWhere}
+        AND COALESCE(TRIM(a.speciality_name), '') <> 'Care Coordinator'
       GROUP BY 1`,
       q.params
     ), "trendYearUnique");

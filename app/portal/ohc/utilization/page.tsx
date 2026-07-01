@@ -1846,7 +1846,7 @@ export default function OHCUtilizationPage() {
           <div className="px-6 pt-6 pb-5 flex-1 flex flex-col">
             <div className="flex items-center gap-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: T.textMuted }}>Total Footfall</p>
-              <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Appointments booked in the selected range — Completed, No Show and Pending. Cancelled appointments are excluded. Counts appointment rows (not consult volume).</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger><Info size={13} style={{ color: T.textMuted }} /></TooltipTrigger><TooltipContent className="text-xs max-w-xs">Total footfall — every appointment in the selected range across all stages (Completed, No Show, Pending and Cancelled), cancelled included. Counts appointment rows, not consult volume.</TooltipContent></Tooltip>
             </div>
             <p className="text-[36px] font-extrabold mt-2.5 leading-none tracking-[-0.02em] font-[var(--font-inter)]" style={{ color: "#4f46e5" }}>{formatNum(kpis?.totalBooked || 0)}</p>
             {kpis?.yoyBooked != null ? (
@@ -1862,13 +1862,13 @@ export default function OHCUtilizationPage() {
                 <TooltipContent className="text-xs max-w-xs">This is your first full reporting year on Habit Intelligence. Year-over-year comparisons will appear once we have prior-year data.</TooltipContent>
               </Tooltip>
             ) : null}
-            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>All booked appointments</p>
+            <p className="text-xs mt-2" style={{ color: T.textSecondary }}>Every visit, cancelled included</p>
             <div className="mt-auto pt-4">
               <p className="text-xs leading-relaxed rounded-xl px-3 py-2" style={{ backgroundColor: "#eef2ff", color: T.textSecondary, border: "1px solid #c7d2fe" }}>{(() => {
                 const tb = Number(kpis?.totalBooked || 0);
                 const cancelled = Number(kpis?.cancelled || 0);
-                if (tb === 0) return "No appointments booked in this range yet.";
-                return `Total bookings · ${formatNum(tb)} · ${formatNum(cancelled)} cancelled`;
+                if (tb === 0) return "No footfall recorded in this range yet.";
+                return `Total footfall · ${formatNum(tb)} · ${formatNum(cancelled)} cancelled`;
               })()}</p>
             </div>
           </div>

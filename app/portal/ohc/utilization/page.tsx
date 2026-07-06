@@ -573,8 +573,18 @@ export default function OHCUtilizationPage() {
 
 
   // Capacity vs Booked vs Completed — grouped bar by specialty (doctor_capacity).
+  // Month dropdown re-scopes to a single month within the selected range;
+  // "all" (default) keeps the summed-across-range view.
+  const capacityMonths: Array<{ value: string; label: string }> = charts?.capacityMonths ?? [];
+  const [capacityMonth, setCapacityMonth] = useState<string>("all");
+  // If the selected month falls out of range (global date filter changed), snap back to "all".
+  useEffect(() => {
+    if (capacityMonth !== "all" && !capacityMonths.some((m) => m.value === capacityMonth)) setCapacityMonth("all");
+  }, [capacityMonths, capacityMonth]);
   const capacityData: Array<{ specialty: string; capacity: number; booked: number; completed: number }> =
-    charts?.capacityBookedCompleted ?? [];
+    capacityMonth === "all"
+      ? (charts?.capacityBookedCompleted ?? [])
+      : (charts?.capacityByMonth?.[capacityMonth] ?? []);
   // Sort state for the Capacity vs Booked vs Completed table.
   const [capacitySort, setCapacitySort] = useState<{ key: "specialty" | "capacity" | "booked" | "completed" | "util"; dir: "asc" | "desc" }>({ key: "capacity", dir: "desc" });
   // Location filter for the Consult Distribution table view ("all" = every location).
@@ -3111,6 +3121,15 @@ export default function OHCUtilizationPage() {
 
       {/* Capacity vs Booked vs Completed — grouped bar by specialty. */}
       {isChartVisible("capacityBookedCompleted") && <CVCard accentColor="#6366f1" title="Capacity vs Booked vs Completed" subtitle="Capacity vs booked & completed" tooltipText="Capacity = available consult slots derived from working hours; Booked = scheduled consults; Completed = successfully completed consults. Sourced from doctor_capacity (month × doctor × specialty); only the date range and specialty filters apply." chartId="capacityBookedCompleted" chartData={capacityData} chartTitle="Capacity vs Booked vs Completed" chartDescription="Sortable table by specialty with utilization %" dataPoints={capacityData.map((d) => d.specialty)} tableData={capacityTableData}>
+        {capacityMonths.length > 0 && (
+          <div className="flex items-center justify-end gap-2 mb-3">
+            <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Month</span>
+            <select value={capacityMonth} onChange={(e) => setCapacityMonth(e.target.value)} className="h-8 px-2.5 rounded-lg border text-[12.5px] font-medium bg-white outline-none cursor-pointer" style={{ borderColor: T.border, color: T.textPrimary, minWidth: 150 }}>
+              <option value="all">All months</option>
+              {capacityMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+        )}
         {capacityData.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-[13px]" style={{ color: T.textMuted }}>
             No capacity data available for the selected filters.

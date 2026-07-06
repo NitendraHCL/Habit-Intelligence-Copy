@@ -607,13 +607,33 @@ async function handler(request: NextRequest) {
       capParams
     ), "capacityBookedCompleted");
 
+    // Same data broken out per month, so the chart's month dropdown can
+    // re-scope to a single month within the selected range without a refetch.
+    const capacityMonthlyPromise = safeQuery(() => dwQuery<{
+      month_key: string; month_label: string; specialty: string; capacity: string; booked: string; completed: string;
+    }>(
+      `SELECT
+         to_char(dc.period_date, 'YYYY-MM') AS month_key,
+         to_char(dc.period_date, 'Mon YYYY') AS month_label,
+         COALESCE(NULLIF(TRIM(dc.speciality), ''), 'Unknown') AS specialty,
+         COALESCE(SUM(dc.capacity), 0)::numeric AS capacity,
+         COALESCE(SUM(dc.booked_consult_count), 0)::bigint AS booked,
+         COALESCE(SUM(dc.consult_successful_count), 0)::bigint AS completed
+       FROM ${CAPACITY_TABLE} dc
+       WHERE ${capConds.join(" AND ")}
+       GROUP BY 1, 2, 3
+       HAVING SUM(dc.capacity) > 0 OR SUM(dc.booked_consult_count) > 0 OR SUM(dc.consult_successful_count) > 0
+       ORDER BY month_key, capacity DESC`,
+      capParams
+    ), "capacityMonthly");
+
     // ── Execute all in parallel ──
     const [
       [filterLocations, filterSpecialties, filterGenders, filterRelations],
-      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, trendYearUniqueRows, bubbleRows, svcRows, svcLineRows, capacityRows,
+      kpiRows, bookedRows, specRows, locSpecRows, locUniqueRows, demoRows, peakRows, trendRows, trendYearUniqueRows, bubbleRows, svcRows, svcLineRows, capacityRows, capacityMonthlyRows,
     ] = await Promise.all([
       filterPromise, kpiPromise, bookedPromise, specPromise, locSpecPromise, locUniquePromise,
-      demoPromise, peakPromise, trendPromise, trendYearUniquePromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise,
+      demoPromise, peakPromise, trendPromise, trendYearUniquePromise, bubblePromise, svcPromise, svcLineItemsPromise, capacityPromise, capacityMonthlyPromise,
     ]);
 
     // Shape into the grouped-bar payload (top 15 specialties by capacity).
@@ -623,6 +643,26 @@ async function handler(request: NextRequest) {
       booked: Number(r.booked) || 0,
       completed: Number(r.completed) || 0,
     }));
+
+    // Per-month breakdown: { 'YYYY-MM': [ {specialty, capacity, booked, completed}, … top 15 ] }
+    // plus the ordered month list for the dropdown (only months that actually
+    // carry capacity data within the selected range).
+    const capacityByMonth: Record<string, Array<{ specialty: string; capacity: number; booked: number; completed: number }>> = {};
+    const capacityMonthSeen = new Map<string, string>();
+    for (const r of capacityMonthlyRows) {
+      if (!capacityByMonth[r.month_key]) capacityByMonth[r.month_key] = [];
+      capacityByMonth[r.month_key].push({
+        specialty: r.specialty,
+        capacity: Math.round(Number(r.capacity) || 0),
+        booked: Number(r.booked) || 0,
+        completed: Number(r.completed) || 0,
+      });
+      if (!capacityMonthSeen.has(r.month_key)) capacityMonthSeen.set(r.month_key, r.month_label);
+    }
+    for (const k of Object.keys(capacityByMonth)) capacityByMonth[k] = capacityByMonth[k].slice(0, 15);
+    const capacityMonths = [...capacityMonthSeen.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([value, label]) => ({ value, label }));
 
     // ── Filter options ──
     const AGE_ORDER = ["<20", "20-35", "36-40", "41-60", "61+"];
@@ -973,7 +1013,7 @@ async function handler(request: NextRequest) {
         specialtyTreemap,
         peakHours: { data: peakHoursData, max: peakMax, peakDay: DAY_NAMES[peakCell.day] || "", peakHour: HOUR_NAMES[peakCell.hour] || "", peakCount: peakCell.count },
         serviceCategories, serviceCategoryLineItems, bubbleBySpecialty, bubbleSpecialties,
-        capacityBookedCompleted,
+        capacityBookedCompleted, capacityByMonth, capacityMonths,
       },
       lastUpdated: new Date().toISOString(),
       meta: {

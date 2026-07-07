@@ -36,6 +36,7 @@ import {
   BarChart3,
   RotateCcw,
   SlidersHorizontal,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   Tooltip,
@@ -660,6 +661,33 @@ export default function OHCUtilizationPage() {
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
+  };
+
+  // ─── Excel export: every data cut on the page → one styled workbook ───
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExcelExport = async () => {
+    if (!charts || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { exportUtilizationWorkbook } = await import("@/lib/exports/utilization-excel");
+      const fmtDate = (d: Date) => format(d, "yyyy-MM-dd");
+      await exportUtilizationWorkbook({
+        charts,
+        kpis,
+        meta: {
+          clientName: activeClient?.cugName,
+          cugCode: activeClient?.cugCode,
+          dateFrom: fmtDate(appliedDateRange.from),
+          dateTo: fmtDate(appliedDateRange.to),
+          generatedAt: new Date().toISOString(),
+          filters: appliedFilters,
+        },
+      });
+    } catch (e) {
+      console.error("Excel export failed:", e);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // ─── Sunburst alternating ring-sector fills ───
@@ -1507,6 +1535,17 @@ export default function OHCUtilizationPage() {
           onPreview={setPreviewConfig}
           isPreview={isPreview}
         />
+        <Button
+          onClick={handleExcelExport}
+          disabled={isExporting || isLoading || !charts}
+          title="Export every table on this page to a styled Excel workbook (respects current filters)"
+          variant="outline"
+          className="h-9 px-3.5 rounded-lg text-[13px] font-semibold gap-1.5"
+          style={{ borderColor: "#c7d2fe", color: "#4338ca", backgroundColor: "#eef2ff" }}
+        >
+          <FileSpreadsheet size={15} />
+          {isExporting ? "Exporting…" : "Export to Excel"}
+        </Button>
         <PageDownload pageTitle="OHC Utilization" />
         <Button
           onClick={handleApply}

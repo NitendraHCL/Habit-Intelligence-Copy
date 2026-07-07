@@ -30,6 +30,7 @@ import {
   Table2,
   BarChart3,
   RotateCcw,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   Tooltip,
@@ -305,7 +306,7 @@ function ActiveFilterChips({
 // ─── Main Page ───
 export default function ReferralAnalyticsPage() {
   usePageAccess("/portal/ohc/referral");
-  const { activeClientId } = useAuth();
+  const { activeClientId, activeClient } = useAuth();
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1),
     to: new Date(2026, 2, 31),
@@ -473,6 +474,33 @@ export default function ReferralAnalyticsPage() {
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
+  };
+
+  // ─── Excel export: every data cut on the page → one styled workbook ───
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExcelExport = async () => {
+    if (!charts || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { exportReferralWorkbook } = await import("@/lib/exports/referral-excel");
+      const fmtDate = (dt: Date) => format(dt, "yyyy-MM-dd");
+      await exportReferralWorkbook({
+        charts,
+        kpis,
+        meta: {
+          clientName: activeClient?.cugName,
+          cugCode: activeClient?.cugCode,
+          dateFrom: fmtDate(appliedDateRange.from),
+          dateTo: fmtDate(appliedDateRange.to),
+          generatedAt: new Date().toISOString(),
+          filters: appliedFilters,
+        },
+      });
+    } catch (e) {
+      console.error("Excel export failed:", e);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Matrix data (full selected date range)
@@ -737,6 +765,17 @@ export default function ReferralAnalyticsPage() {
           <FilterMultiSelect label="Specialty" options={filterOptions.specialties} selected={pageFilters.specialties} onChange={(v) => setPageFilters((p) => ({ ...p, specialties: v }))} />
 
         <div className="flex-1" />
+        <Button
+          onClick={handleExcelExport}
+          disabled={isExporting || isLoading || !charts}
+          title="Export every table on this page to a styled Excel workbook (respects current filters)"
+          variant="outline"
+          className="h-9 px-3.5 rounded-lg text-[13px] font-semibold gap-1.5"
+          style={{ borderColor: "#c7d2fe", color: "#4338ca", backgroundColor: "#eef2ff" }}
+        >
+          <FileSpreadsheet size={15} />
+          {isExporting ? "Exporting…" : "Export to Excel"}
+        </Button>
         <PageDownload pageTitle="OHC Referral Analytics" />
         <div className="relative">
           <Tooltip>

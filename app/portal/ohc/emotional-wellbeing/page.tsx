@@ -29,6 +29,7 @@ import {
   Table2,
   BarChart3,
   RotateCcw,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   Tooltip,
@@ -375,7 +376,7 @@ function StackedPercentBar({ data, colors }: { data: Array<{ label: string; coun
 // ═══════════════════════════════════════════
 export default function EmotionalWellbeingPage() {
   usePageAccess("/portal/ohc/emotional-wellbeing");
-  const { activeClientId } = useAuth();
+  const { activeClientId, activeClient } = useAuth();
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2024, 0, 1), to: new Date(2026, 2, 31),
   });
@@ -536,6 +537,33 @@ export default function EmotionalWellbeingPage() {
   const handleApply = () => {
     setAppliedDateRange({ ...dateRange });
     setAppliedFilters({ ...pageFilters });
+  };
+
+  // ─── Excel export: every data cut on the page → one styled workbook ───
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExcelExport = async () => {
+    if (!charts || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { exportEmotionalWellbeingWorkbook } = await import("@/lib/exports/emotional-wellbeing-excel");
+      const fmtDate = (d: Date) => format(d, "yyyy-MM-dd");
+      await exportEmotionalWellbeingWorkbook({
+        charts,
+        kpis,
+        meta: {
+          clientName: activeClient?.cugName,
+          cugCode: activeClient?.cugCode ?? undefined,
+          dateFrom: fmtDate(appliedDateRange.from),
+          dateTo: fmtDate(appliedDateRange.to),
+          generatedAt: new Date().toISOString(),
+          filters: appliedFilters,
+        },
+      });
+    } catch (e) {
+      console.error("Excel export failed:", e);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Trend data transformation
@@ -773,6 +801,17 @@ const totalEwbAssessed: number = kpis?.totalEwbAssessed || 0;
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Relationship" options={filterOptions.relations} selected={pageFilters.relations} onChange={(v) => setPageFilters((p) => ({ ...p, relations: v }))} />
         <div className="flex-1" />
+        <Button
+          onClick={handleExcelExport}
+          disabled={isExporting || isLoading || !charts}
+          title="Export every table on this page to a styled Excel workbook (respects current filters)"
+          variant="outline"
+          className="h-9 px-3.5 rounded-lg text-[13px] font-semibold gap-1.5"
+          style={{ borderColor: "#c7d2fe", color: "#4338ca", backgroundColor: "#eef2ff" }}
+        >
+          <FileSpreadsheet size={15} />
+          {isExporting ? "Exporting…" : "Export to Excel"}
+        </Button>
         <PageDownload pageTitle="Emotional Wellbeing" />
         <div className="relative">
           <Tooltip>

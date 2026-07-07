@@ -26,6 +26,7 @@ import {
   Table2,
   BarChart3,
   RotateCcw,
+  FileSpreadsheet,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/contexts/auth-context";
@@ -450,7 +451,7 @@ function WarmSection({ children, className = "" }: { children: React.ReactNode; 
 // ─── MAIN PAGE ───
 export default function HealthInsightsPage() {
   usePageAccess("/portal/ohc/health-insights");
-  const { activeClientId } = useAuth();
+  const { activeClientId, activeClient } = useAuth();
   // Page-scoped UI state.
   const [demoTab, setDemoTab] = useState<"age" | "gender" | "location">("age");
   const [trendView, setTrendView] = useState<"yearly" | "monthly">("yearly");
@@ -662,6 +663,48 @@ export default function HealthInsightsPage() {
     setAppliedFilters({ ...pageFilters });
     setAppliedDiagnosedBy(diagnosedBy);
     setAppliedRelation(relation);
+  };
+
+  // ─── Excel export: every data cut on the page → one styled workbook ───
+  // Merges the main payload with the per-chart SWR fetches (trends, demo,
+  // co-occurrence) so the export mirrors what's currently on screen. Uses
+  // already-fetched in-memory data — no extra API call.
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExcelExport = async () => {
+    if (!d || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { exportHealthInsightsWorkbook } = await import("@/lib/exports/health-insights-excel");
+      const merged = {
+        ...d,
+        conditionTrends: trendsApi?.conditionTrends ?? d.conditionTrends,
+        conditionTrendsYearly: trendsApi?.conditionTrendsYearly ?? d.conditionTrendsYearly,
+        demoAge: demoApi?.demoAge ?? d.demoAge,
+        demoGender: demoApi?.demoGender ?? d.demoGender,
+        demoLocation: demoApi?.demoLocation ?? d.demoLocation,
+        coOccurrenceVenn: coOccApi?.coOccurrenceVenn ?? d.coOccurrenceVenn,
+      };
+      const activeFilters: Record<string, string[]> = {
+        ...appliedFilters,
+        ...(appliedDiagnosedBy !== "all" ? { diagnosisBy: [appliedDiagnosedBy === "nurse" ? "Nurse Diagnosis" : "Doctor Diagnosis"] } : {}),
+        ...(appliedRelation !== "all" ? { relation: [appliedRelation] } : {}),
+      };
+      await exportHealthInsightsWorkbook({
+        data: merged,
+        meta: {
+          clientName: activeClient?.cugName,
+          cugCode: activeClient?.cugCode ?? undefined,
+          dateFrom: format(appliedDateRange.from, "yyyy-MM-dd"),
+          dateTo: format(appliedDateRange.to, "yyyy-MM-dd"),
+          generatedAt: new Date().toISOString(),
+          filters: activeFilters,
+        },
+      });
+    } catch (e) {
+      console.error("Excel export failed:", e);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Chronic / Acute data
@@ -1004,6 +1047,17 @@ export default function HealthInsightsPage() {
           onPreview={setPreviewConfig}
           isPreview={isPreview}
         />
+        <Button
+          onClick={handleExcelExport}
+          disabled={isExporting || isLoading || !d}
+          title="Export every table on this page to a styled Excel workbook (respects current filters)"
+          variant="outline"
+          className="h-9 px-3.5 rounded-lg text-[13px] font-semibold gap-1.5"
+          style={{ borderColor: "#c7d2fe", color: "#4338ca", backgroundColor: "#eef2ff" }}
+        >
+          <FileSpreadsheet size={15} />
+          {isExporting ? "Exporting…" : "Export to Excel"}
+        </Button>
         <Button
           onClick={handleApply}
           disabled={isLoading}

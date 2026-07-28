@@ -31,9 +31,15 @@ export const AVAILABLE_PAGES: AvailablePage[] = [
 
   // Past Data (CISCO01-only)
   { slug: "/portal/past-data", label: "Past Data", group: "Past Data" },
+
+  // Compliance (SOD001-only)
+  { slug: "/portal/compliance/health-check", label: "Health Check Compliance", group: "Compliance" },
+  { slug: "/portal/compliance/site-performance", label: "Site Performance", group: "Compliance" },
+  { slug: "/portal/compliance/vaccinations", label: "Vaccinations & Tests", group: "Compliance" },
+  { slug: "/portal/compliance/employee-detail", label: "Employee Detail", group: "Compliance" },
 ];
 
-export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC", "Past Data"];
+export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC", "Past Data", "Compliance"];
 
 /** All slugs as a flat set for quick lookup. */
 export const ALL_PAGE_SLUGS = AVAILABLE_PAGES.map((p) => p.slug);

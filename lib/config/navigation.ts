@@ -18,6 +18,9 @@ import {
   Database,
   Building2,
   History,
+  ShieldCheck,
+  Syringe,
+  Table,
   type LucideIcon,
 } from "lucide-react";
 
@@ -83,6 +86,19 @@ export const navigation: NavItem[] = [
     href: "/portal/past-data",
     icon: History,
     requiredCug: "CISCO01",
+  },
+  {
+    // SOD001-only "Compliance" stack (Sodexo health-check compliance suite).
+    label: "Compliance",
+    href: "/portal/compliance",
+    icon: ShieldCheck,
+    requiredCug: "SOD001",
+    children: [
+      { label: "Health Check Compliance", href: "/portal/compliance/health-check", icon: ShieldCheck },
+      { label: "Site Performance", href: "/portal/compliance/site-performance", icon: Building2 },
+      { label: "Vaccinations & Tests", href: "/portal/compliance/vaccinations", icon: Syringe },
+      { label: "Employee Detail", href: "/portal/compliance/employee-detail", icon: Table },
+    ],
   },
   {
     label: "Employee Experience",

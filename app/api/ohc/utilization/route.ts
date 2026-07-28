@@ -445,7 +445,15 @@ async function handler(request: NextRequest) {
         AND COALESCE(TRIM(a.speciality_name), '') <> 'Care Coordinator'
       GROUP BY period, a.stage
       ORDER BY period`,
-      q.params
+      q.params,
+      // This is the heaviest chart query for large clients (HCLT001 ≈ 2.7M
+      // rows): an all-stage scan + to_char() period grouping + COUNT(DISTINCT
+      // uhid) for the per-period Unique Patients line. Standalone ≈ 5s, but
+      // ~10s under the concurrent load of a full page render, so the pool's
+      // default 15s statement_timeout was intermittently tripping it and
+      // blanking the Provider Visit Trend chart. Give it the same 60s ceiling
+      // the service-category queries already use.
+      { statementTimeoutMs: 60000 }
     ), "visitTrends");
 
     // Per-YEAR unique patients for the Visit Trends table's year rows —

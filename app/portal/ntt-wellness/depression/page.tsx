@@ -110,13 +110,13 @@ export default function NttDepressionPage() {
         filterOptions={filterOptions} pending={pending} setPending={setPending}
         onApply={handleApply} onRefresh={refresh} isRefreshing={isRefreshing} isValidating={isValidating} isLoading={isLoading}
         showRefreshToast={showRefreshToast}
-        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="PHQ-9 Depression" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
+        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="Mood and Energy Index" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
       />
       {hasActiveFilters && <ActiveFilterChips filters={applied} labels={filterLabels} onRemove={handleRemoveChip} onClearAll={handleClearAll} />}
 
       <PageGlanceBox
-        pageTitle="PHQ-9 Depression Assessment"
-        pageSubtitle="NTT DATA (NDBS) — Patient Health Questionnaire 9-item scale · Score range 0–27 · higher Enthusiasm means lower depression"
+        pageTitle="Mood and Energy Index"
+        pageSubtitle="NTT DATA (NDBS) - Patient Health Questionnaire 9-item scale · Score range 0–27 · higher Enthusiasm means lower depression"
         kpis={kpis || {}}
         fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the PHQ-9 depression screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 27. ${formatNum(kpis?.promoters || 0)} report no depression, ${formatNum(kpis?.supportNeed || 0)} need support (minimal–mild) and ${formatNum(kpis?.immediateSupport || 0)} need immediate support (moderate and above).`}
         fallbackChips={[
@@ -129,7 +129,7 @@ export default function NttDepressionPage() {
 
       <WarmSection>
         <AccentBar color={ACCENT} />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>PHQ-9 Depression Assessment</h2>
+        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Mood and Energy Index</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0 No Depression (Promoter) · 1–4 Minimal · 5–9 Mild (Support) · 10+ Moderate–Severe (Immediate)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the PHQ-9 screen" />

@@ -114,15 +114,15 @@ export default function NttWorkplaceWellbeingPage() {
 
       <PageGlanceBox
         pageTitle="Workplace Wellbeing"
-        pageSubtitle="NTT DATA (NDBS) — Psychological Safety · Peer Relationships · Managerial Support · Sense of Belonging · Org Infrastructure"
+        pageSubtitle="NTT DATA (NDBS) - Psychological Safety · Peer Relationships · Managerial Support · Sense of Belonging · Org Infrastructure"
         kpis={kpis || {}}
-        fallbackSummary={`Across NDBS, average workplace-wellbeing scores are: Psychological Safety ${(kpis?.psych ?? 0).toFixed(2)}/6, Peer Relationships ${(kpis?.peer ?? 0).toFixed(2)}/9, Managerial Support ${(kpis?.mgr ?? 0).toFixed(2)}/7, Sense of Belonging ${(kpis?.belong ?? 0).toFixed(2)}/9 and Org Infrastructure ${(kpis?.org ?? 0).toFixed(2)}/11. The most cited obstacle to wellbeing is "${obstacles[0]?.label ?? "—"}".`}
+        fallbackSummary={`Across NDBS, average workplace-wellbeing scores are: Psychological Safety ${(kpis?.psych ?? 0).toFixed(2)}/6, Peer Relationships ${(kpis?.peer ?? 0).toFixed(2)}/9, Managerial Support ${(kpis?.mgr ?? 0).toFixed(2)}/7, Sense of Belonging ${(kpis?.belong ?? 0).toFixed(2)}/9 and Org Infrastructure ${(kpis?.org ?? 0).toFixed(2)}/11. The most cited obstacle to wellbeing is "${obstacles[0]?.label ?? "-"}".`}
         fallbackChips={kpiCards.map((c) => ({ label: c.label, value: `${(kpis?.[c.key] ?? 0).toFixed(2)}/${c.max}` }))}
       />
 
       <WarmSection>
         <AccentBar color={ACCENT} />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Workplace Wellbeing — Average Scores</h2>
+        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Workplace Wellbeing - Average Scores</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Mean score per instrument (each on its own scale). Higher is better across all five.</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {kpiCards.map((c) => (
@@ -174,7 +174,7 @@ export default function NttWorkplaceWellbeingPage() {
               ))}
               {obstacles.length === 0 && <p className="text-[13px] py-6 text-center" style={{ color: T.textMuted }}>No data for the selected filters.</p>}
             </div>
-            <InsightBox text={`The most cited obstacle is "${obstacles[0]?.label ?? "—"}" (${formatNum(obstacles[0]?.count || 0)} employees). "No Obstacles so far" responses indicate employees with no current wellbeing barriers.`} />
+            <InsightBox text={`The most cited obstacle is "${obstacles[0]?.label ?? "-"}" (${formatNum(obstacles[0]?.count || 0)} employees). "No Obstacles so far" responses indicate employees with no current wellbeing barriers.`} />
           </CVCard>
         )}
 

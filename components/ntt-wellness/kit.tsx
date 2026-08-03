@@ -270,7 +270,7 @@ export function Donut({ data, centerLabel, centerValue, centerColor = "#111827",
  * question, split into coloured answer segments with in-bar % labels.
  * questions: [{ question, options: [{label, count, pct}] }]; colors indexed by option.
  */
-export function ResponseByQuestion({ questions, colors, minSegPctForLabel = 6 }: any) {
+export function ResponseByQuestion({ questions, colors, minSegPctForLabel = 3 }: any) {
   const opts = questions?.[0]?.options?.map((o: any) => o.label) || [];
   return (
     <div>
@@ -289,7 +289,7 @@ export function ResponseByQuestion({ questions, colors, minSegPctForLabel = 6 }:
             <div className="flex-1 flex h-7 rounded-md overflow-hidden" style={{ border: `1px solid ${T.borderLight}` }}>
               {q.options.map((o: any, i: number) => (
                 o.pct > 0 ? (
-                  <div key={o.label} className="flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${o.pct}%`, backgroundColor: colors[i % colors.length] }} title={`${o.label}: ${formatNum(o.count)} (${o.pct}%)`}>
+                  <div key={o.label} className="flex items-center justify-center text-[10px] font-bold text-white overflow-hidden whitespace-nowrap leading-none" style={{ width: `${o.pct}%`, backgroundColor: colors[i % colors.length] }} title={`${o.label}: ${formatNum(o.count)} (${o.pct}%)`}>
                     {o.pct >= minSegPctForLabel ? `${o.pct}%` : ""}
                   </div>
                 ) : null
@@ -356,8 +356,8 @@ export function MixedResponseByQuestion({ questions }: any) {
           <div className="flex h-6 rounded-md overflow-hidden" style={{ border: `1px solid ${T.borderLight}` }}>
             {q.options.map((o: any, i: number) => (
               o.pct > 0 ? (
-                <div key={o.label} className="flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${o.pct}%`, backgroundColor: optColor(o.label, i) }} title={`${o.label}: ${formatNum(o.count)} (${o.pct}%)`}>
-                  {o.pct >= 10 ? `${o.pct}%` : ""}
+                <div key={o.label} className="flex items-center justify-center text-[9px] font-bold text-white overflow-hidden whitespace-nowrap leading-none" style={{ width: `${o.pct}%`, backgroundColor: optColor(o.label, i) }} title={`${o.label}: ${formatNum(o.count)} (${o.pct}%)`}>
+                  {o.pct >= 3 ? `${o.pct}%` : ""}
                 </div>
               ) : null
             ))}

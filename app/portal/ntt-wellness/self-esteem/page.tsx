@@ -18,7 +18,7 @@ import {
 
 const PAGE_SLUG = "/portal/ntt-wellness/self-esteem";
 const ACCENT = "#8b5cf6";
-// Neutral per-question palette — OHC indigo/teal (this is a distribution chart,
+// Neutral per-question palette - OHC indigo/teal (this is a distribution chart,
 // not a severity chart, so it follows the OHC scheme rather than good/bad).
 const YESNO_COLORS = ["#4f46e5", "#818cf8"];
 
@@ -116,13 +116,13 @@ export default function NttSelfEsteemPage() {
         filterOptions={filterOptions} pending={pending} setPending={setPending}
         onApply={handleApply} onRefresh={refresh} isRefreshing={isRefreshing} isValidating={isValidating} isLoading={isLoading}
         showRefreshToast={showRefreshToast}
-        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="TISE Self-Esteem" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
+        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="Confidence and Self-Worth Index" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
       />
       {hasActiveFilters && <ActiveFilterChips filters={applied} labels={filterLabels} onRemove={handleRemoveChip} onClearAll={handleClearAll} />}
 
       <PageGlanceBox
-        pageTitle="TISE Self-Esteem Assessment"
-        pageSubtitle="NTT DATA (NDBS) — Two-Item Self-Esteem scale · Score range 0–2 · higher Motivation means higher self-esteem"
+        pageTitle="Confidence and Self-Worth Index"
+        pageSubtitle="NTT DATA (NDBS) - Two-Item Self-Esteem scale · Score range 0–2 · higher Motivation means higher self-esteem"
         kpis={kpis || {}}
         fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the self-esteem screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 2. ${formatNum(kpis?.promoters || 0)} show high self-esteem (both items yes) and ${formatNum(kpis?.supportNeed || 0)} show low self-esteem needing support.`}
         fallbackChips={[
@@ -135,7 +135,7 @@ export default function NttSelfEsteemPage() {
 
       <WarmSection>
         <AccentBar color={ACCENT} />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>TISE Self-Esteem Assessment</h2>
+        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Confidence and Self-Worth Index</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → High self-esteem (Promoter) · Score &lt; 2 → Low self-esteem (Support needed)</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the TISE screen" />
@@ -151,7 +151,7 @@ export default function NttSelfEsteemPage() {
             tooltipText="Mean of every respondent's TISE score, on a 0–2 scale." chartId="gauge"
             chartData={{ averageScore: kpis?.averageScore }} chartTitle="Overall Self-Esteem Level" chartDescription="Average TISE score">
             <Gauge value={kpis?.averageScore || 0} max={2} />
-            <InsightBox text={`The average self-esteem score is ${(kpis?.averageScore ?? 0).toFixed(2)} of 2 — ${(kpis?.averageScore ?? 0) >= 1.5 ? "broadly healthy" : "an area to watch"}.`} />
+            <InsightBox text={`The average self-esteem score is ${(kpis?.averageScore ?? 0).toFixed(2)} of 2 - ${(kpis?.averageScore ?? 0) >= 1.5 ? "broadly healthy" : "an area to watch"}.`} />
           </CVCard>
         )}
         {isChartVisible("classificationDistribution") && (

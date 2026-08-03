@@ -110,13 +110,13 @@ export default function NttAnxietyPage() {
         filterOptions={filterOptions} pending={pending} setPending={setPending}
         onApply={handleApply} onRefresh={refresh} isRefreshing={isRefreshing} isValidating={isValidating} isLoading={isLoading}
         showRefreshToast={showRefreshToast}
-        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="GAD-7 Anxiety" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
+        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="Stress and Calmness Index" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
       />
       {hasActiveFilters && <ActiveFilterChips filters={applied} labels={filterLabels} onRemove={handleRemoveChip} onClearAll={handleClearAll} />}
 
       <PageGlanceBox
-        pageTitle="GAD-7 Anxiety Assessment"
-        pageSubtitle="NTT DATA (NDBS) — Generalized Anxiety Disorder 7-item scale · Score range 0–21 · higher Joy means lower anxiety"
+        pageTitle="Stress and Calmness Index"
+        pageSubtitle="NTT DATA (NDBS) - Generalized Anxiety Disorder 7-item scale · Score range 0–21 · higher Joy means lower anxiety"
         kpis={kpis || {}}
         fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the GAD-7 anxiety screen, with an average score of ${(kpis?.averageScore ?? 0).toFixed(2)} out of 21. ${formatNum(kpis?.promoters || 0)} are promoters (no anxiety), ${formatNum(kpis?.supportNeed || 0)} need support (mild–moderate) and ${formatNum(kpis?.immediateSupport || 0)} show severe anxiety needing immediate support.`}
         fallbackChips={[
@@ -129,7 +129,7 @@ export default function NttAnxietyPage() {
 
       <WarmSection>
         <AccentBar color={ACCENT} />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>GAD-7 Anxiety Assessment</h2>
+        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Stress and Calmness Index</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 No Anxiety (Promoter) · 5–9 Mild · 10–14 Moderate (Support) · ≥15 Severe (Immediate)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the GAD-7 screen" />

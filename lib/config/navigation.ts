@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   Syringe,
   Table,
+  HeartPulse,
+  Smile,
   type LucideIcon,
 } from "lucide-react";
 
@@ -98,6 +100,20 @@ export const navigation: NavItem[] = [
       { label: "Site Performance", href: "/portal/compliance/site-performance", icon: Building2 },
       { label: "Vaccinations & Tests", href: "/portal/compliance/vaccinations", icon: Syringe },
       { label: "Employee Detail", href: "/portal/compliance/employee-detail", icon: Table },
+    ],
+  },
+  {
+    // NTTDATA01-only "NTT Wellness Dashboards" stack (Happiness Index +
+    // Workplace Wellbeing survey suite).
+    label: "NTT Wellness Dashboards",
+    href: "/portal/ntt-wellness",
+    icon: HeartPulse,
+    requiredCug: "NTTDATA01",
+    children: [
+      { label: "GAD : Anxiety", href: "/portal/ntt-wellness/anxiety", icon: Brain },
+      { label: "PHQ : Depression", href: "/portal/ntt-wellness/depression", icon: Heart },
+      { label: "TISE : Self-Esteem", href: "/portal/ntt-wellness/self-esteem", icon: Smile },
+      { label: "Workplace Wellbeing", href: "/portal/ntt-wellness/workplace-wellbeing", icon: Building2 },
     ],
   },
   {

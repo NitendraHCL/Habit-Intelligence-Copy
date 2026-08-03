@@ -37,9 +37,15 @@ export const AVAILABLE_PAGES: AvailablePage[] = [
   { slug: "/portal/compliance/site-performance", label: "Site Performance", group: "Compliance" },
   { slug: "/portal/compliance/vaccinations", label: "Vaccinations & Tests", group: "Compliance" },
   { slug: "/portal/compliance/employee-detail", label: "Employee Detail", group: "Compliance" },
+
+  // NTT Wellness (NTTDATA01-only)
+  { slug: "/portal/ntt-wellness/anxiety", label: "GAD : Anxiety", group: "NTT Wellness" },
+  { slug: "/portal/ntt-wellness/depression", label: "PHQ : Depression", group: "NTT Wellness" },
+  { slug: "/portal/ntt-wellness/self-esteem", label: "TISE : Self-Esteem", group: "NTT Wellness" },
+  { slug: "/portal/ntt-wellness/workplace-wellbeing", label: "Workplace Wellbeing", group: "NTT Wellness" },
 ];
 
-export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC", "Past Data", "Compliance"];
+export const PAGE_GROUPS = ["OHC", "Employee Experience", "General", "AHC", "Past Data", "Compliance", "NTT Wellness"];
 
 /** All slugs as a flat set for quick lookup. */
 export const ALL_PAGE_SLUGS = AVAILABLE_PAGES.map((p) => p.slug);

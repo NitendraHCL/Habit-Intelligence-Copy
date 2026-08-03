@@ -37,6 +37,21 @@
 export const NTT_TABLE = "fact_kx.ntt_health_risk_assessment";
 export const NTT_CUG = "NTTDATA01";
 
+// Test / dummy respondents excluded from every NTT dashboard, keyed by the
+// stable UHID (the table has no email field). Applied centrally in
+// buildNttWhere + nttFilterOptions so all four dashboards drop them at once.
+//   HH-20771  Mr Mrinal Kaushik  (testmrinalkaushik@gmail.com)
+//   HH-263617 Ms Manpreet        (manpreetdummyid@bs.nttdata.com)
+//   HH-244421 Mr Ntt Test        (test@nttdata.com)
+//   HH-281159 Ms Qa Test         (QA test account)
+export const NTT_EXCLUDED_UHIDS = ["HH-20771", "HH-263617", "HH-244421", "HH-281159"];
+
+/** SQL predicate that drops the excluded test/dummy respondents (null-safe). */
+export function nttExcludeClause(alias = "a"): string {
+  const list = NTT_EXCLUDED_UHIDS.map((u) => `'${u.replace(/'/g, "''")}'`).join(", ");
+  return `COALESCE(${alias}.uhid, '') NOT IN (${list})`;
+}
+
 // ── Exact question column names (verified against the warehouse) ────────────
 // NOTE: several are Postgres-truncated at 63 chars and a couple end in a
 // trailing space — they must be quoted EXACTLY as written here.
@@ -368,7 +383,11 @@ export function buildNttWhere(
   startIdx = 1,
   alias = "a",
 ): { where: string; params: unknown[]; nextIdx: number } {
-  const conds: string[] = [`${alias}.cug_code = '${NTT_CUG}'`, `${alias}.status = 'Final'`];
+  const conds: string[] = [
+    `${alias}.cug_code = '${NTT_CUG}'`,
+    `${alias}.status = 'Final'`,
+    nttExcludeClause(alias),
+  ];
   const params: unknown[] = [];
   let i = startIdx;
   if (f.dateFrom) {
@@ -411,7 +430,7 @@ export function normGenderLabel(g: string | null | undefined): "Male" | "Female"
 export async function nttFilterOptions(
   dwQuery: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>,
 ): Promise<{ genders: string[]; ageGroups: string[] }> {
-  const scope = `a.cug_code = '${NTT_CUG}' AND a.status = 'Final'`;
+  const scope = `a.cug_code = '${NTT_CUG}' AND a.status = 'Final' AND ${nttExcludeClause("a")}`;
   const rows = await dwQuery<{ v: string }>(
     `SELECT DISTINCT a.patient_gender AS v FROM ${NTT_TABLE} a WHERE ${scope} AND a.patient_gender IS NOT NULL`,
   );

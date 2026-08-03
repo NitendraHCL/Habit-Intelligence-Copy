@@ -13,7 +13,7 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, Donut, VerticalBars, ResponseByQuestion,
-  ACTION_COLORS, FREQ_COLORS, severityColor,
+  FREQ_COLORS, OHC_CATEGORICAL,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/depression";
@@ -93,9 +93,9 @@ export default function NttDepressionPage() {
   const actions = charts?.actionDistribution || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: severityColor(i, bands.length) }));
-  const actionDonut = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] || "#94a3b8" }));
-  const scoreBars = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] || "#94a3b8" }));
+  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  const actionDonut = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  const scoreBars = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
 
   const configureCharts = [
     { id: "classificationDistribution", label: "Classification Distribution" },
@@ -132,11 +132,11 @@ export default function NttDepressionPage() {
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>PHQ-9 Depression Assessment</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0 No Depression (Promoter) · 1–4 Minimal · 5–9 Mild (Support) · 10+ Moderate–Severe (Immediate)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={ACCENT} sub="Completed the PHQ-9 screen" />
-          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color="#4f46e5" sub="Out of 27" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={ACTION_COLORS.promoter} sub="No depression (0)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={ACTION_COLORS.support} sub="Minimal–mild (1–9)" />
-          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={ACTION_COLORS.immediate} sub="Moderate+ (≥10)" />
+          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the PHQ-9 screen" />
+          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 27" />
+          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No depression (0)" />
+          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Minimal–mild (1–9)" />
+          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Moderate+ (≥10)" />
         </div>
       </WarmSection>
 
@@ -158,7 +158,7 @@ export default function NttDepressionPage() {
           </CVCard>
         )}
         {isChartVisible("actionDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACTION_COLORS.support} title="Action Distribution" subtitle="Recommended action split"
+          <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
             tooltipText="Promoter / Support Needed / Immediate support rolled up from the classification bands." chartId="actionDistribution"
             chartData={actions} chartTitle="Action Distribution" chartDescription="PHQ-9 recommended actions">
             <Donut data={actionDonut} />
@@ -171,7 +171,7 @@ export default function NttDepressionPage() {
             subtitle="How respondents answered each of the 9 PHQ-9 items" chartId="responseByQuestion"
             chartData={byQuestion} chartTitle="Response Distribution by Question" chartDescription="Per-question PHQ-9 answer split">
             <ResponseByQuestion questions={byQuestion} colors={FREQ_COLORS} />
-            <InsightBox text="Each bar is one PHQ-9 question — green (Not at all) through red (Nearly everyday). Q9 (self-harm) warrants particular attention wherever red/orange appears." />
+            <InsightBox text="Each bar is one PHQ-9 question, split by response frequency (see legend: 'Not at all' → 'Nearly everyday'). Q9 (self-harm) warrants particular attention wherever 'Over half the days' / 'Nearly everyday' responses appear." />
           </CVCard>
         )}
 

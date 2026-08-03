@@ -35,16 +35,22 @@ export function formatNum(n: number): string {
   return Number(n).toLocaleString("en-IN");
 }
 
-// Action / classification colours.
+// Action / classification colours — kept SEMANTIC (good → bad) so the
+// severity/action charts still read at a glance on a mental-health dashboard.
 export const ACTION_COLORS = {
   promoter: "#22c55e", // green
   support: "#f59e0b", // amber
   immediate: "#ef4444", // red
 };
-// GAD/PHQ frequency response colours (Not at all → Nearly everyday).
-export const FREQ_COLORS = ["#22c55e", "#eab308", "#f97316", "#ef4444"];
-// Generic multi-option palette for workplace question distributions.
-export const OPTION_PALETTE = ["#4f46e5", "#0ea5e9", "#14b8a6", "#f59e0b", "#f97316", "#94a3b8"];
+// Neutral distribution palette — matches the OHC Utilization scheme (an
+// ordinal indigo → teal ramp). Used for the per-question response bars and
+// other categorical distributions that carry no good/bad meaning.
+export const FREQ_COLORS = ["#818cf8", "#6366f1", "#4f46e5", "#0d9488"];
+export const OPTION_PALETTE = ["#818cf8", "#6366f1", "#4f46e5", "#3730a3", "#0d9488", "#14b8a6"];
+// Distinct-hue OHC categorical palette (indigo · teal · violet · light-indigo …)
+// for the classification / action / score-breakdown donuts & bars, where slices
+// need to read as separate categories rather than an ordinal ramp.
+export const OHC_CATEGORICAL = ["#4f46e5", "#0d9488", "#8b5cf6", "#818cf8", "#14b8a6", "#a78bfa"];
 
 /** Severity ramp: band 0 (best) → last band (worst). */
 export function severityColor(i: number, n: number): string {
@@ -312,7 +318,7 @@ export function VerticalBars({ data, height = 300, yFormatter }: any) {
 }
 
 /** Half-doughnut gauge for a 0..max average (used by Self-Esteem). */
-export function Gauge({ value, max = 2, color = "#f59e0b", height = 280, label = "Average Score" }: any) {
+export function Gauge({ value, max = 2, color = "#0d9488", height = 280, label = "Average Score" }: any) {
   const option = {
     series: [{
       type: "gauge", startAngle: 180, endAngle: 0, min: 0, max, radius: "100%", center: ["50%", "72%"],
@@ -321,7 +327,7 @@ export function Gauge({ value, max = 2, color = "#f59e0b", height = 280, label =
       pointer: { show: false }, axisTick: { show: false }, splitLine: { show: false },
       axisLabel: { distance: -8, fontSize: 10, color: T.textMuted },
       anchor: { show: false },
-      detail: { valueAnimation: true, offsetCenter: [0, "-8%"], fontSize: 30, fontWeight: "bolder", color: "#16a34a", formatter: (v: number) => v.toFixed(2) },
+      detail: { valueAnimation: true, offsetCenter: [0, "-8%"], fontSize: 30, fontWeight: "bolder", color, formatter: (v: number) => v.toFixed(2) },
       title: { offsetCenter: [0, "18%"], fontSize: 12, color: T.textMuted },
       data: [{ value, name: label }],
     }],
@@ -329,17 +335,9 @@ export function Gauge({ value, max = 2, color = "#f59e0b", height = 280, label =
   return <div style={{ height }}><ReactECharts option={option} style={{ height: "100%", width: "100%" }} /></div>;
 }
 
-// Semantic colour for any workplace answer option (good → green, bad → red).
-export const WORKPLACE_OPTION_COLORS: Record<string, string> = {
-  "almost constantly": "#16a34a", frequently: "#22c55e", occasionally: "#f59e0b", "not at all": "#ef4444",
-  yes: "#22c55e", no: "#ef4444",
-  "strongly agree": "#16a34a", agree: "#22c55e", neutral: "#94a3b8", disagree: "#f97316", "strongly disagree": "#ef4444",
-  "to a large extent": "#16a34a", "to some extent": "#22c55e", "to a small extent": "#f59e0b",
-  "very satisfied": "#16a34a", satisfied: "#22c55e", dissatisfied: "#f97316", "very dissatisfied": "#ef4444",
-  "very helpful": "#16a34a", helpful: "#22c55e", unhelpful: "#f97316", "very unhelpful": "#ef4444", "not applicable": "#cbd5e1",
-};
-const optColor = (label: string, i: number) =>
-  WORKPLACE_OPTION_COLORS[(label || "").toLowerCase()] || OPTION_PALETTE[i % OPTION_PALETTE.length];
+// Workplace per-question answer colour — neutral OHC palette by option index
+// (ordinal indigo → teal ramp), matching the OHC Utilization charts.
+const optColor = (_label: string, i: number) => OPTION_PALETTE[i % OPTION_PALETTE.length];
 
 /**
  * Per-question response bars for MIXED-scale instruments (workplace). Each

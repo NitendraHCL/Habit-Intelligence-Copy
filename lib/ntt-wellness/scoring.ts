@@ -125,7 +125,9 @@ export const QUESTION_LABELS: Record<string, string[]> = {
 };
 
 // ── Answer-text → point maps + display order per scale ──────────────────────
-type ScaleDef = { map: [string, number][]; options: string[] };
+// `aliases` folds raw answer variants (e.g. data misspellings) into a display
+// option so the response-distribution bars bucket them correctly and fill 100%.
+type ScaleDef = { map: [string, number][]; options: string[]; aliases?: Record<string, string> };
 export const SCALES: Record<string, ScaleDef> = {
   // GAD / PHQ frequency scale (0–3)
   freq4: {
@@ -138,6 +140,8 @@ export const SCALES: Record<string, ScaleDef> = {
       ["nearly every day", 3],
     ],
     options: ["Not at all", "Several days", "Over half the days", "Nearly everyday"],
+    // Fold the observed misspelling / spacing variants into the display bucket.
+    aliases: { "nearly everday": "nearly everyday", "nearly every day": "nearly everyday" },
   },
   // Workplace frequency scale (0–3): psych Q1-2, peer Q1-2, mgr Q1
   workfreq: {
@@ -534,17 +538,26 @@ export async function computeInstrument(
   const scales = INSTRUMENT_SCALES[instrument];
   const labels = QUESTION_LABELS[instrument] || cols.map((_, i) => `Q${i + 1}`);
   const byQuestion = cols.map((_, qi2) => {
-    const opts = SCALES[scales[qi2]].options;
+    const scaleDef = SCALES[scales[qi2]];
+    const opts = scaleDef.options;
+    const aliases = scaleDef.aliases || {};
+    // Accumulate counts keyed by canonical (aliased) answer, so misspellings /
+    // spacing variants fold into their display bucket.
     const counts = new Map<string, number>();
     for (const row of distRows) {
       if (Number(row.qidx) !== qi2) continue;
-      counts.set((row.answer || "").toLowerCase(), num(row.cnt) + (counts.get((row.answer || "").toLowerCase()) || 0));
+      const raw = (row.answer || "").toLowerCase();
+      const canon = aliases[raw] || raw;
+      counts.set(canon, num(row.cnt) + (counts.get(canon) || 0));
     }
-    const total = [...counts.values()].reduce((s, v) => s + v, 0);
-    const options = opts.map((label) => {
-      const c = counts.get(label.toLowerCase()) || 0;
-      return { label, count: c, pct: total > 0 ? Math.round((c / total) * 1000) / 10 : 0 };
-    });
+    // Total over KNOWN options only, so the stacked bar always fills to 100%.
+    const optionCounts = opts.map((label) => counts.get(label.toLowerCase()) || 0);
+    const total = optionCounts.reduce((s, v) => s + v, 0);
+    const options = opts.map((label, i) => ({
+      label,
+      count: optionCounts[i],
+      pct: total > 0 ? Math.round((optionCounts[i] / total) * 1000) / 10 : 0,
+    }));
     return { question: labels[qi2], total, options };
   });
 

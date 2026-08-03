@@ -13,23 +13,12 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, ClassificationBars, MixedResponseByQuestion,
-  ACTION_COLORS,
+  ACTION_COLORS, OPTION_PALETTE, OHC_CATEGORICAL,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/workplace-wellbeing";
 const ACCENT = "#4f46e5";
 const EMPTY = { dateFrom: "", dateTo: "", genders: [], ageGroups: [] };
-
-// Obstacle bar colours (semantic: green = none, red = high concern).
-const OBSTACLE_COLORS: Record<string, string> = {
-  "No Obstacles so far": "#22c55e",
-  "Emotional/Mental Exhaustion": "#ef4444",
-  "Excessive Workload": "#f97316",
-  "Unclear Priorities": "#f59e0b",
-  "Limited Flexibility": "#eab308",
-  "Physical discomfort at office (Ergonomics)": "#0ea5e9",
-  Others: "#94a3b8",
-};
 
 export default function NttWorkplaceWellbeingPage() {
   usePageAccess(PAGE_SLUG);
@@ -101,11 +90,11 @@ export default function NttWorkplaceWellbeingPage() {
   }
 
   const kpiCards = [
-    { key: "psych", label: "Psychological Safety", color: "#6366f1", max: 6 },
-    { key: "peer", label: "Peer Relationships", color: "#0ea5e9", max: 9 },
-    { key: "mgr", label: "Managerial Support", color: "#14b8a6", max: 7 },
-    { key: "belong", label: "Sense of Belonging", color: "#8b5cf6", max: 9 },
-    { key: "org", label: "Org. Infrastructure", color: "#f59e0b", max: 11 },
+    { key: "psych", label: "Psychological Safety", color: OHC_CATEGORICAL[0], max: 6 },
+    { key: "peer", label: "Peer Relationships", color: OHC_CATEGORICAL[1], max: 9 },
+    { key: "mgr", label: "Managerial Support", color: OHC_CATEGORICAL[2], max: 7 },
+    { key: "belong", label: "Sense of Belonging", color: OHC_CATEGORICAL[3], max: 9 },
+    { key: "org", label: "Org. Infrastructure", color: OHC_CATEGORICAL[4], max: 11 },
   ];
 
   const configureCharts = instruments.map((ins) => ({ id: ins.key, label: ins.name }));
@@ -173,11 +162,11 @@ export default function NttWorkplaceWellbeingPage() {
             subtitle="Single biggest obstacle preventing employees from maintaining their wellbeing"
             chartId="obstacles" chartData={obstacles} chartTitle="Biggest Obstacles to Wellbeing" chartDescription="Obstacle distribution">
             <div className="space-y-2.5 mt-1">
-              {obstacles.map((o) => (
+              {obstacles.map((o, i) => (
                 <div key={o.label} className="flex items-center gap-3">
                   <div className="w-[240px] shrink-0 text-[12px] font-medium truncate" style={{ color: T.textPrimary }} title={o.label}>{o.label}</div>
                   <div className="flex-1 h-6 rounded-md relative" style={{ backgroundColor: T.borderLight }}>
-                    <div className="h-6 rounded-md flex items-center justify-end pr-2 text-[11px] font-bold text-white" style={{ width: `${Math.max((o.count / maxObstacle) * 100, o.count > 0 ? 6 : 0)}%`, backgroundColor: OBSTACLE_COLORS[o.label] || "#94a3b8" }}>
+                    <div className="h-6 rounded-md flex items-center justify-end pr-2 text-[11px] font-bold text-white" style={{ width: `${Math.max((o.count / maxObstacle) * 100, o.count > 0 ? 6 : 0)}%`, backgroundColor: OPTION_PALETTE[i % OPTION_PALETTE.length] }}>
                       {o.count > 0 ? formatNum(o.count) : ""}
                     </div>
                   </div>

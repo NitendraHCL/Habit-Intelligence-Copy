@@ -13,12 +13,14 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, Donut, VerticalBars, Gauge, ResponseByQuestion,
-  ACTION_COLORS, severityColor,
+  OHC_CATEGORICAL,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/self-esteem";
 const ACCENT = "#8b5cf6";
-const YESNO_COLORS = ["#22c55e", "#f97316"]; // Yes green, No orange
+// Neutral per-question palette — OHC indigo/teal (this is a distribution chart,
+// not a severity chart, so it follows the OHC scheme rather than good/bad).
+const YESNO_COLORS = ["#4f46e5", "#818cf8"];
 
 const EMPTY = { dateFrom: "", dateTo: "", genders: [], ageGroups: [] };
 
@@ -94,11 +96,11 @@ export default function NttSelfEsteemPage() {
   const breakdown = charts?.scoreBreakdown || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: severityColor(i, bands.length) }));
-  const breakdownBars = breakdown.map((h) => ({
+  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  const breakdownBars = breakdown.map((h, i) => ({
     name: h.score === 0 ? "Score 0 (Both No)" : h.score === 1 ? "Score 1 (One Yes)" : "Score 2 (Both Yes)",
     value: h.count,
-    color: h.score === 2 ? ACTION_COLORS.promoter : h.score === 1 ? ACTION_COLORS.support : ACTION_COLORS.immediate,
+    color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length],
   }));
 
   const configureCharts = [
@@ -136,16 +138,16 @@ export default function NttSelfEsteemPage() {
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>TISE Self-Esteem Assessment</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → High self-esteem (Promoter) · Score &lt; 2 → Low self-esteem (Support needed)</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={ACCENT} sub="Completed the TISE screen" />
-          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color="#4f46e5" sub="Out of 2" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={ACTION_COLORS.promoter} sub="High self-esteem (score 2)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={ACTION_COLORS.support} sub="Low self-esteem (< 2)" />
+          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the TISE screen" />
+          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 2" />
+          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="High self-esteem (score 2)" />
+          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Low self-esteem (< 2)" />
         </div>
       </WarmSection>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {isChartVisible("gauge") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACTION_COLORS.support} title="Overall Self-Esteem Level" subtitle="Average TISE score (0–2)"
+          <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Overall Self-Esteem Level" subtitle="Average TISE score (0–2)"
             tooltipText="Mean of every respondent's TISE score, on a 0–2 scale." chartId="gauge"
             chartData={{ averageScore: kpis?.averageScore }} chartTitle="Overall Self-Esteem Level" chartDescription="Average TISE score">
             <Gauge value={kpis?.averageScore || 0} max={2} />
@@ -174,7 +176,7 @@ export default function NttSelfEsteemPage() {
             subtitle="Yes / No split for each of the 2 self-esteem items" chartId="responseByQuestion"
             chartData={byQuestion} chartTitle="Question-wise Response Analysis" chartDescription="Per-question TISE answer split">
             <ResponseByQuestion questions={byQuestion} colors={YESNO_COLORS} />
-            <InsightBox text="Green is Yes (positive self-regard), orange is No. A larger orange share flags employees who may benefit from support." />
+            <InsightBox text="Each bar shows the Yes / No split per item (see legend). A larger 'No' share flags employees who may benefit from support." />
           </CVCard>
         )}
 

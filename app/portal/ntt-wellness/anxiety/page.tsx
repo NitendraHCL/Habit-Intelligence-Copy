@@ -13,7 +13,7 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, Donut, VerticalBars, ResponseByQuestion,
-  ACTION_COLORS, FREQ_COLORS, severityColor,
+  FREQ_COLORS, OHC_CATEGORICAL,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/anxiety";
@@ -93,9 +93,9 @@ export default function NttAnxietyPage() {
   const actions = charts?.actionDistribution || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: severityColor(i, bands.length) }));
-  const actionDonut = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] || "#94a3b8" }));
-  const scoreBars = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] || "#94a3b8" }));
+  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  const actionDonut = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  const scoreBars = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
 
   const configureCharts = [
     { id: "classificationDistribution", label: "Classification Distribution" },
@@ -132,11 +132,11 @@ export default function NttAnxietyPage() {
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>GAD-7 Anxiety Assessment</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 No Anxiety (Promoter) · 5–9 Mild · 10–14 Moderate (Support) · ≥15 Severe (Immediate)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={ACCENT} sub="Completed the GAD-7 screen" />
-          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color="#4f46e5" sub="Out of 21" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={ACTION_COLORS.promoter} sub="No anxiety (0–4)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={ACTION_COLORS.support} sub="Mild–moderate (5–14)" />
-          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={ACTION_COLORS.immediate} sub="Severe (≥15)" />
+          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the GAD-7 screen" />
+          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 21" />
+          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No anxiety (0–4)" />
+          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Mild–moderate (5–14)" />
+          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Severe (≥15)" />
         </div>
       </WarmSection>
 
@@ -158,7 +158,7 @@ export default function NttAnxietyPage() {
           </CVCard>
         )}
         {isChartVisible("actionDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACTION_COLORS.support} title="Action Distribution" subtitle="Recommended action split"
+          <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
             tooltipText="Promoter / Support Needed / Immediate support rolled up from the classification bands." chartId="actionDistribution"
             chartData={actions} chartTitle="Action Distribution" chartDescription="GAD-7 recommended actions">
             <Donut data={actionDonut} />
@@ -171,7 +171,7 @@ export default function NttAnxietyPage() {
             subtitle="How respondents answered each of the 7 GAD-7 items" chartId="responseByQuestion"
             chartData={byQuestion} chartTitle="Response Distribution by Question" chartDescription="Per-question GAD-7 answer split">
             <ResponseByQuestion questions={byQuestion} colors={FREQ_COLORS} />
-            <InsightBox text="Each bar is one GAD-7 question — green (Not at all) through red (Nearly everyday). Longer red/orange segments flag items driving anxiety." />
+            <InsightBox text="Each bar is one GAD-7 question, split by response frequency (see legend: 'Not at all' → 'Nearly everyday'). Items with a larger 'Over half the days' / 'Nearly everyday' share are the ones driving anxiety." />
           </CVCard>
         )}
 

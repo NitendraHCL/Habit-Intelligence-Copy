@@ -78,9 +78,9 @@ export function makeClinicalHandler(instrument: "gad" | "phq", logLabel: string)
         charts: {
           classificationDistribution: stats.bands,
           actionDistribution: [
-            { label: "Promoter", count: stats.actions.promoter, action: "promoter" },
-            { label: "Support Needed", count: stats.actions.support, action: "support" },
-            { label: "Immediate support", count: stats.actions.immediate, action: "immediate" },
+            { label: "Positive Responders", count: stats.actions.promoter, action: "promoter" },
+            { label: "Responders Needing Support", count: stats.actions.support, action: "support" },
+            { label: "Responders Needing Priority Support", count: stats.actions.immediate, action: "immediate" },
           ],
           responseByQuestion: stats.byQuestion,
         },

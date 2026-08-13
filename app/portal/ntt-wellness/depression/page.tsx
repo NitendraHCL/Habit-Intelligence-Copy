@@ -118,25 +118,25 @@ export default function NttDepressionPage() {
         pageTitle="Mood and Energy Index"
         pageSubtitle="NTT DATA (NDBS) - Patient Health Questionnaire 9-item scale · Score range 0–27 · higher Enthusiasm means lower depression"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the PHQ-9 depression screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 27. ${formatNum(kpis?.promoters || 0)} report no depression, ${formatNum(kpis?.supportNeed || 0)} need support (minimal–mild) and ${formatNum(kpis?.immediateSupport || 0)} need immediate support (moderate and above).`}
+        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the PHQ-9 depression screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 27. ${formatNum(kpis?.promoters || 0)} are Positive Responders, ${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`}
         fallbackChips={[
           { label: "Respondents", value: formatNum(kpis?.totalRespondents || 0) },
           { label: "Avg Score", value: (kpis?.averageScore ?? 0).toFixed(2) },
-          { label: "Promoters", value: formatNum(kpis?.promoters || 0) },
-          { label: "Immediate", value: formatNum(kpis?.immediateSupport || 0) },
+          { label: "Positive Responders", value: formatNum(kpis?.promoters || 0) },
+          { label: "Priority Support", value: formatNum(kpis?.immediateSupport || 0) },
         ]}
       />
 
       <WarmSection>
         <AccentBar color={ACCENT} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Mood and Energy Index</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0 No Depression (Promoter) · 1–4 Minimal · 5–9 Mild (Support) · 10+ Moderate–Severe (Immediate)</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0 No Mood and Energy Concerns (Positive Responders) · 1–4 Minimal · 5–9 Mild (Responders Needing Support) · 10+ Moderate–Severe (Responders Needing Priority Support)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the PHQ-9 screen" />
           <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 27" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No depression (0)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Minimal–mild (1–9)" />
-          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Moderate+ (≥10)" />
+          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No mood and energy concerns (0)" />
+          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Minimal–mild (1–9)" />
+          <StatCard label="Responders Needing Priority Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Moderate+ (≥10)" />
         </div>
       </WarmSection>
 
@@ -146,23 +146,23 @@ export default function NttDepressionPage() {
             tooltipText="Per-respondent PHQ-9 score bucketed into No / Minimal / Mild / Moderate / Mod. severe / Severe." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="PHQ-9 severity bands">
             <Donut data={classDonut} />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} report no depression; ${formatNum(kpis?.immediateSupport || 0)} are at moderate or higher severity.`} />
+            <InsightBox text={`${formatNum(kpis?.promoters || 0)} are Positive Responders (no mood and energy concerns); ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
           </CVCard>
         )}
         {isChartVisible("scoreDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#4f46e5" title="Score Distribution" subtitle="Respondents grouped by action band"
-            tooltipText="Promoter 0 · Support 1–9 · Immediate ≥10." chartId="scoreDistribution"
+            tooltipText="Positive Responders 0 · Responders Needing Support 1–9 · Responders Needing Priority Support ≥10." chartId="scoreDistribution"
             chartData={scoreBars} chartTitle="Score Distribution" chartDescription="PHQ-9 action bands">
             <VerticalBars data={scoreBars} />
-            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} respondents fall in the support band (1–9).`} />
+            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} respondents are Responders Needing Support (1–9).`} />
           </CVCard>
         )}
         {isChartVisible("actionDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
-            tooltipText="Promoter / Support Needed / Immediate support rolled up from the classification bands." chartId="actionDistribution"
+            tooltipText="Positive Responders / Responders Needing Support / Responders Needing Priority Support rolled up from the classification bands." chartId="actionDistribution"
             chartData={actions} chartTitle="Action Distribution" chartDescription="PHQ-9 recommended actions">
             <Donut data={actionDonut} />
-            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} need support and ${formatNum(kpis?.immediateSupport || 0)} need immediate support.`} />
+            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
           </CVCard>
         )}
 

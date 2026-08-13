@@ -124,24 +124,24 @@ export default function NttSelfEsteemPage() {
         pageTitle="Confidence and Self-Worth Index"
         pageSubtitle="NTT DATA (NDBS) - Two-Item Self-Esteem scale · Score range 0–2 · higher Motivation means higher self-esteem"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the self-esteem screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 2. ${formatNum(kpis?.promoters || 0)} show high self-esteem (both items yes) and ${formatNum(kpis?.supportNeed || 0)} show low self-esteem needing support.`}
+        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the self-esteem screen, averaging ${(kpis?.averageScore ?? 0).toFixed(2)} out of 2. ${formatNum(kpis?.promoters || 0)} are Positive Responders and ${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support.`}
         fallbackChips={[
           { label: "Respondents", value: formatNum(kpis?.totalRespondents || 0) },
           { label: "Avg Score", value: (kpis?.averageScore ?? 0).toFixed(2) },
-          { label: "High", value: formatNum(kpis?.promoters || 0) },
-          { label: "Low", value: formatNum(kpis?.supportNeed || 0) },
+          { label: "Positive Responders", value: formatNum(kpis?.promoters || 0) },
+          { label: "Needing Support", value: formatNum(kpis?.supportNeed || 0) },
         ]}
       />
 
       <WarmSection>
         <AccentBar color={ACCENT} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Confidence and Self-Worth Index</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → High self-esteem (Promoter) · Score &lt; 2 → Low self-esteem (Support needed)</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → Confidence and Self Worth (Positive Responders) · Score &lt; 2 → Confidence and Self Worth Needing Support (Responders Needing Support)</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the TISE screen" />
           <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 2" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="High self-esteem (score 2)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Low self-esteem (< 2)" />
+          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="Confidence and self worth (score 2)" />
+          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Needing support (< 2)" />
         </div>
       </WarmSection>
 
@@ -155,11 +155,11 @@ export default function NttSelfEsteemPage() {
           </CVCard>
         )}
         {isChartVisible("classificationDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="High vs low self-esteem"
-            tooltipText="Score 2 → High self-esteem; score < 2 → Low self-esteem." chartId="classificationDistribution"
+          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Confidence and self worth vs needing support"
+            tooltipText="Score 2 → Confidence and Self Worth; score < 2 → Confidence and Self Worth Needing Support." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="TISE classification">
             <Donut data={classDonut} />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents report high self-esteem.`} />
+            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents are Positive Responders (confidence and self worth).`} />
           </CVCard>
         )}
         {isChartVisible("scoreBreakdown") && (

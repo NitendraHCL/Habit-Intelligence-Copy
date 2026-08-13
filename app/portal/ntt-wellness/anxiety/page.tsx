@@ -118,25 +118,25 @@ export default function NttAnxietyPage() {
         pageTitle="Stress and Calmness Index"
         pageSubtitle="NTT DATA (NDBS) - Generalized Anxiety Disorder 7-item scale · Score range 0–21 · higher Joy means lower anxiety"
         kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the GAD-7 anxiety screen, with an average score of ${(kpis?.averageScore ?? 0).toFixed(2)} out of 21. ${formatNum(kpis?.promoters || 0)} are promoters (no anxiety), ${formatNum(kpis?.supportNeed || 0)} need support (mild–moderate) and ${formatNum(kpis?.immediateSupport || 0)} show severe anxiety needing immediate support.`}
+        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the GAD-7 anxiety screen, with an average score of ${(kpis?.averageScore ?? 0).toFixed(2)} out of 21. ${formatNum(kpis?.promoters || 0)} are Positive Responders, ${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`}
         fallbackChips={[
           { label: "Respondents", value: formatNum(kpis?.totalRespondents || 0) },
           { label: "Avg Score", value: (kpis?.averageScore ?? 0).toFixed(2) },
-          { label: "Promoters", value: formatNum(kpis?.promoters || 0) },
-          { label: "Immediate", value: formatNum(kpis?.immediateSupport || 0) },
+          { label: "Positive Responders", value: formatNum(kpis?.promoters || 0) },
+          { label: "Priority Support", value: formatNum(kpis?.immediateSupport || 0) },
         ]}
       />
 
       <WarmSection>
         <AccentBar color={ACCENT} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Stress and Calmness Index</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 No Anxiety (Promoter) · 5–9 Mild · 10–14 Moderate (Support) · ≥15 Severe (Immediate)</p>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 No Anxiety (Positive Responders) · 5–9 Mild · 10–14 Moderate (Responders Needing Support) · ≥15 Severe (Responders Needing Priority Support)</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the GAD-7 screen" />
           <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 21" />
-          <StatCard label="Promoters" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No anxiety (0–4)" />
-          <StatCard label="Support Need" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Mild–moderate (5–14)" />
-          <StatCard label="Immediate Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Severe (≥15)" />
+          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No anxiety (0–4)" />
+          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Mild–moderate (5–14)" />
+          <StatCard label="Responders Needing Priority Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Severe (≥15)" />
         </div>
       </WarmSection>
 
@@ -146,23 +146,23 @@ export default function NttAnxietyPage() {
             tooltipText="Per-respondent GAD-7 score bucketed into No / Mild / Moderate / Severe anxiety." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="GAD-7 severity bands">
             <Donut data={classDonut} />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents show no anxiety; ${formatNum(kpis?.immediateSupport || 0)} are in the severe band.`} />
+            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents are Positive Responders (no anxiety); ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
           </CVCard>
         )}
         {isChartVisible("scoreDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#4f46e5" title="Score Distribution" subtitle="Respondents grouped by action band"
-            tooltipText="Promoter 0–4 · Support 5–14 · Immediate ≥15." chartId="scoreDistribution"
+            tooltipText="Positive Responders 0–4 · Responders Needing Support 5–14 · Responders Needing Priority Support ≥15." chartId="scoreDistribution"
             chartData={scoreBars} chartTitle="Score Distribution" chartDescription="GAD-7 action bands">
             <VerticalBars data={scoreBars} />
-            <InsightBox text={`Most respondents (${formatNum(kpis?.supportNeed || 0)}) fall in the support band (5–14).`} />
+            <InsightBox text={`Most respondents (${formatNum(kpis?.supportNeed || 0)}) are Responders Needing Support (5–14).`} />
           </CVCard>
         )}
         {isChartVisible("actionDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
-            tooltipText="Promoter / Support Needed / Immediate support rolled up from the classification bands." chartId="actionDistribution"
+            tooltipText="Positive Responders / Responders Needing Support / Responders Needing Priority Support rolled up from the classification bands." chartId="actionDistribution"
             chartData={actions} chartTitle="Action Distribution" chartDescription="GAD-7 recommended actions">
             <Donut data={actionDonut} />
-            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} need support and ${formatNum(kpis?.immediateSupport || 0)} need immediate support.`} />
+            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
           </CVCard>
         )}
 

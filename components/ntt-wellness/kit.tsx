@@ -302,12 +302,26 @@ export function ResponseByQuestion({ questions, colors, minSegPctForLabel = 3 }:
   );
 }
 
+/** Word-wrap a label into lines no wider than `maxChars`, for axis labels. */
+function wrapAxisLabel(text: string, maxChars = 14): string {
+  const words = String(text || "").split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const w of words) {
+    if (!line) line = w;
+    else if ((line + " " + w).length <= maxChars) line += " " + w;
+    else { lines.push(line); line = w; }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
 /** Vertical bars from [{name, value, color}] with value labels on top. */
 export function VerticalBars({ data, height = 300, yFormatter }: any) {
   const option = {
-    grid: { top: 30, right: 12, bottom: 28, left: 40 },
+    grid: { top: 30, right: 12, bottom: 56, left: 40 },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (ps: any) => `${ps[0].name}: ${formatNum(ps[0].value)}` },
-    xAxis: { type: "category", data: (data || []).map((d: any) => d.name), axisLabel: { fontSize: 11, color: T.textSecondary, interval: 0 }, axisLine: { lineStyle: { color: T.border } }, axisTick: { show: false } },
+    xAxis: { type: "category", data: (data || []).map((d: any) => d.name), axisLabel: { fontSize: 10, color: T.textSecondary, interval: 0, hideOverlap: false, lineHeight: 12, formatter: (v: string) => wrapAxisLabel(v, 14) }, axisLine: { lineStyle: { color: T.border } }, axisTick: { show: false } },
     yAxis: { type: "value", axisLabel: { fontSize: 11, color: T.textMuted, formatter: yFormatter }, splitLine: { lineStyle: { color: T.borderLight } } },
     series: [{
       type: "bar", barMaxWidth: 64, data: (data || []).map((d: any) => ({ value: d.value, itemStyle: { color: d.color, borderRadius: [4, 4, 0, 0] } })),

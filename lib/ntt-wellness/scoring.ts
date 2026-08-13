@@ -273,7 +273,7 @@ export const BANDS: Record<string, { max: number; bands: Band[] }> = {
   phq: {
     max: 27,
     bands: [
-      { min: 0, max: 0, label: "No Depression", action: "promoter" },
+      { min: 0, max: 0, label: "No Mood and Energy Concerns", action: "promoter" },
       { min: 1, max: 4, label: "Minimal", action: "support" },
       { min: 5, max: 9, label: "Mild", action: "support" },
       { min: 10, max: 14, label: "Moderate", action: "immediate" },
@@ -284,8 +284,8 @@ export const BANDS: Record<string, { max: number; bands: Band[] }> = {
   tise: {
     max: 2,
     bands: [
-      { min: 2, max: 2, label: "High Self-Esteem", action: "promoter" },
-      { min: 0, max: 1, label: "Low Self-Esteem", action: "support" },
+      { min: 2, max: 2, label: "Confidence and Self Worth", action: "promoter" },
+      { min: 0, max: 1, label: "Confidence and Self Worth Needing Support", action: "support" },
     ],
   },
   // Workplace — PPT logic rescaled to the real question count (= mock-up bands)

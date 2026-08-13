@@ -136,15 +136,15 @@ export default function NttWorkplaceWellbeingPage() {
         {instruments.map((ins) => (
           isChartVisible(ins.key) && (
             <CVCard key={ins.key} pageSlug={PAGE_SLUG} accentColor={ACCENT} title={ins.name}
-              subtitle={`Average ${ins.average.toFixed(2)} / ${ins.max} · ${formatNum(ins.promoters)} promoters · ${formatNum(ins.support)} need support`}
+              subtitle={`Average ${ins.average.toFixed(2)} / ${ins.max} · ${formatNum(ins.promoters)} Positive Responders · ${formatNum(ins.support)} Responders Needing Support`}
               chartId={ins.key} chartData={ins} chartTitle={ins.name} chartDescription="Workplace wellbeing instrument breakdown">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <p className="text-[12px] font-bold uppercase tracking-[0.06em] mb-3" style={{ color: T.textMuted }}>Classification</p>
                   <ClassificationBars bands={ins.classification} />
                   <div className="flex items-center gap-2 mt-4">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${ACTION_COLORS.promoter}18`, color: "#15803d" }}>{formatNum(ins.promoters)} Promoters</span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${ACTION_COLORS.support}18`, color: "#b45309" }}>{formatNum(ins.support)} Support</span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${ACTION_COLORS.promoter}18`, color: "#15803d" }}>{formatNum(ins.promoters)} Positive Responders</span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${ACTION_COLORS.support}18`, color: "#b45309" }}>{formatNum(ins.support)} Responders Needing Support</span>
                   </div>
                 </div>
                 <div>

@@ -86,7 +86,7 @@ export default function NttSelfEsteemPage() {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="h-16 bg-white rounded-2xl border animate-pulse" />
-        <div className="grid grid-cols-4 gap-4">{[1, 2, 3, 4].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
+        <div className="grid grid-cols-3 gap-4">{[1, 2, 3].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
         <div className="grid grid-cols-3 gap-4">{[1, 2, 3].map((i) => <div key={i} className="h-[320px] bg-white rounded-2xl border animate-pulse" />)}</div>
       </div>
     );
@@ -137,9 +137,8 @@ export default function NttSelfEsteemPage() {
         <AccentBar color={ACCENT} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Confidence and Self-Worth Index</h2>
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → Confidence and Self Worth (Positive Responders) · Score &lt; 2 → Confidence and Self Worth Needing Support (Responders Needing Support)</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the TISE screen" />
-          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 2" />
           <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="Confidence and self worth (score 2)" />
           <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Needing support (< 2)" />
         </div>

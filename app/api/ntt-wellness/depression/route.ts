@@ -5,7 +5,7 @@ import { NTT_TABLE } from "@/lib/ntt-wellness/scoring";
 import { makeClinicalHandler } from "@/lib/ntt-wellness/clinical-handler";
 
 /* ────────────────────────────────────────────────────────────────────
- * NTTDATA01 — PHQ-9 Depression Wellness dashboard API.
+ * NTTDATA01 — Mood and Energy Index (PHQ-9) Wellness dashboard API.
  *
  * Single source table: fact_kx.ntt_health_risk_assessment (alias `a`), scoped
  * to cug_code = 'NTTDATA01', status = 'Final'. The PHQ-9 score (0–27) is
@@ -15,12 +15,13 @@ import { makeClinicalHandler } from "@/lib/ntt-wellness/clinical-handler";
 
 const PROVENANCE: DashboardProvenance = {
   kpis: {
-    chart: "Headline KPIs (Total Respondents · Average Score · Promoters · Support · Immediate)",
+    chart: "Headline KPIs (Total Respondents · Good · Mild Concerns · High Concern)",
     sources: [NTT_TABLE],
     logic:
-      "Over the filtered NTTDATA01 rows that answered ≥1 PHQ-9 item. PHQ-9 score = sum of the 9 items " +
-      "(Not at all 0 / Several days 1 / Over half the days 2 / Nearly everyday 3), range 0–27. Average = mean score. " +
-      "Promoters = score 0 (No depression); Support = 1–9 (Minimal 1–4 + Mild 5–9); Immediate = ≥10 (Moderate and above).",
+      "Over the filtered NTTDATA01 rows that answered ≥1 PHQ-9 item. Mood and Energy Index score = sum of the 9 items " +
+      "(Not at all 0 / Several days 1 / Over half the days 2 / Nearly everyday 3), range 0–27. " +
+      "Good = score 0; Mild Concerns (Need Support) = 1–9 (Minimal 1–4 + Mild 5–9); " +
+      "High Concern (Needs priority support) = ≥10 (Moderate and above).",
     sql: "WITH per AS (SELECT <sum of 9 CASE maps> sc FROM ntt_health_risk_assessment WHERE <filters> AND <answered>) SELECT COUNT(*), AVG(sc), COUNT(*) FILTER (band) …",
   },
   classificationDistribution: {
@@ -30,9 +31,9 @@ const PROVENANCE: DashboardProvenance = {
     sql: "COUNT(*) FILTER (WHERE sc BETWEEN lo AND hi) per band.",
   },
   actionDistribution: {
-    chart: "Action Distribution (Promoter / Support Needed / Immediate support)",
+    chart: "Action Distribution (Good / Mild Concerns (Need Support) / High Concern (Needs priority support))",
     sources: [NTT_TABLE],
-    logic: "The PPT action mapping rolled up across bands: Promoter (0), Support (1–9), Immediate (≥10).",
+    logic: "The PPT action mapping rolled up across bands: Good (0), Mild Concerns (1–9), High Concern (≥10).",
     sql: "COUNT(*) FILTER (WHERE sc in action range) per action.",
   },
   responseByQuestion: {
@@ -46,6 +47,13 @@ const PROVENANCE: DashboardProvenance = {
 };
 
 export const GET = withProvenance(
-  withCache(makeClinicalHandler("phq", "NTT Depression"), { endpoint: "ntt-wellness/depression" }),
+  withCache(
+    makeClinicalHandler("phq", "NTT Mood and Energy Index", {
+      promoter: "Good",
+      support: "Mild Concerns (Need Support)",
+      immediate: "High Concern (Needs priority support)",
+    }),
+    { endpoint: "ntt-wellness/depression" },
+  ),
   PROVENANCE,
 );

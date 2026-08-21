@@ -83,7 +83,7 @@ export default function NttWorkplaceWellbeingPage() {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="h-16 bg-white rounded-2xl border animate-pulse" />
-        <div className="grid grid-cols-5 gap-4">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
+        <div className="grid grid-cols-4 gap-4">{[1, 2, 3, 4].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
         <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="h-[280px] bg-white rounded-2xl border animate-pulse" />)}</div>
       </div>
     );
@@ -91,7 +91,6 @@ export default function NttWorkplaceWellbeingPage() {
 
   const kpiCards = [
     { key: "psych", label: "Psychological Safety", color: OHC_CATEGORICAL[0], max: 6 },
-    { key: "peer", label: "Peer Relationships", color: OHC_CATEGORICAL[1], max: 9 },
     { key: "mgr", label: "Managerial Support", color: OHC_CATEGORICAL[2], max: 7 },
     { key: "belong", label: "Sense of Belonging", color: OHC_CATEGORICAL[3], max: 9 },
     { key: "org", label: "Org. Infrastructure", color: OHC_CATEGORICAL[4], max: 11 },
@@ -123,8 +122,8 @@ export default function NttWorkplaceWellbeingPage() {
       <WarmSection>
         <AccentBar color={ACCENT} />
         <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Workplace Wellbeing - Average Scores</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Mean score per instrument (each on its own scale). Higher is better across all five.</p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Mean score per instrument (each on its own scale). Higher is better across all four.</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {kpiCards.map((c) => (
             <StatCard key={c.key} label={c.label} value={kpis?.[c.key] || 0} decimals={2} color={c.color} sub={`Average · out of ${c.max}`} />
           ))}

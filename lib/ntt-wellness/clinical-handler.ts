@@ -19,7 +19,20 @@ import {
 const dwQueryLoose = <T = Record<string, unknown>>(sql: string, p?: unknown[]) =>
   dwQuery<T & Record<string, unknown>>(sql, p) as Promise<T[]>;
 
-export function makeClinicalHandler(instrument: "gad" | "phq", logLabel: string) {
+/** Wording of the three action buckets — per-instrument, since Joy Index (GAD-7)
+ *  and Depression (PHQ-9) use different client-facing terminology. */
+type ActionLabels = { promoter: string; support: string; immediate: string };
+const DEFAULT_ACTION_LABELS: ActionLabels = {
+  promoter: "Positive Responders",
+  support: "Responders Needing Support",
+  immediate: "Responders Needing Priority Support",
+};
+
+export function makeClinicalHandler(
+  instrument: "gad" | "phq",
+  logLabel: string,
+  actionLabels: ActionLabels = DEFAULT_ACTION_LABELS,
+) {
   return async function handler(request: NextRequest) {
     try {
       await requireAuth();
@@ -78,9 +91,9 @@ export function makeClinicalHandler(instrument: "gad" | "phq", logLabel: string)
         charts: {
           classificationDistribution: stats.bands,
           actionDistribution: [
-            { label: "Positive Responders", count: stats.actions.promoter, action: "promoter" },
-            { label: "Responders Needing Support", count: stats.actions.support, action: "support" },
-            { label: "Responders Needing Priority Support", count: stats.actions.immediate, action: "immediate" },
+            { label: actionLabels.promoter, count: stats.actions.promoter, action: "promoter" },
+            { label: actionLabels.support, count: stats.actions.support, action: "support" },
+            { label: actionLabels.immediate, count: stats.actions.immediate, action: "immediate" },
           ],
           responseByQuestion: stats.byQuestion,
         },

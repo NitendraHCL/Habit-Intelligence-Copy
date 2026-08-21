@@ -264,10 +264,10 @@ export const BANDS: Record<string, { max: number; bands: Band[] }> = {
   gad: {
     max: 21,
     bands: [
-      { min: 0, max: 4, label: "No Anxiety", action: "promoter" },
-      { min: 5, max: 9, label: "Mild Anxiety", action: "support" },
-      { min: 10, max: 14, label: "Moderate Anxiety", action: "support" },
-      { min: 15, max: 21, label: "Severe Anxiety", action: "immediate" },
+      { min: 0, max: 4, label: "Good", action: "promoter" },
+      { min: 5, max: 9, label: "Mild Concern", action: "support" },
+      { min: 10, max: 14, label: "Moderate Concern", action: "support" },
+      { min: 15, max: 21, label: "High Concern", action: "immediate" },
     ],
   },
   phq: {

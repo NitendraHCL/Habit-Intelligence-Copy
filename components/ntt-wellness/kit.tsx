@@ -316,16 +316,34 @@ function wrapAxisLabel(text: string, maxChars = 14): string {
   return lines.join("\n");
 }
 
-/** Vertical bars from [{name, value, color}] with value labels on top. */
-export function VerticalBars({ data, height = 300, yFormatter }: any) {
+/**
+ * Vertical bars from [{name, value, color}] with value labels on top.
+ * `showPct` adds each bar's share of the total under its absolute count.
+ */
+export function VerticalBars({ data, height = 300, yFormatter, showPct = false }: any) {
+  const rows = data || [];
+  const grandTotal = rows.reduce((s: number, d: any) => s + (Number(d.value) || 0), 0);
+  const pctOf = (v: number) => (grandTotal > 0 ? Math.round((v / grandTotal) * 1000) / 10 : 0);
   const option = {
-    grid: { top: 30, right: 12, bottom: 56, left: 40 },
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (ps: any) => `${ps[0].name}: ${formatNum(ps[0].value)}` },
-    xAxis: { type: "category", data: (data || []).map((d: any) => d.name), axisLabel: { fontSize: 10, color: T.textSecondary, interval: 0, hideOverlap: false, lineHeight: 12, formatter: (v: string) => wrapAxisLabel(v, 14) }, axisLine: { lineStyle: { color: T.border } }, axisTick: { show: false } },
+    grid: { top: showPct ? 42 : 30, right: 12, bottom: 56, left: 40 },
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "shadow" },
+      formatter: (ps: any) => showPct
+        ? `${ps[0].name}: ${formatNum(ps[0].value)} (${pctOf(ps[0].value)}%)`
+        : `${ps[0].name}: ${formatNum(ps[0].value)}`,
+    },
+    xAxis: { type: "category", data: rows.map((d: any) => d.name), axisLabel: { fontSize: 10, color: T.textSecondary, interval: 0, hideOverlap: false, lineHeight: 12, formatter: (v: string) => wrapAxisLabel(v, 14) }, axisLine: { lineStyle: { color: T.border } }, axisTick: { show: false } },
     yAxis: { type: "value", axisLabel: { fontSize: 11, color: T.textMuted, formatter: yFormatter }, splitLine: { lineStyle: { color: T.borderLight } } },
     series: [{
-      type: "bar", barMaxWidth: 64, data: (data || []).map((d: any) => ({ value: d.value, itemStyle: { color: d.color, borderRadius: [4, 4, 0, 0] } })),
-      label: { show: true, position: "top", fontSize: 12, fontWeight: "bold", color: T.textPrimary, formatter: (p: any) => formatNum(p.value) },
+      type: "bar", barMaxWidth: 64, data: rows.map((d: any) => ({ value: d.value, itemStyle: { color: d.color, borderRadius: [4, 4, 0, 0] } })),
+      label: {
+        show: true, position: "top", fontSize: 12, fontWeight: "bold", color: T.textPrimary, lineHeight: 14,
+        formatter: (p: any) => (showPct ? `{v|${formatNum(p.value)}}\n{p|${pctOf(p.value)}%}` : formatNum(p.value)),
+        rich: {
+          v: { fontSize: 12, fontWeight: "bold", color: T.textPrimary, lineHeight: 15 },
+          p: { fontSize: 11, fontWeight: "bold", color: T.textSecondary, lineHeight: 14 },
+        },
+      },
     }],
   };
   return <div style={{ height }}><ReactECharts option={option} style={{ height: "100%", width: "100%" }} /></div>;

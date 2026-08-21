@@ -83,7 +83,7 @@ export default function NttAnxietyPage() {
     return (
       <div className="animate-fade-in space-y-5">
         <div className="h-16 bg-white rounded-2xl border animate-pulse" />
-        <div className="grid grid-cols-5 gap-4">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
+        <div className="grid grid-cols-4 gap-4">{[1, 2, 3, 4].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border animate-pulse" />)}</div>
         <div className="grid grid-cols-3 gap-4">{[1, 2, 3].map((i) => <div key={i} className="h-[320px] bg-white rounded-2xl border animate-pulse" />)}</div>
       </div>
     );
@@ -96,6 +96,20 @@ export default function NttAnxietyPage() {
   const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
   const actionDonut = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
   const scoreBars = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+
+  // Share-of-respondents helper — every headline number is shown as a count + %.
+  const total = kpis?.totalRespondents || 0;
+  const pct = (n) => (total > 0 ? `${Math.round(((n || 0) / total) * 1000) / 10}%` : "0%");
+  const topAction = actions.reduce((a, b) => (b.count > (a?.count ?? -1) ? b : a), null);
+
+  // Relabelled for the AI page summary so it speaks the Joy Index vocabulary
+  // rather than the raw promoter / support / immediate KPI keys.
+  const glanceKpis = kpis ? {
+    "Total Respondents": kpis.totalRespondents,
+    "Good (0-4)": `${kpis.promoters} (${pct(kpis.promoters)})`,
+    "Mild Concerns, Need Support (5-14)": `${kpis.supportNeed} (${pct(kpis.supportNeed)})`,
+    "High Concern, Needs priority support (15+)": `${kpis.immediateSupport} (${pct(kpis.immediateSupport)})`,
+  } : {};
 
   const configureCharts = [
     { id: "classificationDistribution", label: "Classification Distribution" },
@@ -110,68 +124,69 @@ export default function NttAnxietyPage() {
         filterOptions={filterOptions} pending={pending} setPending={setPending}
         onApply={handleApply} onRefresh={refresh} isRefreshing={isRefreshing} isValidating={isValidating} isLoading={isLoading}
         showRefreshToast={showRefreshToast}
-        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="Stress and Calmness Index" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
+        configureSlot={<ConfigurePanel pageSlug={PAGE_SLUG} pageTitle="Joy Index" charts={configureCharts} filters={["dateFrom", "dateTo", "genders", "ageGroups"]} onPreview={setPreviewConfig} isPreview={isPreview} />}
       />
       {hasActiveFilters && <ActiveFilterChips filters={applied} labels={filterLabels} onRemove={handleRemoveChip} onClearAll={handleClearAll} />}
 
       <PageGlanceBox
-        pageTitle="Stress and Calmness Index"
-        pageSubtitle="NTT DATA (NDBS) - Generalized Anxiety Disorder 7-item scale · Score range 0–21 · higher Joy means lower anxiety"
-        kpis={kpis || {}}
-        fallbackSummary={`${formatNum(kpis?.totalRespondents || 0)} employees completed the GAD-7 anxiety screen, with an average score of ${(kpis?.averageScore ?? 0).toFixed(2)} out of 21. ${formatNum(kpis?.promoters || 0)} are Positive Responders, ${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`}
+        pageTitle="Joy Index"
+        pageSubtitle="NTT DATA (NDBS)"
+        kpis={glanceKpis}
+        fallbackSummary={`${formatNum(total)} employees completed this screening (GAD-7). ${formatNum(kpis?.promoters || 0)} (${pct(kpis?.promoters)}) are Good, ${formatNum(kpis?.supportNeed || 0)} (${pct(kpis?.supportNeed)}) have Mild Concerns (Need Support) and ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern (Needs priority support).`}
         fallbackChips={[
-          { label: "Respondents", value: formatNum(kpis?.totalRespondents || 0) },
-          { label: "Avg Score", value: (kpis?.averageScore ?? 0).toFixed(2) },
-          { label: "Positive Responders", value: formatNum(kpis?.promoters || 0) },
-          { label: "Priority Support", value: formatNum(kpis?.immediateSupport || 0) },
+          { label: "Respondents", value: formatNum(total) },
+          { label: "Good", value: `${formatNum(kpis?.promoters || 0)} (${pct(kpis?.promoters)})` },
+          { label: "Mild Concerns", value: `${formatNum(kpis?.supportNeed || 0)} (${pct(kpis?.supportNeed)})` },
+          { label: "High Concern", value: `${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)})` },
         ]}
       />
 
       <WarmSection>
         <AccentBar color={ACCENT} />
-        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Stress and Calmness Index</h2>
-        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 No Anxiety (Positive Responders) · 5–9 Mild · 10–14 Moderate (Responders Needing Support) · ≥15 Severe (Responders Needing Priority Support)</p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the GAD-7 screen" />
-          <StatCard label="Average Score" value={kpis?.averageScore || 0} decimals={2} color={OHC_CATEGORICAL[1]} sub="Out of 21" />
-          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="No anxiety (0–4)" />
-          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Mild–moderate (5–14)" />
-          <StatCard label="Responders Needing Priority Support" value={kpis?.immediateSupport || 0} color={OHC_CATEGORICAL[4]} sub="Severe (≥15)" />
+        <h2 className="text-[20px] font-extrabold tracking-[-0.01em] font-[var(--font-inter)] mb-1" style={{ color: T.textPrimary }}>Joy Index</h2>
+        <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 Good · 5–9 Concern · 10–14 Mild Concerns (Need Support) · ≥15 High Concern (Needs priority support)</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed this screening (GAD-7)" />
+          <StatCard label="Good" value={kpis?.promoters || 0} pill={pct(kpis?.promoters)} color={OHC_CATEGORICAL[2]} sub="Score 0–4" />
+          <StatCard label="Mild Concerns (Need Support)" value={kpis?.supportNeed || 0} pill={pct(kpis?.supportNeed)} color={OHC_CATEGORICAL[3]} sub="Score 5–14" />
+          <StatCard label="High Concern (Needs priority support)" value={kpis?.immediateSupport || 0} pill={pct(kpis?.immediateSupport)} color={OHC_CATEGORICAL[4]} sub="Score ≥15" />
         </div>
       </WarmSection>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {isChartVisible("classificationDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Respondents by anxiety severity band"
-            tooltipText="Per-respondent GAD-7 score bucketed into No / Mild / Moderate / Severe anxiety." chartId="classificationDistribution"
-            chartData={bands} chartTitle="Classification Distribution" chartDescription="GAD-7 severity bands">
+          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Respondents by Joy Index band"
+            tooltipText="Per-respondent Joy Index score bucketed into Good / Mild Concern / Moderate Concern / High Concern." chartId="classificationDistribution"
+            chartData={bands} chartTitle="Classification Distribution" chartDescription="Joy Index bands">
             <Donut data={classDonut} />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents are Positive Responders (no anxiety); ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
+            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(total)} respondents (${pct(kpis?.promoters)}) fall in the Good band; ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
           </CVCard>
         )}
         {isChartVisible("scoreDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#4f46e5" title="Score Distribution" subtitle="Respondents grouped by action band"
-            tooltipText="Positive Responders 0–4 · Responders Needing Support 5–14 · Responders Needing Priority Support ≥15." chartId="scoreDistribution"
-            chartData={scoreBars} chartTitle="Score Distribution" chartDescription="GAD-7 action bands">
-            <VerticalBars data={scoreBars} />
-            <InsightBox text={`Most respondents (${formatNum(kpis?.supportNeed || 0)}) are Responders Needing Support (5–14).`} />
+            tooltipText="Good 0–4 · Mild Concerns (Need Support) 5–14 · High Concern (Needs priority support) ≥15." chartId="scoreDistribution"
+            chartData={scoreBars} chartTitle="Score Distribution" chartDescription="Joy Index action bands">
+            <VerticalBars data={scoreBars} showPct />
+            <InsightBox text={topAction
+              ? `The largest group is ${topAction.label} — ${formatNum(topAction.count)} respondents (${pct(topAction.count)}). Each bar shows the count and its share of all ${formatNum(total)} respondents.`
+              : "No respondents match the current filters."} />
           </CVCard>
         )}
         {isChartVisible("actionDistribution") && (
           <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
-            tooltipText="Positive Responders / Responders Needing Support / Responders Needing Priority Support rolled up from the classification bands." chartId="actionDistribution"
-            chartData={actions} chartTitle="Action Distribution" chartDescription="GAD-7 recommended actions">
+            tooltipText="Good / Mild Concerns (Need Support) / High Concern (Needs priority support), rolled up from the classification bands." chartId="actionDistribution"
+            chartData={actions} chartTitle="Action Distribution" chartDescription="Joy Index recommended actions">
             <Donut data={actionDonut} />
-            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} are Responders Needing Support and ${formatNum(kpis?.immediateSupport || 0)} are Responders Needing Priority Support.`} />
+            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} respondents (${pct(kpis?.supportNeed)}) have Mild Concerns and need support, while ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
           </CVCard>
         )}
 
         {isChartVisible("responseByQuestion") && (
           <CVCard className="lg:col-span-3" pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Response Distribution by Question"
-            subtitle="How respondents answered each of the 7 GAD-7 items" chartId="responseByQuestion"
-            chartData={byQuestion} chartTitle="Response Distribution by Question" chartDescription="Per-question GAD-7 answer split">
+            subtitle="How respondents answered each of the 7 Joy Index items" chartId="responseByQuestion"
+            chartData={byQuestion} chartTitle="Response Distribution by Question" chartDescription="Per-question Joy Index answer split">
             <ResponseByQuestion questions={byQuestion} colors={FREQ_COLORS} />
-            <InsightBox text="Each bar is one GAD-7 question, split by response frequency (see legend: 'Not at all' → 'Nearly everyday'). Items with a larger 'Over half the days' / 'Nearly everyday' share are the ones driving anxiety." />
+            <InsightBox text="Each bar is one Joy Index question, split by response frequency (see legend: 'Not at all' → 'Nearly everyday'). Items with a larger 'Over half the days' / 'Nearly everyday' share are the ones driving the concern." />
           </CVCard>
         )}
 

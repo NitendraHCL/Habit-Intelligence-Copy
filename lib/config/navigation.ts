@@ -110,7 +110,7 @@ export const navigation: NavItem[] = [
     icon: HeartPulse,
     requiredCug: "NTTDATA01",
     children: [
-      { label: "Stress and Calmness Index", href: "/portal/ntt-wellness/anxiety", icon: Brain },
+      { label: "Joy Index", href: "/portal/ntt-wellness/anxiety", icon: Brain },
       { label: "Mood and Energy Index", href: "/portal/ntt-wellness/depression", icon: Heart },
       { label: "Confidence and Self-Worth Index", href: "/portal/ntt-wellness/self-esteem", icon: Smile },
       { label: "Workplace Wellbeing", href: "/portal/ntt-wellness/workplace-wellbeing", icon: Building2 },

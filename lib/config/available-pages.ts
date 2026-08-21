@@ -39,7 +39,7 @@ export const AVAILABLE_PAGES: AvailablePage[] = [
   { slug: "/portal/compliance/employee-detail", label: "Employee Detail", group: "Compliance" },
 
   // NTT Wellness (NTTDATA01-only)
-  { slug: "/portal/ntt-wellness/anxiety", label: "Stress and Calmness Index", group: "NTT Wellness" },
+  { slug: "/portal/ntt-wellness/anxiety", label: "Joy Index", group: "NTT Wellness" },
   { slug: "/portal/ntt-wellness/depression", label: "Mood and Energy Index", group: "NTT Wellness" },
   { slug: "/portal/ntt-wellness/self-esteem", label: "Confidence and Self-Worth Index", group: "NTT Wellness" },
   { slug: "/portal/ntt-wellness/workplace-wellbeing", label: "Workplace Wellbeing", group: "NTT Wellness" },

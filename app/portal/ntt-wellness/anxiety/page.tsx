@@ -13,7 +13,7 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, Donut, VerticalBars, ResponseByQuestion,
-  FREQ_COLORS, OHC_CATEGORICAL,
+  FREQ_COLORS, OHC_CATEGORICAL, ACTION_COLORS, CONCERN_COLORS,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/anxiety";
@@ -93,9 +93,12 @@ export default function NttAnxietyPage() {
   const actions = charts?.actionDistribution || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
-  const actionDonut = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
-  const scoreBars = actions.map((a, i) => ({ name: a.label, value: a.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
+  // Severity-coded, not categorical: green → yellow → amber → red as the bands
+  // and action buckets get worse.
+  const BAND_RAMP = [CONCERN_COLORS.good, CONCERN_COLORS.mild, CONCERN_COLORS.moderate, CONCERN_COLORS.high];
+  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: BAND_RAMP[i] || CONCERN_COLORS.high }));
+  const actionDonut = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] }));
+  const scoreBars = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] }));
 
   // Share-of-respondents helper — every headline number is shown as a count + %.
   const total = kpis?.totalRespondents || 0;
@@ -147,9 +150,9 @@ export default function NttAnxietyPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>0–4 Good · 5–9 Concern · 10–14 Mild Concerns (Need Support) · ≥15 High Concern (Needs priority support)</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed this screening (GAD-7)" />
-          <StatCard label="Good" value={kpis?.promoters || 0} pill={pct(kpis?.promoters)} color={OHC_CATEGORICAL[2]} sub="Score 0–4" />
-          <StatCard label="Mild Concerns (Need Support)" value={kpis?.supportNeed || 0} pill={pct(kpis?.supportNeed)} color={OHC_CATEGORICAL[3]} sub="Score 5–14" />
-          <StatCard label="High Concern (Needs priority support)" value={kpis?.immediateSupport || 0} pill={pct(kpis?.immediateSupport)} color={OHC_CATEGORICAL[4]} sub="Score ≥15" />
+          <StatCard label="Good" value={kpis?.promoters || 0} pill={pct(kpis?.promoters)} color={ACTION_COLORS.promoter} sub="Score 0–4" />
+          <StatCard label="Mild Concerns (Need Support)" value={kpis?.supportNeed || 0} pill={pct(kpis?.supportNeed)} color={ACTION_COLORS.support} sub="Score 5–14" />
+          <StatCard label="High Concern (Needs priority support)" value={kpis?.immediateSupport || 0} pill={pct(kpis?.immediateSupport)} color={ACTION_COLORS.immediate} sub="Score ≥15" />
         </div>
       </WarmSection>
 
@@ -158,7 +161,7 @@ export default function NttAnxietyPage() {
           <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Respondents by Joy Index band"
             tooltipText="Per-respondent Joy Index score bucketed into Good / Mild Concern / Moderate Concern / High Concern." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="Joy Index bands">
-            <Donut data={classDonut} />
+            <Donut data={classDonut} innerRadius="38%" />
             <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(total)} respondents (${pct(kpis?.promoters)}) fall in the Good band; ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
           </CVCard>
         )}
@@ -176,7 +179,7 @@ export default function NttAnxietyPage() {
           <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
             tooltipText="Good / Mild Concerns (Need Support) / High Concern (Needs priority support), rolled up from the classification bands." chartId="actionDistribution"
             chartData={actions} chartTitle="Action Distribution" chartDescription="Joy Index recommended actions">
-            <Donut data={actionDonut} />
+            <Donut data={actionDonut} innerRadius="38%" />
             <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} respondents (${pct(kpis?.supportNeed)}) have Mild Concerns and need support, while ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
           </CVCard>
         )}

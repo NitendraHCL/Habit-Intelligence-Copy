@@ -42,6 +42,15 @@ export const ACTION_COLORS = {
   support: "#f59e0b", // amber
   immediate: "#ef4444", // red
 };
+// Joy Index classification bands, best → worst. Green / yellow / amber / red,
+// reusing the hues the rest of the portal already uses for these states
+// (theme.green, the #FCD34D dashboard yellow, theme.amber, critical red).
+export const CONCERN_COLORS = {
+  good: "#22c55e", // green
+  mild: "#FCD34D", // yellow
+  moderate: "#f59e0b", // amber
+  high: "#ef4444", // red
+};
 // Neutral distribution palette — matches the OHC Utilization scheme (an
 // ordinal indigo → teal ramp). Used for the per-question response bars and
 // other categorical distributions that carry no good/bad meaning.
@@ -242,12 +251,14 @@ export function NttFilterBar({
 // ─── Chart primitives ───
 
 /** Donut chart from [{name, value, color}]. Optional centre label/value. */
-export function Donut({ data, centerLabel, centerValue, centerColor = "#111827", height = 300 }: any) {
+/** `innerRadius` shrinks/grows the hollow centre — drop it below the 55% default
+ *  for a thicker ring on cards that carry no centre label. */
+export function Donut({ data, centerLabel, centerValue, centerColor = "#111827", height = 300, innerRadius = "55%" }: any) {
   const option = {
     tooltip: { trigger: "item", formatter: (p: any) => `${p.name}: ${formatNum(p.value)} (${p.percent}%)` },
     legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11, color: T.textSecondary } },
     series: [{
-      type: "pie", radius: ["55%", "78%"], center: ["50%", "44%"], avoidLabelOverlap: false,
+      type: "pie", radius: [innerRadius, "78%"], center: ["50%", "44%"], avoidLabelOverlap: false,
       itemStyle: { borderColor: "#fff", borderWidth: 2 }, label: { show: false }, labelLine: { show: false },
       data: (data || []).map((d: any) => ({ name: d.name, value: d.value, itemStyle: { color: d.color } })),
     }],

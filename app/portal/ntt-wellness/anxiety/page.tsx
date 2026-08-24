@@ -12,7 +12,7 @@ import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
-  NttFilterBar, ActiveFilterChips, Donut, VerticalBars, ResponseByQuestion,
+  NttFilterBar, ActiveFilterChips, Donut, DonutLegend, ResponseByQuestion,
   FREQ_COLORS, OHC_CATEGORICAL, ACTION_COLORS, CONCERN_COLORS,
 } from "@/components/ntt-wellness/kit";
 
@@ -90,20 +90,16 @@ export default function NttAnxietyPage() {
   }
 
   const bands = charts?.classificationDistribution || [];
-  const actions = charts?.actionDistribution || [];
   const byQuestion = charts?.responseByQuestion || [];
 
   // Severity-coded, not categorical: green → yellow → amber → red as the bands
-  // and action buckets get worse.
+  // get worse.
   const BAND_RAMP = [CONCERN_COLORS.good, CONCERN_COLORS.mild, CONCERN_COLORS.moderate, CONCERN_COLORS.high];
   const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: BAND_RAMP[i] || CONCERN_COLORS.high }));
-  const actionDonut = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] }));
-  const scoreBars = actions.map((a) => ({ name: a.label, value: a.count, color: ACTION_COLORS[a.action] }));
 
   // Share-of-respondents helper — every headline number is shown as a count + %.
   const total = kpis?.totalRespondents || 0;
   const pct = (n) => (total > 0 ? `${Math.round(((n || 0) / total) * 1000) / 10}%` : "0%");
-  const topAction = actions.reduce((a, b) => (b.count > (a?.count ?? -1) ? b : a), null);
 
   // Relabelled for the AI page summary so it speaks the Joy Index vocabulary
   // rather than the raw promoter / support / immediate KPI keys.
@@ -116,8 +112,6 @@ export default function NttAnxietyPage() {
 
   const configureCharts = [
     { id: "classificationDistribution", label: "Classification Distribution" },
-    { id: "scoreDistribution", label: "Score Distribution" },
-    { id: "actionDistribution", label: "Action Distribution" },
     { id: "responseByQuestion", label: "Response Distribution by Question" },
   ];
 
@@ -158,29 +152,17 @@ export default function NttAnxietyPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {isChartVisible("classificationDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Respondents by Joy Index band"
+          <CVCard className="lg:col-span-3" pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Respondents by Joy Index band"
             tooltipText="Per-respondent Joy Index score bucketed into Good / Mild Concern / Moderate Concern / High Concern." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="Joy Index bands">
-            <Donut data={classDonut} innerRadius="38%" />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(total)} respondents (${pct(kpis?.promoters)}) fall in the Good band; ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
-          </CVCard>
-        )}
-        {isChartVisible("scoreDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor="#4f46e5" title="Score Distribution" subtitle="Respondents grouped by action band"
-            tooltipText="Good 0–4 · Mild Concerns (Need Support) 5–14 · High Concern (Needs priority support) ≥15." chartId="scoreDistribution"
-            chartData={scoreBars} chartTitle="Score Distribution" chartDescription="Joy Index action bands">
-            <VerticalBars data={scoreBars} showPct />
-            <InsightBox text={topAction
-              ? `The largest group is ${topAction.label} — ${formatNum(topAction.count)} respondents (${pct(topAction.count)}). Each bar shows the count and its share of all ${formatNum(total)} respondents.`
-              : "No respondents match the current filters."} />
-          </CVCard>
-        )}
-        {isChartVisible("actionDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Action Distribution" subtitle="Recommended action split"
-            tooltipText="Good / Mild Concerns (Need Support) / High Concern (Needs priority support), rolled up from the classification bands." chartId="actionDistribution"
-            chartData={actions} chartTitle="Action Distribution" chartDescription="Joy Index recommended actions">
-            <Donut data={actionDonut} innerRadius="38%" />
-            <InsightBox text={`${formatNum(kpis?.supportNeed || 0)} respondents (${pct(kpis?.supportNeed)}) have Mild Concerns and need support, while ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
+            {/* Ring on the left, legend table + insight on the right so the full-width card has no dead space. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(340px,0.85fr)] gap-x-8 gap-y-4 items-center">
+              <Donut data={classDonut} innerRadius="38%" sliceLabels height={300} hideLegend />
+              <div className="flex flex-col gap-3">
+                <DonutLegend data={classDonut} totalLabel="All respondents" />
+                <InsightBox flush text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(total)} respondents (${pct(kpis?.promoters)}) fall in the Good band; ${formatNum(kpis?.immediateSupport || 0)} (${pct(kpis?.immediateSupport)}) are High Concern and need priority support.`} />
+              </div>
+            </div>
           </CVCard>
         )}
 

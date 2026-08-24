@@ -13,14 +13,14 @@ import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
   NttFilterBar, ActiveFilterChips, Donut, VerticalBars, Gauge, ResponseByQuestion,
-  OHC_CATEGORICAL,
+  OHC_CATEGORICAL, ACTION_COLORS, CONCERN_COLORS, FREQ_COLORS,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/self-esteem";
 const ACCENT = "#8b5cf6";
-// Neutral per-question palette - OHC indigo/teal (this is a distribution chart,
-// not a severity chart, so it follows the OHC scheme rather than good/bad).
-const YESNO_COLORS = ["#4f46e5", "#818cf8"];
+// Matches the per-question response charts on the other NTT dashboards, which
+// use the neutral OHC indigo ramp rather than a good/bad severity scale.
+const YESNO_COLORS = [FREQ_COLORS[2], FREQ_COLORS[0]];
 
 const EMPTY = { dateFrom: "", dateTo: "", genders: [], ageGroups: [] };
 
@@ -96,11 +96,15 @@ export default function NttSelfEsteemPage() {
   const breakdown = charts?.scoreBreakdown || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  const classDonut = bands.map((b, i) => ({ name: b.label, value: b.count, color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length] }));
-  const breakdownBars = breakdown.map((h, i) => ({
+  // Same green → red severity scale as the Joy and Mood and Energy dashboards.
+  // Note the TISE scale runs the other way — 2 is the best score, 0 the worst —
+  // so the ramp is reversed relative to those pages.
+  const classDonut = bands.map((b) => ({ name: b.label, value: b.count, color: ACTION_COLORS[b.action] }));
+  const SCORE_RAMP = { 0: CONCERN_COLORS.high, 1: CONCERN_COLORS.moderate, 2: CONCERN_COLORS.good };
+  const breakdownBars = breakdown.map((h) => ({
     name: h.score === 0 ? "Score 0 (Both No)" : h.score === 1 ? "Score 1 (One Yes)" : "Score 2 (Both Yes)",
     value: h.count,
-    color: OHC_CATEGORICAL[i % OHC_CATEGORICAL.length],
+    color: SCORE_RAMP[h.score] ?? CONCERN_COLORS.moderate,
   }));
 
   const configureCharts = [
@@ -139,8 +143,8 @@ export default function NttSelfEsteemPage() {
         <p className="text-[13px] mb-5" style={{ color: T.textSecondary }}>Score 2 → Confidence and Self Worth (Positive Responders) · Score &lt; 2 → Confidence and Self Worth Needing Support (Responders Needing Support)</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatCard label="Total Respondents" value={kpis?.totalRespondents || 0} color={OHC_CATEGORICAL[0]} sub="Completed the TISE screen" />
-          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={OHC_CATEGORICAL[2]} sub="Confidence and self worth (score 2)" />
-          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={OHC_CATEGORICAL[3]} sub="Needing support (< 2)" />
+          <StatCard label="Positive Responders" value={kpis?.promoters || 0} color={ACTION_COLORS.promoter} sub="Confidence and self worth (score 2)" />
+          <StatCard label="Responders Needing Support" value={kpis?.supportNeed || 0} color={ACTION_COLORS.support} sub="Needing support (< 2)" />
         </div>
       </WarmSection>
 
@@ -149,7 +153,7 @@ export default function NttSelfEsteemPage() {
           <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Overall Self-Esteem Level" subtitle="Average TISE score (0–2)"
             tooltipText="Mean of every respondent's TISE score, on a 0–2 scale." chartId="gauge"
             chartData={{ averageScore: kpis?.averageScore }} chartTitle="Overall Self-Esteem Level" chartDescription="Average TISE score">
-            <Gauge value={kpis?.averageScore || 0} max={2} />
+            <Gauge value={kpis?.averageScore || 0} max={2} color={CONCERN_COLORS.good} />
             <InsightBox text={`The average self-esteem score is ${(kpis?.averageScore ?? 0).toFixed(2)} of 2 - ${(kpis?.averageScore ?? 0) >= 1.5 ? "broadly healthy" : "an area to watch"}.`} />
           </CVCard>
         )}
@@ -157,7 +161,7 @@ export default function NttSelfEsteemPage() {
           <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Confidence and self worth vs needing support"
             tooltipText="Score 2 → Confidence and Self Worth; score < 2 → Confidence and Self Worth Needing Support." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="TISE classification">
-            <Donut data={classDonut} />
+            <Donut data={classDonut} innerRadius="38%" />
             <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents are Positive Responders (confidence and self worth).`} />
           </CVCard>
         )}

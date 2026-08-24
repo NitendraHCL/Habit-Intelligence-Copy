@@ -123,9 +123,11 @@ export function WarmSection({ children, className = "" }: any) {
   return <div className={`p-5 sm:p-6 ${className}`} style={{ backgroundColor: T.warmBg, borderRadius: 24 }}>{children}</div>;
 }
 
-export function InsightBox({ text }: { text: string }) {
+/** `flush` drops the push-to-bottom spacing, for insights stacked in a column
+ *  rather than anchored to the foot of a card. */
+export function InsightBox({ text, flush = false }: { text: string; flush?: boolean }) {
   return (
-    <div className="mt-auto pt-4">
+    <div className={flush ? "" : "mt-auto pt-4"}>
       <div className="rounded-[14px] px-4 py-3.5 text-[12px] leading-[1.7] font-medium" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3" }}>{text}</div>
     </div>
   );
@@ -252,15 +254,30 @@ export function NttFilterBar({
 
 /** Donut chart from [{name, value, color}]. Optional centre label/value. */
 /** `innerRadius` shrinks/grows the hollow centre — drop it below the 55% default
- *  for a thicker ring on cards that carry no centre label. */
-export function Donut({ data, centerLabel, centerValue, centerColor = "#111827", height = 300, innerRadius = "55%" }: any) {
+ *  for a thicker ring on cards that carry no centre label. `sliceLabels` writes
+ *  each slice's count and share outside the ring (empty slices stay unlabelled). */
+export function Donut({ data, centerLabel, centerValue, centerColor = "#111827", height = 300, innerRadius = "55%", sliceLabels = false, hideLegend = false }: any) {
+  const rows = data || [];
   const option = {
     tooltip: { trigger: "item", formatter: (p: any) => `${p.name}: ${formatNum(p.value)} (${p.percent}%)` },
-    legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11, color: T.textSecondary } },
+    legend: hideLegend
+      ? { show: false }
+      : { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11, color: T.textSecondary } },
     series: [{
-      type: "pie", radius: [innerRadius, "78%"], center: ["50%", "44%"], avoidLabelOverlap: false,
-      itemStyle: { borderColor: "#fff", borderWidth: 2 }, label: { show: false }, labelLine: { show: false },
-      data: (data || []).map((d: any) => ({ name: d.name, value: d.value, itemStyle: { color: d.color } })),
+      // Outside labels need room, so the ring gives some radius back when they're on.
+      // With no legend under it the ring can also sit centred rather than raised.
+      type: "pie", radius: [innerRadius, sliceLabels ? "68%" : "78%"], center: ["50%", hideLegend ? "50%" : "44%"],
+      avoidLabelOverlap: sliceLabels,
+      itemStyle: { borderColor: "#fff", borderWidth: 2 },
+      label: sliceLabels
+        ? { show: true, position: "outside", fontSize: 11, fontWeight: "bold", color: T.textPrimary, formatter: (p: any) => `${formatNum(p.value)} (${p.percent}%)` }
+        : { show: false },
+      labelLine: sliceLabels ? { show: true, length: 10, length2: 10, lineStyle: { color: T.border } } : { show: false },
+      data: rows.map((d: any) => ({
+        name: d.name, value: d.value, itemStyle: { color: d.color },
+        // An empty band would otherwise trail a "0 (0%)" label off the ring.
+        ...(sliceLabels && !(d.value > 0) ? { label: { show: false }, labelLine: { show: false } } : {}),
+      })),
     }],
   };
   return (
@@ -272,6 +289,47 @@ export function Donut({ data, centerLabel, centerValue, centerColor = "#111827",
           {centerLabel && <span className="text-[11px] font-semibold" style={{ color: T.textMuted }}>{centerLabel}</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Standalone donut legend — one row per slice with its count and share. Pair it
+ * with <Donut hideLegend /> when the card is wide enough to sit the legend beside
+ * the ring instead of squeezing it underneath.
+ */
+export function DonutLegend({ data, totalLabel = "Total" }: any) {
+  const rows = data || [];
+  const grandTotal = rows.reduce((s: number, d: any) => s + (Number(d.value) || 0), 0);
+  const cols = "grid grid-cols-[1fr_5rem_4rem] items-center gap-2";
+  return (
+    <div className="rounded-[14px] overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
+      <div className={`${cols} px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.07em]`}
+        style={{ backgroundColor: T.warmBg, color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>
+        <span>Band</span>
+        <span className="text-right">Respondents</span>
+        <span className="text-right">Share</span>
+      </div>
+      {rows.map((d: any, i: number) => {
+        const p = grandTotal > 0 ? Math.round((d.value / grandTotal) * 1000) / 10 : 0;
+        return (
+          <div key={d.name} className={`${cols} px-4 py-2.5 text-[12px]`}
+            style={{ borderTop: i === 0 ? undefined : `1px solid ${T.borderLight}` }}>
+            <span className="flex items-center gap-2.5 min-w-0">
+              <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+              <span className="leading-snug" style={{ color: T.textPrimary }}>{d.name}</span>
+            </span>
+            <span className="text-right font-bold tabular-nums" style={{ color: T.textPrimary }}>{formatNum(d.value)}</span>
+            <span className="text-right tabular-nums" style={{ color: T.textSecondary }}>{p}%</span>
+          </div>
+        );
+      })}
+      <div className={`${cols} px-4 py-2.5 text-[12px] font-bold`}
+        style={{ backgroundColor: T.warmBg, color: T.textPrimary, borderTop: `1px solid ${T.border}` }}>
+        <span>{totalLabel}</span>
+        <span className="text-right tabular-nums">{formatNum(grandTotal)}</span>
+        <span className="text-right tabular-nums">100%</span>
+      </div>
     </div>
   );
 }
@@ -296,7 +354,7 @@ export function ResponseByQuestion({ questions, colors, minSegPctForLabel = 3 }:
       <div className="space-y-2.5">
         {(questions || []).map((q: any) => (
           <div key={q.question} className="flex items-center gap-3">
-            <div className="w-[190px] shrink-0 text-[12px] font-medium truncate" style={{ color: T.textPrimary }} title={q.question}>{q.question}</div>
+            <div className="w-[190px] shrink-0 text-[12px] font-medium leading-snug break-words" style={{ color: T.textPrimary }} title={q.question}>{q.question}</div>
             <div className="flex-1 flex h-7 rounded-md overflow-hidden" style={{ border: `1px solid ${T.borderLight}` }}>
               {q.options.map((o: any, i: number) => (
                 o.pct > 0 ? (

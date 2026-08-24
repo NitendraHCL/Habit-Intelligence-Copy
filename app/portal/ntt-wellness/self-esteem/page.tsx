@@ -12,8 +12,8 @@ import { ConfigurePanel } from "@/components/admin/ConfigurePanel";
 import DataAuditSection from "@/components/audit/DataAuditSection";
 import {
   fetcher, formatNum, AccentBar, CVCard, WarmSection, InsightBox, StatCard,
-  NttFilterBar, ActiveFilterChips, Donut, VerticalBars, Gauge, ResponseByQuestion,
-  OHC_CATEGORICAL, ACTION_COLORS, CONCERN_COLORS, FREQ_COLORS,
+  NttFilterBar, ActiveFilterChips, Donut, DonutLegend, ResponseByQuestion,
+  OHC_CATEGORICAL, ACTION_COLORS, FREQ_COLORS,
 } from "@/components/ntt-wellness/kit";
 
 const PAGE_SLUG = "/portal/ntt-wellness/self-esteem";
@@ -93,24 +93,17 @@ export default function NttSelfEsteemPage() {
   }
 
   const bands = charts?.classificationDistribution || [];
-  const breakdown = charts?.scoreBreakdown || [];
   const byQuestion = charts?.responseByQuestion || [];
 
-  // Same green → red severity scale as the Joy and Mood and Energy dashboards.
-  // Note the TISE scale runs the other way — 2 is the best score, 0 the worst —
-  // so the ramp is reversed relative to those pages.
+  // Same green → amber severity scale as the Joy and Mood and Energy dashboards.
   const classDonut = bands.map((b) => ({ name: b.label, value: b.count, color: ACTION_COLORS[b.action] }));
-  const SCORE_RAMP = { 0: CONCERN_COLORS.high, 1: CONCERN_COLORS.moderate, 2: CONCERN_COLORS.good };
-  const breakdownBars = breakdown.map((h) => ({
-    name: h.score === 0 ? "Score 0 (Both No)" : h.score === 1 ? "Score 1 (One Yes)" : "Score 2 (Both Yes)",
-    value: h.count,
-    color: SCORE_RAMP[h.score] ?? CONCERN_COLORS.moderate,
-  }));
+
+  // Share-of-respondents helper — every headline number is shown as a count + %.
+  const total = kpis?.totalRespondents || 0;
+  const pct = (n) => (total > 0 ? `${Math.round(((n || 0) / total) * 1000) / 10}%` : "0%");
 
   const configureCharts = [
-    { id: "gauge", label: "Overall Self-Esteem Level" },
     { id: "classificationDistribution", label: "Classification Distribution" },
-    { id: "scoreBreakdown", label: "Score Breakdown" },
     { id: "responseByQuestion", label: "Question-wise Response Analysis" },
   ];
 
@@ -149,28 +142,18 @@ export default function NttSelfEsteemPage() {
       </WarmSection>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {isChartVisible("gauge") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor="#0d9488" title="Overall Self-Esteem Level" subtitle="Average TISE score (0–2)"
-            tooltipText="Mean of every respondent's TISE score, on a 0–2 scale." chartId="gauge"
-            chartData={{ averageScore: kpis?.averageScore }} chartTitle="Overall Self-Esteem Level" chartDescription="Average TISE score">
-            <Gauge value={kpis?.averageScore || 0} max={2} color={CONCERN_COLORS.good} />
-            <InsightBox text={`The average self-esteem score is ${(kpis?.averageScore ?? 0).toFixed(2)} of 2 - ${(kpis?.averageScore ?? 0) >= 1.5 ? "broadly healthy" : "an area to watch"}.`} />
-          </CVCard>
-        )}
         {isChartVisible("classificationDistribution") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Confidence and self worth vs needing support"
+          <CVCard className="lg:col-span-3" pageSlug={PAGE_SLUG} accentColor={ACCENT} title="Classification Distribution" subtitle="Confidence and self worth vs needing support"
             tooltipText="Score 2 → Confidence and Self Worth; score < 2 → Confidence and Self Worth Needing Support." chartId="classificationDistribution"
             chartData={bands} chartTitle="Classification Distribution" chartDescription="TISE classification">
-            <Donut data={classDonut} innerRadius="38%" />
-            <InsightBox text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(kpis?.totalRespondents || 0)} respondents are Positive Responders (confidence and self worth).`} />
-          </CVCard>
-        )}
-        {isChartVisible("scoreBreakdown") && (
-          <CVCard pageSlug={PAGE_SLUG} accentColor="#4f46e5" title="Score Breakdown" subtitle="Respondents at each score (0 / 1 / 2)"
-            tooltipText="0 = both items No · 1 = one Yes · 2 = both Yes." chartId="scoreBreakdown"
-            chartData={breakdownBars} chartTitle="Score Breakdown" chartDescription="TISE score histogram">
-            <VerticalBars data={breakdownBars} />
-            <InsightBox text="Most respondents answer Yes to both items (score 2)." />
+            {/* Ring on the left, legend table + insight on the right so the full-width card has no dead space. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(340px,0.85fr)] gap-x-8 gap-y-4 items-center">
+              <Donut data={classDonut} innerRadius="38%" sliceLabels height={300} hideLegend />
+              <div className="flex flex-col gap-3">
+                <DonutLegend data={classDonut} totalLabel="All respondents" />
+                <InsightBox flush text={`${formatNum(kpis?.promoters || 0)} of ${formatNum(total)} respondents (${pct(kpis?.promoters)}) show confidence and self worth; ${formatNum(kpis?.supportNeed || 0)} (${pct(kpis?.supportNeed)}) need support.`} />
+              </div>
+            </div>
           </CVCard>
         )}
 

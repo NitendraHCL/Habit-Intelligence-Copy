@@ -582,6 +582,21 @@ export default function OHCUtilizationPage() {
   useEffect(() => {
     if (capacityMonth !== "all" && !capacityMonths.some((m) => m.value === capacityMonth)) setCapacityMonth("all");
   }, [capacityMonths, capacityMonth]);
+  // MS001 runs round the clock, so its Shift filter replaces the single "Night"
+  // option with six 2-hour bands. General ends at 8 PM there (not 9) so the
+  // bands tile the night without overlapping it. Labels must match SHIFT_BANDS
+  // in app/api/ohc/utilization/route.ts.
+  const shiftOptions = activeClient?.cugCode === "MS001"
+    ? ["General", "8 PM - 10 PM", "10 PM - 12 MN", "12 AM - 2 AM", "2 AM - 4 AM", "4 AM - 6 AM", "6 AM - 8 AM"]
+    : ["General", "Night"];
+  // The Shift options differ per client, so drop any selection that the new
+  // client's dropdown no longer offers.
+  useEffect(() => {
+    const valid = new Set(shiftOptions);
+    const prune = (arr: string[]) => arr.filter((s) => valid.has(s));
+    setPageFilters((p) => (p.shifts.every((s) => valid.has(s)) ? p : { ...p, shifts: prune(p.shifts) }));
+    setAppliedFilters((p) => (p.shifts.every((s) => valid.has(s)) ? p : { ...p, shifts: prune(p.shifts) }));
+  }, [activeClient?.cugCode]);
   const capacityData: Array<{ specialty: string; capacity: number; booked: number; completed: number }> =
     capacityMonth === "all"
       ? (charts?.capacityBookedCompleted ?? [])
@@ -1468,9 +1483,10 @@ export default function OHCUtilizationPage() {
         <FilterMultiSelect label="Age Group" options={filterOptions.ageGroups} selected={pageFilters.ageGroups} onChange={(v) => setPageFilters((p) => ({ ...p, ageGroups: v }))} />
         <FilterMultiSelect label="Specialty" options={filterOptions.specialties} selected={pageFilters.specialties} onChange={(v) => setPageFilters((p) => ({ ...p, specialties: v }))} />
         <FilterMultiSelect label="Relationship" options={filterOptions.relations} selected={pageFilters.relations} onChange={(v) => setPageFilters((p) => ({ ...p, relations: v }))} />
-        {/* Shift: derived from consult_hour (General = 8 AM–8 PM, Night = the
-            rest). Static options; empty = All shifts. */}
-        <FilterMultiSelect label="Shift" options={["General", "Night"]} selected={pageFilters.shifts} onChange={(v) => setPageFilters((p) => ({ ...p, shifts: v }))} />
+        {/* Shift: derived from consult_hour. Everyone gets General + Night;
+            MS001 splits the night into six 2-hour bands instead (see
+            SHIFT_OPTIONS). Static options; empty = All shifts. */}
+        <FilterMultiSelect label="Shift" options={shiftOptions} selected={pageFilters.shifts} onChange={(v) => setPageFilters((p) => ({ ...p, shifts: v }))} />
 
 
         <div className="flex-1" />

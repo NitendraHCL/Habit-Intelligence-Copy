@@ -35,6 +35,19 @@ const RESULT_TABLE = "aggregated_table.result_entry";
 const CAPACITY_TABLE = "aggregated_table.doctor_capacity";
 const COMPLETED = "a.stage = 'Completed'";
 
+/* MS001 runs a round-the-clock operation, so instead of one "Night" shift its
+ * Shift filter splits the night into six 2-hour bands. Labels must stay in sync
+ * with NIGHT_SHIFT_BANDS in the page component. Values are consult_hour. */
+const MS_CUG = "MS001";
+const SHIFT_BANDS: Record<string, number[]> = {
+  "8 PM - 10 PM": [20, 21],
+  "10 PM - 12 MN": [22, 23],
+  "12 AM - 2 AM": [0, 1],
+  "2 AM - 4 AM": [2, 3],
+  "4 AM - 6 AM": [4, 5],
+  "6 AM - 8 AM": [6, 7],
+};
+
 /* ────────────────────────────────────────────────────────────────────
  * Data-audit provenance — one entry per chart/section, keyed identically
  * to the keys in the response below (plus `kpis`). Shipped only to
@@ -250,13 +263,22 @@ function buildQueryParts(searchParams: URLSearchParams, cugCode: string) {
     params.push(relations);
     idx++;
   }
-  // Shift filter (derived from consult_hour, the appointment hour):
-  //   General = hours 8–20 (8 AM–8 PM); Night = the rest (21–23 and 0–7).
-  // Multiple selections OR together; both selected ≈ "All shifts" (no filter).
+  // Shift filter (derived from consult_hour, the appointment hour).
+  //   Default: General = hours 8–20 (8 AM–8 PM); Night = the rest (21–23, 0–7).
+  //   MS001 splits the night into six 2-hour bands instead of one "Night"
+  //   option, so General ends at 19 (8 PM exclusive) there and the bands tile
+  //   the remaining hours without overlapping it.
+  // Multiple selections OR together; selecting all ≈ "All shifts" (no filter).
   if (shifts?.length) {
     const sc = shifts
       .map((s) => {
-        if (s === "General") return "(a.consult_hour BETWEEN 8 AND 20)";
+        const band = SHIFT_BANDS[s];
+        if (band) return `(a.consult_hour IN (${band.join(", ")}))`;
+        if (s === "General") {
+          return cugCode === MS_CUG
+            ? "(a.consult_hour BETWEEN 8 AND 19)"
+            : "(a.consult_hour BETWEEN 8 AND 20)";
+        }
         if (s === "Night") return "(a.consult_hour < 8 OR a.consult_hour > 20)";
         return null;
       })
